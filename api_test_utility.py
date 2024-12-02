@@ -1,37 +1,37 @@
-import pandas as pd
+import json
 import os
-from typing import List, Dict, Any
+import time
+import warnings
+from datetime import datetime
+from typing import Any, Dict, List
+
 import inquirer
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+from inquirer import List as InquirerList
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
-import json
-from datetime import datetime
-import warnings
-import time
-from inquirer import List as InquirerList
 from rich.table import Table
-import numpy as np
-import plotly.graph_objects as go
 
 # Suppress warnings
-warnings.filterwarnings('ignore')
+warnings.filterwarnings("ignore")
 
 # Import FastAPI functions directly
 from dataAnalystAPI import (
-    CleanseRequest, 
-    DatasetInput,
-    cleanse_dataframes,
-    get_dictionary,
-    suggest_questions,
-    get_python_analysis_code,
-    run_analysis,
-    get_business_analysis,
     BusinessAnalysisRequest,
-    chat,
     ChatRequest,
+    CleanseRequest,
+    DatasetInput,
     RunAnalysisRequest,
     RunChartsRequest,
-    run_charts
+    chat,
+    cleanse_dataframes,
+    get_business_analysis,
+    get_dictionary,
+    run_analysis,
+    run_charts,
+    suggest_questions,
 )
 
 # Initialize rich console for better output formatting
@@ -45,47 +45,55 @@ DATA_FILES = {
     "diabetes": r"C:\Users\BrettOlmstead\Downloads\AI Feature Engineer\10k_diabetes.csv",
     "cpg": r"C:\Users\BrettOlmstead\Downloads\CPG Data Sample for DataRobot_csv.csv",
     "gannett": r"C:\Users\BrettOlmstead\Downloads\Promotional Activity - Gannett.csv",
-    "winter_sports": r"C:\Users\BrettOlmstead\Downloads\Elsa Winter Sports.csv"
+    "winter_sports": r"C:\Users\BrettOlmstead\Downloads\Elsa Winter Sports.csv",
 }
+
 
 def select_files() -> List[str]:
     """Allow user to select multiple files from the available options"""
     questions = [
-        inquirer.Checkbox('files',
-                         message="Select the files you want to process (use spacebar to select)",
-                         choices=list(DATA_FILES.keys()),
-                         # Set default selections for lending club files
-                         default=[
-                             "lending_club_profile",
-                             "lending_club_target", 
-                             "lending_club_transactions"
-                         ])
+        inquirer.Checkbox(
+            "files",
+            message="Select the files you want to process (use spacebar to select)",
+            choices=list(DATA_FILES.keys()),
+            # Set default selections for lending club files
+            default=[
+                "lending_club_profile",
+                "lending_club_target",
+                "lending_club_transactions",
+            ],
+        )
     ]
-    
+
     answers = inquirer.prompt(questions)
-    return [DATA_FILES[file] for file in answers['files']]
+    return [DATA_FILES[file] for file in answers["files"]]
+
 
 def load_dataframes(files: List[str]) -> List[Dict[str, Any]]:
     """Load selected files into dataframes and prepare them for API"""
     datasets = []
     start_time = time.time()
-    
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
-        transient=True
+        transient=True,
     ) as progress:
         for file_path in files:
-            task = progress.add_task(f"Loading {os.path.basename(file_path)}...", total=None)
-            
+            task = progress.add_task(
+                f"Loading {os.path.basename(file_path)}...", total=None
+            )
+
             try:
                 # First try reading with default encoding (UTF-8)
                 df = pd.read_csv(file_path)
             except UnicodeDecodeError:
                 try:
                     # If UTF-8 fails, try latin-1 encoding
-                    df = pd.read_csv(file_path, encoding='latin-1')
-                    console.print(f"[yellow]Note: {os.path.basename(file_path)} loaded using latin-1 encoding[/yellow]")
+                    df = pd.read_csv(file_path, encoding="latin-1")
+                    console.print(
+                        f"[yellow]Note: {os.path.basename(file_path)} loaded using latin-1 encoding[/yellow]"
+                    )
                 except Exception as e:
                     console.print(f"[red]Error loading {file_path}: {str(e)}[/red]")
                     progress.update(task, completed=True)
@@ -94,88 +102,98 @@ def load_dataframes(files: List[str]) -> List[Dict[str, Any]]:
                 console.print(f"[red]Error loading {file_path}: {str(e)}[/red]")
                 progress.update(task, completed=True)
                 continue
-            
+
             # Replace non-JSON compliant values
-            df = df.replace([float('inf'), -float('inf')], None)  # Replace infinity with None
+            df = df.replace(
+                [float("inf"), -float("inf")], None
+            )  # Replace infinity with None
             df = df.where(pd.notnull(df), None)  # Replace NaN with None
-            
+
             # Create dataset dictionary
             dataset = {
                 "name": os.path.splitext(os.path.basename(file_path))[0],
-                "data": df.to_dict('records')
+                "data": df.to_dict("records"),
             }
             datasets.append(dataset)
-            
-            console.print(f"✓ Successfully loaded {dataset['name']} with {len(df)} rows and {len(df.columns)} columns")
+
+            console.print(
+                f"✓ Successfully loaded {dataset['name']} with {len(df)} rows and {len(df.columns)} columns"
+            )
             progress.update(task, completed=True)
-    
+
     elapsed_time = time.time() - start_time
     console.print(f"\n[cyan]Loading time: {elapsed_time:.2f} seconds[/cyan]")
     return datasets
+
 
 async def cleanse_datasets(datasets: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Use API function directly to cleanse datasets"""
     try:
         start_time = time.time()
-        
+
         # Create CleanseRequest object
         request = CleanseRequest(
             datasets=[DatasetInput(**dataset) for dataset in datasets]
         )
-        
+
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
-            transient=True
+            transient=True,
         ) as progress:
             task = progress.add_task("Cleansing datasets...", total=None)
-            
+
             # Call the API function directly
             result = await cleanse_dataframes(request)
-            
+
             progress.update(task, completed=True)
-            
+
         elapsed_time = time.time() - start_time
         console.print(f"\n[cyan]Cleansing time: {elapsed_time:.2f} seconds[/cyan]")
         return result.dict()
-        
+
     except Exception as e:
         console.print(f"[red]Error: {str(e)}[/red]")
         return None
+
 
 async def main():
     start_time = time.time()
     console.print("[bold blue]Data Analyst API Test Utility[/bold blue]")
     console.print("Select files to process and test with the API\n")
-    
+
     # File selection
     selected_files = select_files()
     if not selected_files:
         console.print("[yellow]No files selected. Exiting...[/yellow]")
         return
-    
+
     # Load dataframes
     console.print("\n[bold]Loading selected files...[/bold]")
     datasets = load_dataframes(selected_files)
     if not datasets:
         console.print("[red]No datasets were successfully loaded. Exiting...[/red]")
         return
-    
+
     # Cleanse datasets
     console.print("\n[bold]Cleansing datasets...[/bold]")
     result = await cleanse_datasets(datasets)
-    
+
     if result:
         # Display results
         console.print("\n[bold green]Cleansing Results:[/bold green]")
-        for dataset in result['datasets']:
+        for dataset in result["datasets"]:
             console.print(f"\n[bold]{dataset['name']}[/bold]")
-            console.print(f"Columns cleaned: {len(dataset['cleaning_report']['columns_cleaned'])}")
-            
+            console.print(
+                f"Columns cleaned: {len(dataset['cleaning_report']['columns_cleaned'])}"
+            )
+
             # Create and populate Rich table for the dataset
-            df = pd.DataFrame(dataset['data'])
-            table = Table(show_header=True, header_style="bold magenta", show_lines=True)
-            
+            df = pd.DataFrame(dataset["data"])
+            table = Table(
+                show_header=True, header_style="bold magenta", show_lines=True
+            )
+
             # Add columns to the table
             for column in df.columns:
                 # Determine column style based on dtype
@@ -185,7 +203,7 @@ async def main():
                 elif pd.api.types.is_datetime64_any_dtype(df[column]):
                     style = "green"
                 table.add_column(str(column), style=style)
-            
+
             # Add rows to the table (first 10 rows)
             for _, row in df.head(10).iterrows():
                 # Format numeric values to 2 decimal places and handle None/NaN
@@ -198,231 +216,275 @@ async def main():
                     else:
                         formatted_row.append(str(value))
                 table.add_row(*formatted_row)
-            
+
             # Display the table
-            console.print(f"\n[bold cyan]First 10 rows of cleaned {dataset['name']}:[/bold cyan]")
+            console.print(
+                f"\n[bold cyan]First 10 rows of cleaned {dataset['name']}:[/bold cyan]"
+            )
             console.print(table)
-            console.print("\n" + "-"*80 + "\n")  # Separator between datasets
-            
+            console.print("\n" + "-" * 80 + "\n")  # Separator between datasets
+
             # Display warnings and errors
-            if dataset['cleaning_report']['warnings']:
+            if dataset["cleaning_report"]["warnings"]:
                 console.print("\nWarnings:")
-                for warning in dataset['cleaning_report']['warnings']:
+                for warning in dataset["cleaning_report"]["warnings"]:
                     console.print(f"  • {warning}")
-                    
-            if dataset['cleaning_report']['errors']:
+
+            if dataset["cleaning_report"]["errors"]:
                 console.print("\n[red]Errors:[/red]")
-                for error in dataset['cleaning_report']['errors']:
+                for error in dataset["cleaning_report"]["errors"]:
                     console.print(f"  • {error}")
-        
+
         # Get and display data dictionary
         console.print("\n[bold]Generating Data Dictionary...[/bold]")
         dict_start_time = time.time()
-        
+
         # Add debug logging
-        console.print(f"\n[cyan]Debug: Number of datasets in result: {len(result['datasets'])}[/cyan]")
-        for dataset in result['datasets']:
-            console.print(f"[cyan]Debug: Dataset '{dataset['name']}' has {len(dataset['data'])} records[/cyan]")
-        
+        console.print(
+            f"\n[cyan]Debug: Number of datasets in result: {len(result['datasets'])}[/cyan]"
+        )
+        for dataset in result["datasets"]:
+            console.print(
+                f"[cyan]Debug: Dataset '{dataset['name']}' has {len(dataset['data'])} records[/cyan]"
+            )
+
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
-            transient=True
+            transient=True,
         ) as progress:
             task = progress.add_task("Creating data dictionary...", total=None)
             dict_request = CleanseRequest(
-                datasets=[DatasetInput(**dataset) for dataset in result['datasets']]
+                datasets=[DatasetInput(**dataset) for dataset in result["datasets"]]
             )
-            
+
             # Add more debug logging
-            console.print(f"\n[cyan]Debug: Dictionary request contains {len(dict_request.datasets)} datasets[/cyan]")
+            console.print(
+                f"\n[cyan]Debug: Dictionary request contains {len(dict_request.datasets)} datasets[/cyan]"
+            )
             for dataset in dict_request.datasets:
-                console.print(f"[cyan]Debug: Request dataset '{dataset.name}' has {len(dataset.data)} records[/cyan]")
-            
+                console.print(
+                    f"[cyan]Debug: Request dataset '{dataset.name}' has {len(dataset.data)} records[/cyan]"
+                )
+
             dictionary_result = await get_dictionary(dict_request)
             progress.update(task, completed=True)
-        
+
         dict_elapsed_time = time.time() - dict_start_time
-        
+
         # After getting dictionary_result
-        console.print(f"\n[cyan]Debug: Dictionary result type: {type(dictionary_result)}[/cyan]")
-        console.print(f"[cyan]Debug: Dictionary result keys: {dictionary_result.keys() if isinstance(dictionary_result, dict) else 'Not a dict'}[/cyan]")
+        console.print(
+            f"\n[cyan]Debug: Dictionary result type: {type(dictionary_result)}[/cyan]"
+        )
+        console.print(
+            f"[cyan]Debug: Dictionary result keys: {dictionary_result.keys() if isinstance(dictionary_result, dict) else 'Not a dict'}[/cyan]"
+        )
 
         # Convert dictionary_result to dict if it's a Pydantic model
-        if hasattr(dictionary_result, 'dict'):
+        if hasattr(dictionary_result, "dict"):
             dictionary_result = dictionary_result.dict()
-            console.print(f"[cyan]Debug: Converted dictionary result keys: {dictionary_result.keys()}[/cyan]")
-        
+            console.print(
+                f"[cyan]Debug: Converted dictionary result keys: {dictionary_result.keys()}[/cyan]"
+            )
+
         # Add debug logging for dictionaries content
-        console.print(f"\n[cyan]Debug: Dictionaries content: {dictionary_result.get('dictionaries', [])}[/cyan]")
-        
+        console.print(
+            f"\n[cyan]Debug: Dictionaries content: {dictionary_result.get('dictionaries', [])}[/cyan]"
+        )
+
         # Group entries by dataset - MODIFY THIS SECTION
         dataset_groups = {}
         # The data is in the 'dictionaries' key, not 'data_dictionary'
-        for result_dict in dictionary_result.get('dictionaries', []):
-            dataset_name = result_dict['name']
+        for result_dict in dictionary_result.get("dictionaries", []):
+            dataset_name = result_dict["name"]
             if dataset_name not in dataset_groups:
                 dataset_groups[dataset_name] = []
             # The column definitions are in the 'dictionary' key of each result
-            dataset_groups[dataset_name].extend(result_dict.get('dictionary', []))
-        
+            dataset_groups[dataset_name].extend(result_dict.get("dictionary", []))
+
         # Display organized dictionary
         console.print("\n[bold green]Data Dictionary:[/bold green]")
-        
+
         # Display metadata summary
         total_columns = sum(len(entries) for entries in dataset_groups.values())
         console.print("\n[bold cyan]Data Dictionary Summary:[/bold cyan]")
-        summary_table = Table(show_header=True, header_style="bold magenta", show_lines=True)
+        summary_table = Table(
+            show_header=True, header_style="bold magenta", show_lines=True
+        )
         summary_table.add_column("Metric", style="cyan")
         summary_table.add_column("Value", style="yellow")
-        
+
         summary_table.add_row("Total Datasets", str(len(dataset_groups)))
         summary_table.add_row("Total Columns Defined", str(total_columns))
-        
+
         # Add dataset-specific counts
         for dataset_name, entries in dataset_groups.items():
-            numeric_cols = sum(1 for e in entries if e['data_type'].lower() in ['int64', 'float64', 'numeric'])
-            categorical_cols = sum(1 for e in entries if e['data_type'].lower() in ['object', 'category', 'string'])
+            numeric_cols = sum(
+                1
+                for e in entries
+                if e["data_type"].lower() in ["int64", "float64", "numeric"]
+            )
+            categorical_cols = sum(
+                1
+                for e in entries
+                if e["data_type"].lower() in ["object", "category", "string"]
+            )
             summary_table.add_row(
                 f"Columns in {dataset_name}",
-                f"Total: {len(entries)} (Numeric: {numeric_cols}, Categorical: {categorical_cols})"
+                f"Total: {len(entries)} (Numeric: {numeric_cols}, Categorical: {categorical_cols})",
             )
-        
+
         console.print(summary_table)
         console.print("\n[bold cyan]Detailed Column Definitions:[/bold cyan]")
-        
+
         # Create Rich table for each dataset's dictionary
         for dataset_name, entries in dataset_groups.items():
             console.print(f"\n[bold cyan]Dataset: {dataset_name}[/bold cyan]")
-            
+
             # Create Rich table
-            table = Table(show_header=True, header_style="bold magenta", show_lines=True)
+            table = Table(
+                show_header=True, header_style="bold magenta", show_lines=True
+            )
             table.add_column("Column", style="cyan")
             table.add_column("Type", style="yellow")
             table.add_column("Description", style="green")
-            
+
             # Update this section to match the new dictionary structure
             for entry in entries:
                 # Add row to table using the correct keys
                 table.add_row(
-                    entry['column'],  # Changed from column_name
-                    entry['data_type'],
-                    entry['description']
+                    entry["column"],  # Changed from column_name
+                    entry["data_type"],
+                    entry["description"],
                 )
-            
+
             # Display the table
             console.print(table)
             console.print("\n")  # Add spacing between datasets
 
-        console.print(f"\n[cyan]Data dictionary generation time: {dict_elapsed_time:.2f} seconds[/cyan]")
-        
+        console.print(
+            f"\n[cyan]Data dictionary generation time: {dict_elapsed_time:.2f} seconds[/cyan]"
+        )
+
         # Add question suggestion functionality
         console.print("\n[bold]Suggesting Analysis Questions...[/bold]")
         question_start_time = time.time()
-        
+
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
-            transient=True
+            transient=True,
         ) as progress:
             task = progress.add_task("Generating questions...", total=None)
             questions_result = await suggest_questions(dict_request)
             progress.update(task, completed=True)
-        
+
         question_elapsed_time = time.time() - question_start_time
-        
+
         # Convert questions_result to dict if it's a Pydantic model
-        if hasattr(questions_result, 'dict'):
+        if hasattr(questions_result, "dict"):
             questions_result = questions_result.dict()
-        
+
         # Display suggested questions
         console.print("\n[bold green]Suggested Analysis Questions:[/bold green]")
-        suggested_questions = [q['question'] for q in questions_result.get('questions', [])][:3]  # Get just the question text from first 3 questions
+        suggested_questions = [
+            q["question"] for q in questions_result.get("questions", [])
+        ][:3]  # Get just the question text from first 3 questions
         for i, question in enumerate(suggested_questions, 1):
             console.print(f"{i}. {question}")
-        
+
         # Create question selection prompt
         questions = [
             InquirerList(
-                'selected_question',
+                "selected_question",
                 message="Select a question to analyze",
                 choices=[
                     *[f"{i+1}. {q}" for i, q in enumerate(suggested_questions)],
-                    "4. Enter my own question"
-                ]
+                    "4. Enter my own question",
+                ],
             )
         ]
-        
+
         answer = inquirer.prompt(questions)
-        
-        if answer['selected_question'].startswith("4."):
+
+        if answer["selected_question"].startswith("4."):
             custom_question = [
-                inquirer.Text('custom',
-                            message="Enter your analysis question")
+                inquirer.Text("custom", message="Enter your analysis question")
             ]
             custom_answer = inquirer.prompt(custom_question)
-            selected_question = custom_answer['custom']
+            selected_question = custom_answer["custom"]
         else:
             # Extract the question text from the selected option
-            selected_question = answer['selected_question'].split('. ', 1)[1]
-        
-        console.print(f"\n[bold cyan]Selected Question:[/bold cyan] {selected_question}")
-        console.print(f"\n[cyan]Question suggestion time: {question_elapsed_time:.2f} seconds[/cyan]")
-        
+            selected_question = answer["selected_question"].split(". ", 1)[1]
+
+        console.print(
+            f"\n[bold cyan]Selected Question:[/bold cyan] {selected_question}"
+        )
+        console.print(
+            f"\n[cyan]Question suggestion time: {question_elapsed_time:.2f} seconds[/cyan]"
+        )
+
         # Add chat enhancement step
         console.print("\n[bold]Enhancing question with chat analysis...[/bold]")
-        
+
         # Create chat history table
-        history_table = Table(show_header=True, header_style="bold magenta", show_lines=True)
+        history_table = Table(
+            show_header=True, header_style="bold magenta", show_lines=True
+        )
         history_table.add_column("Original Question", style="cyan")
         history_table.add_column("Enhanced Question", style="yellow")
-        
+
         # Add previous questions to history if they exist
-        if 'question_history' not in result:
-            result['question_history'] = []
-        
+        if "question_history" not in result:
+            result["question_history"] = []
+
         # Display question history
-        if result['question_history']:
+        if result["question_history"]:
             console.print("\n[bold cyan]Question History:[/bold cyan]")
-            for hist in result['question_history']:
-                history_table.add_row(
-                    hist['original'],
-                    hist['enhanced']
-                )
+            for hist in result["question_history"]:
+                history_table.add_row(hist["original"], hist["enhanced"])
             console.print(history_table)
-        
+
         # Create chat request with history context
         chat_messages = []
         # Add history context if available
-        for hist in result['question_history'][-2:]:  # Include last 2 questions for context
-            chat_messages.extend([
-                {"role": "user", "content": hist['original']},
-                {"role": "assistant", "content": hist['enhanced']}
-            ])
+        for hist in result["question_history"][
+            -2:
+        ]:  # Include last 2 questions for context
+            chat_messages.extend(
+                [
+                    {"role": "user", "content": hist["original"]},
+                    {"role": "assistant", "content": hist["enhanced"]},
+                ]
+            )
         # Add current question
         chat_messages.append({"role": "user", "content": selected_question})
-        
+
         chat_request = ChatRequest(messages=chat_messages)
         chat_result = await chat(chat_request)
-        
+
         # Add new question to history
-        result['question_history'].append({
-            'original': selected_question,
-            'enhanced': chat_result.get('enhanced_user_message', selected_question),
-            'timestamp': datetime.now().isoformat()
-        })
-        
+        result["question_history"].append(
+            {
+                "original": selected_question,
+                "enhanced": chat_result.get("enhanced_user_message", selected_question),
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
+
         # Display current question enhancement
         console.print("\n[bold cyan]Current Question Enhancement:[/bold cyan]")
-        current_table = Table(show_header=True, header_style="bold magenta", show_lines=True)
+        current_table = Table(
+            show_header=True, header_style="bold magenta", show_lines=True
+        )
         current_table.add_column("Original Question", style="cyan")
         current_table.add_column("Enhanced Question", style="yellow")
         current_table.add_row(
             selected_question,
-            chat_result.get('enhanced_user_message', selected_question)
+            chat_result.get("enhanced_user_message", selected_question),
         )
         console.print(current_table)
-        
+
         # Run analysis
         console.print("\n[bold]Running Analysis...[/bold]")
         analysis_start_time = time.time()
@@ -430,115 +492,128 @@ async def main():
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
-            transient=True
+            transient=True,
         ) as progress:
             task = progress.add_task("Analyzing data...", total=None)
-            
+
             # Create analysis request with cleaned data
             analysis_request = RunAnalysisRequest(
                 # Convert list of datasets to dictionary with dataset names as keys
                 data={
-                    dataset['name']: dataset['data'] 
-                    for dataset in result['datasets']
+                    dataset["name"]: dataset["data"] for dataset in result["datasets"]
                 },
                 # Convert dictionary result to expected format
                 dictionary={
-                    dataset['name']: [
+                    dataset["name"]: [
                         {
-                            'column': col['column'],
-                            'description': col['description'],
-                            'data_type': col['data_type']
+                            "column": col["column"],
+                            "description": col["description"],
+                            "data_type": col["data_type"],
                         }
-                        for col in dataset.get('dictionary', [])
+                        for col in dataset.get("dictionary", [])
                     ]
-                    for dataset in dictionary_result.get('dictionaries', [])
+                    for dataset in dictionary_result.get("dictionaries", [])
                 },
-                question=chat_result.get('enhanced_user_message', selected_question)
+                question=chat_result.get("enhanced_user_message", selected_question),
             )
-            
+
             # Run analysis
             try:
                 analysis_result = await run_analysis(analysis_request)
                 progress.update(task, completed=True)
-                
+
                 # Display analysis execution details
                 console.print("\n[bold cyan]Analysis Execution Details:[/bold cyan]")
-                if 'metadata' in analysis_result:
-                    metadata = analysis_result['metadata']
-                    if 'code_generation' in metadata:
-                        console.print(f"Code Generation Attempts: {metadata['code_generation']['attempts']}")
-                        if metadata['code_generation']['validation_history']:
+                if "metadata" in analysis_result:
+                    metadata = analysis_result["metadata"]
+                    if "code_generation" in metadata:
+                        console.print(
+                            f"Code Generation Attempts: {metadata['code_generation']['attempts']}"
+                        )
+                        if metadata["code_generation"]["validation_history"]:
                             console.print("Validation History:")
-                            for idx, error in enumerate(metadata['code_generation']['validation_history'], 1):
+                            for idx, error in enumerate(
+                                metadata["code_generation"]["validation_history"], 1
+                            ):
                                 console.print(f"  {idx}. {error}")
-                    
-                    console.print(f"Datasets Analyzed: {metadata.get('datasets_analyzed', 'N/A')}")
-                    console.print(f"Total Rows Analyzed: {metadata.get('total_rows_analyzed', 'N/A')}")
-                    console.print(f"Total Columns Analyzed: {metadata.get('total_columns_analyzed', 'N/A')}")
-                    
-                    if 'execution_details' in metadata:
-                        if metadata['execution_details']['stdout']:
+
+                    console.print(
+                        f"Datasets Analyzed: {metadata.get('datasets_analyzed', 'N/A')}"
+                    )
+                    console.print(
+                        f"Total Rows Analyzed: {metadata.get('total_rows_analyzed', 'N/A')}"
+                    )
+                    console.print(
+                        f"Total Columns Analyzed: {metadata.get('total_columns_analyzed', 'N/A')}"
+                    )
+
+                    if "execution_details" in metadata:
+                        if metadata["execution_details"]["stdout"]:
                             console.print("\n[bold]Analysis Output:[/bold]")
-                            console.print(metadata['execution_details']['stdout'])
-                        if metadata['execution_details']['stderr']:
+                            console.print(metadata["execution_details"]["stdout"])
+                        if metadata["execution_details"]["stderr"]:
                             console.print("\n[bold red]Analysis Errors:[/bold red]")
-                            console.print(metadata['execution_details']['stderr'])
-            
+                            console.print(metadata["execution_details"]["stderr"])
+
             except Exception as e:
                 progress.update(task, completed=True)
-                console.print(f"\n[bold red]Analysis Failed:[/bold red]")
+                console.print("\n[bold red]Analysis Failed:[/bold red]")
                 console.print(f"Error: {str(e)}")
                 raise
 
         analysis_elapsed_time = time.time() - analysis_start_time
 
         # Display analysis results
-        if 'analysis_result' in locals():
+        if "analysis_result" in locals():
             console.print("\n[bold green]Analysis Results:[/bold green]")
-            
+
             # Display generated code in a clean format
-            if analysis_result.get('code'):
+            if analysis_result.get("code"):
                 console.print("\n[bold cyan]Generated Python Code:[/bold cyan]")
                 console.print("```python")
-                console.print(analysis_result['code'])
+                console.print(analysis_result["code"])
                 console.print("```")
-            
+
             # Display analysis summary if available
-            if analysis_result.get('summary'):
+            if analysis_result.get("summary"):
                 console.print("\n[bold cyan]Analysis Summary:[/bold cyan]")
-                console.print(analysis_result['summary'])
-            
+                console.print(analysis_result["summary"])
+
             # Display analysis data results in a clean table format
-            if 'data' in analysis_result and analysis_result['data']:
+            if "data" in analysis_result and analysis_result["data"]:
                 console.print("\n[bold cyan]Analysis Results Data:[/bold cyan]")
-                result_df = pd.DataFrame(analysis_result['data'])
-                
+                result_df = pd.DataFrame(analysis_result["data"])
+
                 # Format numeric columns to 2 decimal places
-                numeric_cols = result_df.select_dtypes(include=['float64', 'float32']).columns
+                numeric_cols = result_df.select_dtypes(
+                    include=["float64", "float32"]
+                ).columns
                 for col in numeric_cols:
                     result_df[col] = result_df[col].round(2)
-                
+
                 # Display with clean formatting
                 console.print(result_df.to_string(index=False))
-            
+
             # Display any visualizations or plots if available
-            if analysis_result.get('visualizations'):
+            if analysis_result.get("visualizations"):
                 console.print("\n[bold cyan]Visualizations:[/bold cyan]")
-                for viz in analysis_result['visualizations']:
+                for viz in analysis_result["visualizations"]:
                     console.print(f"\n{viz['title']}")
-                    console.print(viz['data'])
-            
+                    console.print(viz["data"])
+
             # Display any additional insights or recommendations
-            if analysis_result.get('insights'):
+            if analysis_result.get("insights"):
                 console.print("\n[bold cyan]Key Insights:[/bold cyan]")
-                for idx, insight in enumerate(analysis_result['insights'], 1):
+                for idx, insight in enumerate(analysis_result["insights"], 1):
                     console.print(f"{idx}. {insight}")
 
-        console.print(f"\n[cyan]Analysis time: {analysis_elapsed_time:.2f} seconds[/cyan]")
+        console.print(
+            f"\n[cyan]Analysis time: {analysis_elapsed_time:.2f} seconds[/cyan]"
+        )
 
         # Update the result dictionary to include analysis results
-        result['analysis_results'] = analysis_result
-        
+        result["analysis_results"] = analysis_result
+
         # Run business analysis
         console.print("\n[bold]Running Business Analysis...[/bold]")
         analysis_start_time = time.time()
@@ -546,60 +621,70 @@ async def main():
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
-            transient=True
+            transient=True,
         ) as progress:
             task = progress.add_task("Analyzing business implications...", total=None)
-            
+
             try:
                 # Create business analysis request with the analysis results
-                if 'data' in analysis_result and isinstance(analysis_result['data'], list):
+                if "data" in analysis_result and isinstance(
+                    analysis_result["data"], list
+                ):
                     business_request = BusinessAnalysisRequest(
-                        data=analysis_result['data'],
+                        data=analysis_result["data"],
                         dictionary=[
                             {
-                                'column': col['column'],
-                                'description': col['description'],
-                                'data_type': col['data_type']
+                                "column": col["column"],
+                                "description": col["description"],
+                                "data_type": col["data_type"],
                             }
-                            for dataset in dictionary_result.get('dictionaries', [])
-                            for col in dataset.get('dictionary', [])
+                            for dataset in dictionary_result.get("dictionaries", [])
+                            for col in dataset.get("dictionary", [])
                         ],
-                        question=chat_result.get('enhanced_user_message', selected_question)
+                        question=chat_result.get(
+                            "enhanced_user_message", selected_question
+                        ),
                     )
-                    
+
                     # Get business analysis
                     business_analysis = await get_business_analysis(business_request)
                     progress.update(task, completed=True)
 
                     # Display business analysis results
                     console.print("\n[bold green]Business Analysis:[/bold green]")
-                    
+
                     # Display The Bottom Line
                     console.print("\n[bold cyan]The Bottom Line:[/bold cyan]")
-                    console.print(business_analysis['bottom_line'])
-                    
+                    console.print(business_analysis["bottom_line"])
+
                     # Display Additional Insights
                     console.print("\n[bold cyan]Additional Insights:[/bold cyan]")
-                    console.print(business_analysis['additional_insights'])
-                    
+                    console.print(business_analysis["additional_insights"])
+
                     # Display Follow-up Questions
                     console.print("\n[bold cyan]Follow-up Questions:[/bold cyan]")
-                    for i, question in enumerate(business_analysis['follow_up_questions'], 1):
+                    for i, question in enumerate(
+                        business_analysis["follow_up_questions"], 1
+                    ):
                         console.print(f"{i}. {question}")
 
                     # Add business analysis to results
-                    result['business_analysis'] = business_analysis
+                    result["business_analysis"] = business_analysis
 
                 else:
-                    console.print("\n[yellow]Warning: Analysis results not in expected format for business analysis[/yellow]")
+                    console.print(
+                        "\n[yellow]Warning: Analysis results not in expected format for business analysis[/yellow]"
+                    )
 
             except Exception as e:
                 progress.update(task, completed=True)
-                console.print(f"\n[bold red]Business Analysis Failed:[/bold red]")
+                console.print("\n[bold red]Business Analysis Failed:[/bold red]")
                 console.print(f"Error: {str(e)}")
 
         analysis_elapsed_time = time.time() - analysis_start_time
-        console.print(f"\n[cyan]Business analysis time: {analysis_elapsed_time:.2f} seconds[/cyan]")
+        console.print(
+            f"\n[cyan]Business analysis time: {analysis_elapsed_time:.2f} seconds[/cyan]"
+        )
 
         # Run charts
         console.print("\n[bold]Generating Charts...[/bold]")
@@ -609,81 +694,97 @@ async def main():
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
-            transient=True
+            transient=True,
         ) as progress:
             task = progress.add_task("Creating visualizations...", total=None)
-            
+
             try:
                 # Get the analysis results data - this should be a list of dictionaries
-                analysis_data = analysis_result.get('data', [])
-                
+                analysis_data = analysis_result.get("data", [])
+
                 # Create charts request with the analysis results
                 charts_request = RunChartsRequest(
                     data=analysis_data,  # Pass the flat list of dictionaries directly
-                    question=chat_result.get('enhanced_user_message', selected_question)
+                    question=chat_result.get(
+                        "enhanced_user_message", selected_question
+                    ),
                 )
-                
+
                 # Run charts
                 charts_result = await run_charts(charts_request)
                 progress.update(task, completed=True)
 
                 # Display chart generation details
                 console.print("\n[bold cyan]Chart Generation Details:[/bold cyan]")
-                
+
                 # Display validation status
-                validation = charts_result['metadata']['validation']
-                console.print(f"\nValidation Status: [{'green' if validation['is_valid'] else 'red'}]{validation['message']}[/]")
-                
+                validation = charts_result["metadata"]["validation"]
+                console.print(
+                    f"\nValidation Status: [{'green' if validation['is_valid'] else 'red'}]{validation['message']}[/]"
+                )
+
                 # Display attempt information
-                console.print(f"\nTotal Attempts: {charts_result['metadata']['attempts']}")
-                
+                console.print(
+                    f"\nTotal Attempts: {charts_result['metadata']['attempts']}"
+                )
+
                 # Display any validation errors
-                if charts_result['metadata']['validation_errors']:
+                if charts_result["metadata"]["validation_errors"]:
                     console.print("\n[yellow]Validation Errors:[/yellow]")
-                    for error in charts_result['metadata']['validation_errors']:
-                        console.print(f"\nAttempt {error['attempt']} at {error['timestamp']}:")
+                    for error in charts_result["metadata"]["validation_errors"]:
+                        console.print(
+                            f"\nAttempt {error['attempt']} at {error['timestamp']}:"
+                        )
                         console.print(f"Error: {error['error']}")
                         console.print("\nCode that failed validation:")
                         console.print("```python")
-                        console.print(error['code'])
+                        console.print(error["code"])
                         console.print("```")
-                
+
                 # Display any execution errors
-                if charts_result['metadata']['execution_errors']:
+                if charts_result["metadata"]["execution_errors"]:
                     console.print("\n[red]Execution Errors:[/red]")
-                    for error in charts_result['metadata']['execution_errors']:
-                        console.print(f"\nAttempt {error['attempt']} at {error['timestamp']}:")
+                    for error in charts_result["metadata"]["execution_errors"]:
+                        console.print(
+                            f"\nAttempt {error['attempt']} at {error['timestamp']}:"
+                        )
                         console.print(f"Error Type: {error['error_type']}")
                         console.print(f"Error Message: {error['error_message']}")
-                        if error['stdout']:
+                        if error["stdout"]:
                             console.print("\nStandard Output:")
-                            console.print(error['stdout'])
-                        if error['stderr']:
+                            console.print(error["stdout"])
+                        if error["stderr"]:
                             console.print("\nStandard Error:")
-                            console.print(error['stderr'])
+                            console.print(error["stderr"])
                         console.print("\nCode that failed execution:")
                         console.print("```python")
-                        console.print(error['code'])
+                        console.print(error["code"])
                         console.print("```")
-                
+
                 # Display performance metrics
                 console.print("\n[cyan]Performance Metrics:[/cyan]")
-                memory_usage = charts_result['metadata']['performance']['memory_usage']
-                console.print(f"Memory Usage: {memory_usage['rss']:.2f}MB RSS, {memory_usage['vms']:.2f}MB VMS")
+                memory_usage = charts_result["metadata"]["performance"]["memory_usage"]
+                console.print(
+                    f"Memory Usage: {memory_usage['rss']:.2f}MB RSS, {memory_usage['vms']:.2f}MB VMS"
+                )
                 console.print(f"Memory Usage %: {memory_usage['percent']:.2f}%")
-                console.print(f"Total Time: {charts_result['metadata']['performance']['total_time']:.2f} seconds")
-                
+                console.print(
+                    f"Total Time: {charts_result['metadata']['performance']['total_time']:.2f} seconds"
+                )
+
                 # Display final code if successful
-                if charts_result['code']:
+                if charts_result["code"]:
                     console.print("\n[bold cyan]Final Generated Code:[/bold cyan]")
                     console.print("```python")
-                    console.print(charts_result['code'])
+                    console.print(charts_result["code"])
                     console.print("```")
 
                 # Open charts in browser if both figures are available
-                if charts_result.get('fig1') and charts_result.get('fig2'):
-                    console.print("\n[bold cyan]Opening Charts in Browser...[/bold cyan]")
-                    
+                if charts_result.get("fig1") and charts_result.get("fig2"):
+                    console.print(
+                        "\n[bold cyan]Opening Charts in Browser...[/bold cyan]"
+                    )
+
                     try:
                         # Create a temporary HTML file for the charts
                         html_content = f"""
@@ -714,218 +815,247 @@ async def main():
                         </body>
                         </html>
                         """
-                        
+
                         # Save and open the HTML file
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                         html_file = f"analysis_charts_{timestamp}.html"
-                        
-                        with open(html_file, 'w', encoding='utf-8') as f:
+
+                        with open(html_file, "w", encoding="utf-8") as f:
                             f.write(html_content)
-                        
+
                         # Open in default browser
                         import webbrowser
-                        webbrowser.open(f'file://{os.path.abspath(html_file)}')
+
+                        webbrowser.open(f"file://{os.path.abspath(html_file)}")
                         console.print(f"Charts saved to: {html_file}")
-                        
+
                     except Exception as e:
-                        console.print(f"\n[red]Error saving/opening charts: {str(e)}[/red]")
+                        console.print(
+                            f"\n[red]Error saving/opening charts: {str(e)}[/red]"
+                        )
                 else:
-                    console.print("\n[yellow]Warning: One or both charts were not generated successfully[/yellow]")
-                    
+                    console.print(
+                        "\n[yellow]Warning: One or both charts were not generated successfully[/yellow]"
+                    )
+
             except Exception as e:
                 progress.update(task, completed=True)
-                console.print(f"\n[bold red]Chart Generation Failed:[/bold red]")
-                
+                console.print("\n[bold red]Chart Generation Failed:[/bold red]")
+
                 # Check if we have detailed error context
-                if hasattr(e, 'detail') and isinstance(e.detail, dict):
-                    error_context = e.detail.get('context', {})
-                    
-                    console.print(f"\nError Type: {error_context.get('error_type', 'Unknown')}")
-                    console.print(f"Error Message: {error_context.get('error_message', str(e))}")
-                    
+                if hasattr(e, "detail") and isinstance(e.detail, dict):
+                    error_context = e.detail.get("context", {})
+
+                    console.print(
+                        f"\nError Type: {error_context.get('error_type', 'Unknown')}"
+                    )
+                    console.print(
+                        f"Error Message: {error_context.get('error_message', str(e))}"
+                    )
+
                     # Display validation errors if any
-                    if error_context.get('validation_errors'):
+                    if error_context.get("validation_errors"):
                         console.print("\n[yellow]Validation Errors:[/yellow]")
-                        for error in error_context['validation_errors']:
+                        for error in error_context["validation_errors"]:
                             console.print(f"\nAttempt {error['attempt']}:")
                             console.print(f"Error: {error['error']}")
-                    
+
                     # Display execution errors if any
-                    if error_context.get('execution_errors'):
+                    if error_context.get("execution_errors"):
                         console.print("\n[red]Execution Errors:[/red]")
-                        for error in error_context['execution_errors']:
+                        for error in error_context["execution_errors"]:
                             console.print(f"\nAttempt {error['attempt']}:")
                             console.print(f"Error Type: {error['error_type']}")
                             console.print(f"Error Message: {error['error_message']}")
-                    
+
                     # Display code history if available
-                    if error_context.get('code_history'):
+                    if error_context.get("code_history"):
                         console.print("\n[cyan]Code History:[/cyan]")
-                        for attempt in error_context['code_history']:
-                            console.print(f"\nAttempt {attempt['attempt']} at {attempt['timestamp']}:")
+                        for attempt in error_context["code_history"]:
+                            console.print(
+                                f"\nAttempt {attempt['attempt']} at {attempt['timestamp']}:"
+                            )
                             console.print("```python")
-                            console.print(attempt['code'])
+                            console.print(attempt["code"])
                             console.print("```")
                 else:
                     console.print(f"Error: {str(e)}")
 
         charts_elapsed_time = time.time() - charts_start_time
-        console.print(f"\n[cyan]Chart generation time: {charts_elapsed_time:.2f} seconds[/cyan]")
+        console.print(
+            f"\n[cyan]Chart generation time: {charts_elapsed_time:.2f} seconds[/cyan]"
+        )
 
         # Add loop for follow-up questions
         while True:
             # Get follow-up questions from business analysis if available
             follow_up_questions = []
-            if 'business_analysis' in result and 'follow_up_questions' in result['business_analysis']:
-                follow_up_questions = result['business_analysis']['follow_up_questions']
+            if (
+                "business_analysis" in result
+                and "follow_up_questions" in result["business_analysis"]
+            ):
+                follow_up_questions = result["business_analysis"]["follow_up_questions"]
 
             # Create question selection prompt
             questions = [
                 InquirerList(
-                    'selected_question',
+                    "selected_question",
                     message="Would you like to analyze another question?",
                     choices=[
                         *[f"{i+1}. {q}" for i, q in enumerate(follow_up_questions)],
                         f"{len(follow_up_questions) + 1}. Enter my own question",
-                        f"{len(follow_up_questions) + 2}. Exit"
-                    ]
+                        f"{len(follow_up_questions) + 2}. Exit",
+                    ],
                 )
             ]
-            
+
             answer = inquirer.prompt(questions)
-            
+
             # Check if user wants to exit
-            if answer['selected_question'].endswith("Exit"):
+            if answer["selected_question"].endswith("Exit"):
                 break
-                
+
             # Get the new question
-            if answer['selected_question'].startswith(f"{len(follow_up_questions) + 1}."):
+            if answer["selected_question"].startswith(
+                f"{len(follow_up_questions) + 1}."
+            ):
                 custom_question = [
-                    inquirer.Text('custom',
-                                message="Enter your analysis question")
+                    inquirer.Text("custom", message="Enter your analysis question")
                 ]
                 custom_answer = inquirer.prompt(custom_question)
-                selected_question = custom_answer['custom']
+                selected_question = custom_answer["custom"]
             else:
                 # Extract the question text from the selected option
-                selected_question = answer['selected_question'].split('. ', 1)[1]
-            
-            console.print(f"\n[bold cyan]Selected Question:[/bold cyan] {selected_question}")
-            
+                selected_question = answer["selected_question"].split(". ", 1)[1]
+
+            console.print(
+                f"\n[bold cyan]Selected Question:[/bold cyan] {selected_question}"
+            )
+
             # Run the analysis cycle again with the new question
             # Chat enhancement
             console.print("\n[bold]Enhancing question with chat analysis...[/bold]")
-            
+
             # Create chat history table
-            history_table = Table(show_header=True, header_style="bold magenta", show_lines=True)
+            history_table = Table(
+                show_header=True, header_style="bold magenta", show_lines=True
+            )
             history_table.add_column("Original Question", style="cyan")
             history_table.add_column("Enhanced Question", style="yellow")
-            
+
             # Add previous questions to history if they exist
-            if 'question_history' not in result:
-                result['question_history'] = []
-            
+            if "question_history" not in result:
+                result["question_history"] = []
+
             # Display question history
-            if result['question_history']:
+            if result["question_history"]:
                 console.print("\n[bold cyan]Question History:[/bold cyan]")
-                for hist in result['question_history']:
-                    history_table.add_row(
-                        hist['original'],
-                        hist['enhanced']
-                    )
+                for hist in result["question_history"]:
+                    history_table.add_row(hist["original"], hist["enhanced"])
                 console.print(history_table)
-            
+
             # Create chat request with history context
             chat_messages = []
             # Add history context if available
-            for hist in result['question_history'][-2:]:  # Include last 2 questions for context
-                chat_messages.extend([
-                    {"role": "user", "content": hist['original']},
-                    {"role": "assistant", "content": hist['enhanced']}
-                ])
+            for hist in result["question_history"][
+                -2:
+            ]:  # Include last 2 questions for context
+                chat_messages.extend(
+                    [
+                        {"role": "user", "content": hist["original"]},
+                        {"role": "assistant", "content": hist["enhanced"]},
+                    ]
+                )
             # Add current question
             chat_messages.append({"role": "user", "content": selected_question})
-            
+
             chat_request = ChatRequest(messages=chat_messages)
             chat_result = await chat(chat_request)
-            
+
             # Add new question to history
-            result['question_history'].append({
-                'original': selected_question,
-                'enhanced': chat_result.get('enhanced_user_message', selected_question),
-                'timestamp': datetime.now().isoformat()
-            })
-            
+            result["question_history"].append(
+                {
+                    "original": selected_question,
+                    "enhanced": chat_result.get(
+                        "enhanced_user_message", selected_question
+                    ),
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
+
             # Display current question enhancement
             console.print("\n[bold cyan]Current Question Enhancement:[/bold cyan]")
-            current_table = Table(show_header=True, header_style="bold magenta", show_lines=True)
+            current_table = Table(
+                show_header=True, header_style="bold magenta", show_lines=True
+            )
             current_table.add_column("Original Question", style="cyan")
             current_table.add_column("Enhanced Question", style="yellow")
             current_table.add_row(
                 selected_question,
-                chat_result.get('enhanced_user_message', selected_question)
+                chat_result.get("enhanced_user_message", selected_question),
             )
             console.print(current_table)
-            
+
             # Run analysis
             console.print("\n[bold]Running Analysis...[/bold]")
             analysis_request = RunAnalysisRequest(
                 data={
-                    dataset['name']: dataset['data'] 
-                    for dataset in result['datasets']
+                    dataset["name"]: dataset["data"] for dataset in result["datasets"]
                 },
                 dictionary={
-                    dataset['name']: [
+                    dataset["name"]: [
                         {
-                            'column': col['column'],
-                            'description': col['description'],
-                            'data_type': col['data_type']
+                            "column": col["column"],
+                            "description": col["description"],
+                            "data_type": col["data_type"],
                         }
-                        for col in dataset.get('dictionary', [])
+                        for col in dataset.get("dictionary", [])
                     ]
-                    for dataset in dictionary_result.get('dictionaries', [])
+                    for dataset in dictionary_result.get("dictionaries", [])
                 },
-                question=chat_result.get('enhanced_user_message', selected_question)
+                question=chat_result.get("enhanced_user_message", selected_question),
             )
-            
+
             analysis_result = await run_analysis(analysis_request)
-            
+
             # Run business analysis
-            if 'data' in analysis_result and isinstance(analysis_result['data'], list):
+            if "data" in analysis_result and isinstance(analysis_result["data"], list):
                 business_request = BusinessAnalysisRequest(
-                    data=analysis_result['data'],
+                    data=analysis_result["data"],
                     dictionary=[
                         {
-                            'column': col['column'],
-                            'description': col['description'],
-                            'data_type': col['data_type']
+                            "column": col["column"],
+                            "description": col["description"],
+                            "data_type": col["data_type"],
                         }
-                        for dataset in dictionary_result.get('dictionaries', [])
-                        for col in dataset.get('dictionary', [])
+                        for dataset in dictionary_result.get("dictionaries", [])
+                        for col in dataset.get("dictionary", [])
                     ],
-                    question=chat_result.get('enhanced_user_message', selected_question)
+                    question=chat_result.get(
+                        "enhanced_user_message", selected_question
+                    ),
                 )
-                
+
                 business_analysis = await get_business_analysis(business_request)
-                
+
                 # Display business analysis results
                 console.print("\n[bold green]Business Analysis:[/bold green]")
                 console.print("\n[bold cyan]The Bottom Line:[/bold cyan]")
-                console.print(business_analysis['bottom_line'])
+                console.print(business_analysis["bottom_line"])
                 console.print("\n[bold cyan]Additional Insights:[/bold cyan]")
-                console.print(business_analysis['additional_insights'])
-            
+                console.print(business_analysis["additional_insights"])
+
             # Run charts
             console.print("\n[bold]Generating Charts...[/bold]")
             charts_request = RunChartsRequest(
-                data=analysis_result.get('data', []),
-                question=chat_result.get('enhanced_user_message', selected_question)
+                data=analysis_result.get("data", []),
+                question=chat_result.get("enhanced_user_message", selected_question),
             )
-            
+
             charts_result = await run_charts(charts_request)
-            
+
             # Display and save charts as before
-            if charts_result.get('fig1') and charts_result.get('fig2'):
+            if charts_result.get("fig1") and charts_result.get("fig2"):
                 # ... (keep existing chart display code) ...
                 try:
                     html_content = f"""
@@ -956,49 +1086,49 @@ async def main():
                     </body>
                     </html>
                     """
-                    
+
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     html_file = f"analysis_charts_{timestamp}.html"
-                    
-                    with open(html_file, 'w', encoding='utf-8') as f:
+
+                    with open(html_file, "w", encoding="utf-8") as f:
                         f.write(html_content)
-                    
+
                     import webbrowser
-                    webbrowser.open(f'file://{os.path.abspath(html_file)}')
+
+                    webbrowser.open(f"file://{os.path.abspath(html_file)}")
                     console.print(f"Charts saved to: {html_file}")
-                    
+
                 except Exception as e:
                     console.print(f"\n[red]Error saving/opening charts: {str(e)}[/red]")
 
         # Save final results
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         result_file = f"cleansing_results_{timestamp}.json"
-        
-        with open(result_file, 'w') as f:
+
+        with open(result_file, "w") as f:
             json.dump(result, f, indent=2, default=serialize_result)
         console.print(f"\nDetailed results saved to: {result_file}")
-    
+
     total_elapsed_time = time.time() - start_time
-    console.print(f"\n[cyan]Total execution time: {total_elapsed_time:.2f} seconds[/cyan]")
+    console.print(
+        f"\n[cyan]Total execution time: {total_elapsed_time:.2f} seconds[/cyan]"
+    )
+
 
 def serialize_result(obj):
     """Convert non-serializable objects to serializable format"""
     if isinstance(obj, go.Figure):
-        return {
-            "type": "plotly_figure",
-            "data": obj.to_dict()
-        }
+        return {"type": "plotly_figure", "data": obj.to_dict()}
     elif isinstance(obj, pd.DataFrame):
-        return {
-            "type": "dataframe",
-            "data": obj.to_dict('records')
-        }
+        return {"type": "dataframe", "data": obj.to_dict("records")}
     elif isinstance(obj, np.ndarray):
         return obj.tolist()
     elif isinstance(obj, (pd.Timestamp, datetime)):
         return obj.isoformat()
     return str(obj)
 
+
 if __name__ == "__main__":
     import asyncio
-    asyncio.run(main()) 
+
+    asyncio.run(main())
