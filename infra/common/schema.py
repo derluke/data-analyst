@@ -15,14 +15,70 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, Tuple, Type
 
+import pulumi
 import pulumi_datarobot as datarobot
-from pydantic import BaseModel, ConfigDict
-
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 from .globals import (
     GlobalPredictionEnvironmentPlatforms,
 )
+
+
+class GenAIDeploymentType(str, Enum):
+    DIY = "diy"
+    DR = "dr"
+
+
+class GenAIBuzokDeploymentType(str, Enum):
+    MSFT = "azure"
+    GOOG = "google"
+    AMZN = "amazon"
+    ANTH = "anthropic"
+    OAI = "openai"
+
+
+class CoreSettings(BaseSettings):
+    """Schema for core settings that can also be overridden by environment variables
+
+    e.g. for running automated tests.
+    """
+
+    genai_deployment_type: GenAIDeploymentType = Field(
+        description="Whether to create generative AI deployment from DR Playground or custom model",
+    )
+    genai_buzok_deployment_type: GenAIBuzokDeploymentType = Field(
+        description="If genai_deployment_type is 'dr', specify the generative AI deployment type",
+    )
+
+    model_config = SettingsConfigDict(env_prefix="MAIN_", case_sensitive=False)
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: Type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> Tuple[PydanticBaseSettingsSource, ...]:
+        return (
+            env_settings,
+            init_settings,
+        )
+
+
+class UseCaseArgs(BaseModel):
+    resource_name: str
+    name: str | None = None
+    description: str | None = None
+    opts: Optional[pulumi.ResourceOptions] = None
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class Stage(str, Enum):

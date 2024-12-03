@@ -15,53 +15,20 @@
 from __future__ import annotations
 
 import os
-from enum import Enum
-from typing import Tuple, Type
 
-from pydantic import Field
-from pydantic_settings import (
-    BaseSettings,
-    PydanticBaseSettingsSource,
-    SettingsConfigDict,
+from .common.globals import GlobalPredictionEnvironmentPlatforms
+from .common.schema import (
+    CoreSettings,
+    PredictionEnvironmentArgs,
+    UseCaseArgs,
 )
-
-from infra.common.stack import get_stack
-
-
-class DbType(str, Enum):
-    DBX = "databricks"
-    SNOW = "snowflake"
-
-
-class CoreSettings(BaseSettings):
-    """Schema for core settings that can also be overridden by environment variables
-
-    e.g. for running automated tests.
-    """
-
-    database_type: str = Field(
-        description="Local path to zip file of pdf, txt, docx, md files to use with RAG",
-    )
-    model_config = SettingsConfigDict(env_prefix="MAIN_", case_sensitive=False)
-
-    @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls: Type[BaseSettings],
-        init_settings: PydanticBaseSettingsSource,
-        env_settings: PydanticBaseSettingsSource,
-        dotenv_settings: PydanticBaseSettingsSource,
-        file_secret_settings: PydanticBaseSettingsSource,
-    ) -> Tuple[PydanticBaseSettingsSource, ...]:
-        return (
-            env_settings,
-            init_settings,
-        )
+from .common.stack import get_stack
 
 
 # Core settings are overridable by environment variables; env values take precedence
 core = CoreSettings(
-    database_type=DbType.SNOW,
+    genai_deployment_type="diy",
+    genai_buzok_deployment_type="azure",
 )
 
 project_name = get_stack()
@@ -70,3 +37,14 @@ default_prediction_server_id = os.getenv("DATAROBOT_PREDICTION_ENVIRONMENT_ID", 
 prediction_environment_resource_name = (
     f"Data Analyst Prediction Environment [{project_name}]"
 )
+
+
+prediction_environment_args = PredictionEnvironmentArgs(
+    resource_name=f"Data Analyst Prediction Environment [{project_name}]",
+    platform=GlobalPredictionEnvironmentPlatforms.DATAROBOT_SERVERLESS,
+).model_dump(mode="json", exclude_none=True)
+
+use_case_args = UseCaseArgs(
+    resource_name=f"Data Analyst Use Case [{project_name}]",
+    description="Use case for Data Analyst application",
+).model_dump(exclude_none=True)

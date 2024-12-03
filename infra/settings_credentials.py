@@ -12,39 +12,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from dataanalyst.credentials import (
-    AzureOpenAICredentials,
-    DatabricksCredentials,
-    SnowflakeCredentials,
-)
+from application.credentials import AzureOpenAICredentials, GoogleLLMCredentials
 
 from .common.schema import (
     CredentialArgs,
 )
 from .settings_main import core, project_name
 
-try:
-    llm_credential = AzureOpenAICredentials()
-    llm_credential.test()
-except ValidationError as e:
-    raise ValueError(
-        "Unable to load LLM credentials. "
-        "Verify you have setup your environment variables as described in README.md."
-    ) from e
+
+def set_credential(credential_type: BaseModel) -> BaseModel:
+    try:
+        credential = credential_type()
+        credential.test()
+    except ValidationError as e:
+        raise ValueError(
+            "Unable to load credentials. "
+            "Verify you have setup your environment variables as described in README.md."
+        ) from e
+    return credential
+
 
 llm_credential_args = CredentialArgs(
     resource_name=f"Data Analyst LLM Credential [{project_name}]",
 )
 
-if core.database_type == "databricks":
-    db_credential = DatabricksCredentials()
-    db_credential_args = CredentialArgs(
-        resource_name=f"Data Analyst Databricks Credential [{project_name}]",
-    )
-elif core.database_type == "snowflake":
-    db_credential = SnowflakeCredentials()
-    db_credential_args = CredentialArgs(
-        resource_name=f"Data Analyst Snowflake Credential [{project_name}]",
+if core.genai_buzok_deployment_type == "azure":
+    llm_credential = set_credential(AzureOpenAICredentials)
+elif core.genai_buzok_deployment_type == "google":
+    llm_credential = set_credential(GoogleLLMCredentials)
+else:
+    raise NotImplementedError(
+        "Only Azure and Google LLM credentials are currently supported."
     )

@@ -1,5 +1,5 @@
 name: {{ custom_model_name }}
 type: inference
-targetType: textgeneration
+targetType: {{ target_type | lower }}
 runtimeParameterDefinitions:
 {{ runtime_parameters }}
