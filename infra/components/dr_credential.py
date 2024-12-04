@@ -18,13 +18,10 @@ from typing import List, Optional, Union
 import pulumi
 import pulumi_datarobot as datarobot
 
-from dataanalyst.credentials import (
+from application.credentials import (
     AzureOpenAICredentials,
-    DatabricksCredentials,
+    GoogleLLMCredentials,
     LLMCredentials,
-    SnowflakeCredentials,
-    databricksCredentials,
-    snowflakeCredentials,
 )
 
 from ..common.schema import (
@@ -41,7 +38,7 @@ class DRCredential(pulumi.ComponentResource):
     def __init__(
         self,
         resource_name: str,
-        credential: Union[LLMCredentials, databricksCredentials, snowflakeCredentials],
+        credential: Union[LLMCredentials],
         credential_args: CredentialArgs,
         opts: Optional[pulumi.ResourceOptions] = None,
     ):
@@ -53,19 +50,6 @@ class DRCredential(pulumi.ComponentResource):
             self.credential = datarobot.ApiTokenCredential(
                 **credential_args.model_dump(),
                 api_token=credential.api_key,  # type: ignore[union-attr]
-                opts=pulumi.ResourceOptions(parent=self),
-            )
-        elif isinstance(self.credential_raw, DatabricksCredentials):
-            self.credential = datarobot.ApiTokenCredential(
-                **credential_args.model_dump(),
-                api_token=credential.access_token,  # type: ignore[union-attr]
-                opts=pulumi.ResourceOptions(parent=self),
-            )
-        elif isinstance(self.credential_raw, SnowflakeCredentials):
-            self.credential = datarobot.BasicCredential(
-                **credential_args.model_dump(),
-                user=credential.user,  # type: ignore[union-attr]
-                password=credential.password,  # type: ignore[union-attr]
                 opts=pulumi.ResourceOptions(parent=self),
             )
         else:
@@ -103,32 +87,6 @@ class DRCredential(pulumi.ComponentResource):
                     ),
                 ]
             ]
-        elif isinstance(self.credential_raw, DatabricksCredentials):
-            runtime_parameter_values = [
-                datarobot.CustomModelRuntimeParameterValueArgs(
-                    key=key,
-                    type=type_,
-                    value=value,  # type: ignore[arg-type]
-                )
-                for key, type_, value in [
-                    ("DATABRICKS_HOST_NAME", "string", self.credential_raw.host_name),
-                    ("DATABRICKS_ACCESS_TOKEN", "credential", self.credential.id),
-                    ("DATABRICKS_HTTP_PATH", "string", self.credential_raw.http_path),
-                ]
-            ]
-        elif isinstance(self.credential_raw, SnowflakeCredentials):
-            runtime_parameter_values = [
-                datarobot.CustomModelRuntimeParameterValueArgs(
-                    key=key,
-                    type=type_,
-                    value=value,  # type: ignore[arg-type]
-                )
-                for key, type_, value in [
-                    ("SNOWFLAKE_USER", "credential", self.credential.user),
-                    ("SNOWFLAKE_PASSWORD", "credential", self.credential.password),
-                    ("SNOWFLAKE_ACCOUNT", "string", self.credential_raw.account),
-                ]
-            ]
         else:
             raise NotImplementedError("Unsupported credential type")
         return runtime_parameter_values
@@ -160,51 +118,6 @@ class DRCredential(pulumi.ComponentResource):
                         "OPENAI_API_VERSION",
                         "string",
                         json.dumps({"payload": self.credential_raw.api_version}),
-                    ),
-                ]
-            ]
-        elif isinstance(self.credential_raw, DatabricksCredentials):
-            runtime_parameter_values = [
-                datarobot.ApplicationSourceRuntimeParameterValueArgs(
-                    key=key,
-                    type=type_,
-                    value=value,  # type: ignore[arg-type]
-                )
-                for key, type_, value in [
-                    (
-                        "DATABRICKS_HOST_NAME",
-                        "string",
-                        json.dumps({"payload": self.credential_raw.host_name}),
-                    ),
-                    (
-                        "DATABRICKS_ACCESS_TOKEN",
-                        "credential",
-                        self.credential.id,
-                    ),
-                    (
-                        "DATABRICKS_HTTP_PATH",
-                        "string",
-                        json.dumps({"payload": self.credential_raw.http_path}),
-                    ),
-                ]
-            ]
-        elif isinstance(self.credential_raw, SnowflakeCredentials):
-            runtime_parameter_values = [
-                datarobot.ApplicationSourceRuntimeParameterValueArgs(
-                    key=key,
-                    type=type_,
-                    value=value,  # type: ignore[arg-type]
-                )
-                for key, type_, value in [
-                    (
-                        "db_credential",
-                        "credential",
-                        self.credential.id,
-                    ),
-                    (
-                        "SNOWFLAKE_ACCOUNT",
-                        "string",
-                        json.dumps({"payload": self.credential_raw.account}),
                     ),
                 ]
             ]
