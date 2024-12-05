@@ -32,6 +32,7 @@ from infra.common.globals import GlobalRuntimeEnvironment
 from infra.common.urls import get_deployment_url
 from infra.components.custom_model_deployment import CustomModelDeployment
 from infra.components.dr_credential import DRCredential
+from infra.components.rag_custom_model import PlaygroundCustomModel
 
 check_feature_flags(pathlib.Path("infra/feature_flag_requirements.yaml"))
 
@@ -59,29 +60,42 @@ else:
     )
 
 # Make a credential
+credential_resource_provider = settings_main.core.genai_deployment_provider.title()
 llm_credential = DRCredential(
-    resource_name=f"Azure LLM Credentials [{settings_main.project_name}]",
+    resource_name=f"{credential_resource_provider} LLM Credentials [{settings_main.project_name}]",
     credential=credentials.llm_credential,
     credential_args=credentials.llm_credential_args,
 )
 
-# Custom model
-chat_agent_custom_model = datarobot.CustomModel(
-    files=settings_chat_agent.get_files(
+if settings_main.core.genai_deployment_type == "diy":
+    # Custom model
+    chat_agent_custom_model = datarobot.CustomModel(
+        files=settings_chat_agent.get_files(
+            runtime_parameter_values=llm_credential.runtime_parameter_values,
+        ),
         runtime_parameter_values=llm_credential.runtime_parameter_values,
-    ),
-    runtime_parameter_values=llm_credential.runtime_parameter_values,
-    **settings_chat_agent.custom_model_args.model_dump(mode="json", exclude_none=True),
-)
+        **settings_chat_agent.custom_model_args.model_dump(
+            mode="json", exclude_none=True
+        ),
+    )
 
-
-chat_agent_deployment = CustomModelDeployment(
-    resource_name=f"Chat Agent Custom Model Deployment [{settings_main.project_name}]",
-    custom_model_version_id=chat_agent_custom_model.version_id,
-    registered_model_args=settings_chat_agent.registered_model_args,
-    prediction_environment=prediction_environment,
-    deployment_args=settings_chat_agent.deployment_args,
-)
+    chat_agent_deployment = CustomModelDeployment(
+        resource_name=f"Chat Agent Custom Model Deployment [{settings_main.project_name}]",
+        custom_model_version_id=chat_agent_custom_model.version_id,
+        registered_model_args=settings_chat_agent.registered_model_args,
+        prediction_environment=prediction_environment,
+        deployment_args=settings_chat_agent.deployment_args,
+    )
+elif settings_main.core.genai_deployment_type == "dr":
+    rag_custom_model = PlaygroundCustomModel(
+        resource_name=f"Guarded RAG Prep [{settings_main.project_name}]",
+        use_case=use_case,
+        playground_args=settings_chat_agent.playground_args,
+        llm_blueprint_args=settings_chat_agent.llm_blueprint_args,
+        runtime_parameter_values=llm_credential.runtime_parameter_values,
+        guard_configurations=settings_chat_agent,
+        custom_model_args=settings_chat_agent.custom_model_args,
+    )
 
 
 app_runtime_parameters = [
@@ -89,7 +103,7 @@ app_runtime_parameters = [
         key=chat_agent_deployment_env_name,
         type="deployment",
         value=chat_agent_deployment.id,
-    ),
+    )
 ]
 
 # app_source = datarobot.ApplicationSource(
@@ -108,7 +122,7 @@ app_runtime_parameters = [
 
 # app.id.apply(settings_app_infra.ensure_app_settings)
 
-# Generator output
+# Chat Agent output
 pulumi.export(chat_agent_deployment_env_name, chat_agent_deployment.id)
 pulumi.export(
     settings_chat_agent.deployment_args.resource_name,

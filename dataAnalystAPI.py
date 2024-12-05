@@ -23,7 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from openai import OpenAI
 from plotly.subplots import make_subplots
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, field_validator, validator
 
 # Load environment variables
 env_path = Path(os.getcwd()) / ".env"
@@ -414,7 +414,7 @@ class CleanseResponse(BaseModel):
 class DictionaryRequest(BaseModel):
     data: List[Dict[str, Any]]
 
-    @validator("data")
+    @field_validator("data")
     def validate_data(cls, v):
         if not isinstance(v, list):
             raise ValueError("Input data must be a list of dictionaries")
@@ -1613,9 +1613,9 @@ async def run_charts(request: RunChartsRequest) -> Dict[str, Any]:
         error_context = {
             "error_type": type(e).__name__,
             "error_message": str(e),
-            "validation_errors": result.validation_errors
-            if "result" in locals()
-            else [],
+            "validation_errors": (
+                result.validation_errors if "result" in locals() else []
+            ),
             "execution_errors": result.execution_errors if "result" in locals() else [],
             "code_history": result.code_history if "result" in locals() else [],
             "timestamp": datetime.now().isoformat(),
@@ -2059,9 +2059,11 @@ async def run_analysis(request: RunAnalysisRequest) -> Dict[str, Any]:
                 # If we get here, execution was successful
                 return {
                     "code": code_result.code,
-                    "data": result.to_dict("records")
-                    if isinstance(result, pd.DataFrame)
-                    else result,
+                    "data": (
+                        result.to_dict("records")
+                        if isinstance(result, pd.DataFrame)
+                        else result
+                    ),
                     "metadata": {
                         "execution_time": datetime.now().isoformat(),
                         "code_generation": {

@@ -22,6 +22,41 @@ from pydantic_settings import (
 )
 
 
+class OpenAICredentials(BaseSettings):
+    """LLM credentials auto-constructed using environment variables."""
+
+    api_key: str = Field(
+        validation_alias=AliasChoices(
+            AliasPath("MLOPS_RUNTIME_PARAM_OPENAI_API_KEY", "payload", "apiToken"),
+            "OPENAI_API_KEY",
+        )
+    )
+    deployment: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            AliasPath("MLOPS_RUNTIME_PARAM_OPENAI_API_DEPLOYMENT_ID", "payload"),
+            "OPENAI_API_DEPLOYMENT_ID",
+        ),
+    )
+
+    def test(self, model: str | None = None) -> None:
+        import openai
+
+        try:
+            client = openai.OpenAI(
+                api_key=self.api_key,
+            )
+            client.chat.completions.create(
+                messages=[{"role": "user", "content": "hello"}],
+                model=model or self.deployment,  # type: ignore[arg-type]
+            )
+        except Exception as e:
+            raise ValueError(
+                f"Unable to run a successful test completion against model '{model}' "
+                "with provided OpenAI credentials. Please validate your credentials."
+            ) from e
+
+
 class AzureOpenAICredentials(BaseSettings):
     """LLM credentials auto-constructed using environment variables."""
 
@@ -114,8 +149,8 @@ class GoogleLLMCredentials(BaseSettings):
         except Exception as e:
             raise ValueError(
                 f"Unable to run a successful test completion against model '{model}' "
-                "with provided Azure OpenAI credentials. Please validate your credentials."
+                "with provided Google AI credentials. Please validate your credentials."
             ) from e
 
 
-LLMCredentials = Union[AzureOpenAICredentials, GoogleLLMCredentials]
+LLMCredentials = Union[OpenAICredentials, AzureOpenAICredentials, GoogleLLMCredentials]

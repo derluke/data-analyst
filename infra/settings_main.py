@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import os
 
-from .common.globals import GlobalPredictionEnvironmentPlatforms
+from .common.globals import GlobalPredictionEnvironmentPlatforms, GlobalLLM
 from .common.schema import (
+    GenAIBuzokDeploymentType,
+    GenAIDeploymentType,
     CoreSettings,
     PredictionEnvironmentArgs,
     UseCaseArgs,
@@ -27,8 +29,9 @@ from .common.stack import get_stack
 
 # Core settings are overridable by environment variables; env values take precedence
 core = CoreSettings(
-    genai_deployment_type="diy",
-    genai_buzok_deployment_type="azure",
+    genai_deployment_type=GenAIDeploymentType.DIY,
+    genai_deployment_provider=GenAIBuzokDeploymentType.AZ,
+    genai_deployment_name_buzok=GlobalLLM.AZURE_OPENAI_GPT_4_TURBO,
 )
 
 project_name = get_stack()

@@ -83,7 +83,7 @@ class DynamicSettings(BaseSettings):
         )
 
 
-chat_agent_deployment_env_name: str = "GENERATOR_DEPLOYMENT_ID"
+chat_agent_deployment_env_name: str = "CHAT_AGENT_DEPLOYMENT_ID"
 
 
 class ChatAgentDeployment(DynamicSettings):

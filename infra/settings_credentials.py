@@ -14,7 +14,11 @@
 
 from pydantic import BaseModel, ValidationError
 
-from application.credentials import AzureOpenAICredentials, GoogleLLMCredentials
+from application.credentials import (
+    AzureOpenAICredentials,
+    GoogleLLMCredentials,
+    OpenAICredentials,
+)
 
 from .common.schema import (
     CredentialArgs,
@@ -38,10 +42,12 @@ llm_credential_args = CredentialArgs(
     resource_name=f"Data Analyst LLM Credential [{project_name}]",
 )
 
-if core.genai_buzok_deployment_type == "azure":
+if core.genai_deployment_provider == "azure":
     llm_credential = set_credential(AzureOpenAICredentials)
-elif core.genai_buzok_deployment_type == "google":
+elif core.genai_deployment_provider == "google":
     llm_credential = set_credential(GoogleLLMCredentials)
+elif core.genai_deployment_provider == "openai":
+    llm_credential = set_credential(OpenAICredentials)
 else:
     raise NotImplementedError(
         "Only Azure and Google LLM credentials are currently supported."

@@ -17,6 +17,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Optional, Tuple, Type
 
+from datarobot.enums import VectorDatabaseChunkingMethod, VectorDatabaseEmbeddingModel
 import pulumi
 import pulumi_datarobot as datarobot
 from pydantic import BaseModel, ConfigDict, Field
@@ -25,9 +26,8 @@ from pydantic_settings import (
     PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
-from .globals import (
-    GlobalPredictionEnvironmentPlatforms,
-)
+
+from .globals import GlobalPredictionEnvironmentPlatforms, GlobalLLM
 
 
 class GenAIDeploymentType(str, Enum):
@@ -36,7 +36,7 @@ class GenAIDeploymentType(str, Enum):
 
 
 class GenAIBuzokDeploymentType(str, Enum):
-    MSFT = "azure"
+    AZ = "azure"
     GOOG = "google"
     AMZN = "amazon"
     ANTH = "anthropic"
@@ -52,8 +52,11 @@ class CoreSettings(BaseSettings):
     genai_deployment_type: GenAIDeploymentType = Field(
         description="Whether to create generative AI deployment from DR Playground or custom model",
     )
-    genai_buzok_deployment_type: GenAIBuzokDeploymentType = Field(
-        description="If genai_deployment_type is 'dr', specify the generative AI deployment type",
+    genai_deployment_provider: GenAIBuzokDeploymentType = Field(
+        description="Specify the provider of the generative AI deployment",
+    )
+    genai_deployment_name_buzok: GlobalLLM = Field(
+        description="Name of the generative AI deployment",
     )
 
     model_config = SettingsConfigDict(env_prefix="MAIN_", case_sensitive=False)
@@ -164,3 +167,40 @@ class ApplicationSourceArgs(BaseModel):
     files: Optional[Any] = None
     folder_path: Optional[str] = None
     name: Optional[str] = None
+
+
+class PlaygroundArgs(BaseModel):
+    resource_name: str
+    name: str | None = None
+
+
+class LLMSettings(BaseModel):
+    max_completion_length: int = Field(le=512)
+    system_prompt: str
+
+
+class LLMBlueprintArgs(BaseModel):
+    resource_name: str
+    name: str | None = None
+    llm_settings: LLMSettings
+    llm_id: GlobalLLM
+
+
+class ChunkingParameters(BaseModel):
+    embedding_model: VectorDatabaseEmbeddingModel | None = None
+    chunking_method: VectorDatabaseChunkingMethod | None = None
+    chunk_size: int | None = Field(ge=128, le=512)
+    chunk_overlap_percentage: int | None = None
+    separators: list[str] | None = None
+
+
+class VectorDatabaseArgs(BaseModel):
+    resource_name: str
+    name: str | None = None
+    chunking_parameters: ChunkingParameters
+
+
+class DatasetArgs(BaseModel):
+    resource_name: str
+    name: str | None = None
+    file_path: str

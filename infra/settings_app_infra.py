@@ -84,18 +84,11 @@ def get_app_files(
 
     source_files.extend(
         [
-            ("dataanalyst/__init__.py", "dataanalyst/__init__.py"),
-            ("dataanalyst/analyze.py", "dataanalyst/analyze.py"),
-            ("dataanalyst/api.py", "dataanalyst/api.py"),
-            ("dataanalyst/base.py", "dataanalyst/base.py"),
-            ("dataanalyst/credentials.py", "dataanalyst/credentials.py"),
-            ("dataanalyst/data_model.py", "dataanalyst/data_model.py"),
-            ("dataanalyst/profile.py", "dataanalyst/profile.py"),
-            ("dataanalyst/resources.py", "dataanalyst/resources.py"),
-            ("dataanalyst/sample.py", "dataanalyst/sample.py"),
-            ("dataanalyst/schema.py", "dataanalyst/schema.py"),
-            ("dataanalyst/settings.py", "dataanalyst/settings.py"),
-            ("dataanalyst/sql.py", "dataanalyst/sql.py"),
+            ("application/__init__.py", "application/__init__.py"),
+            ("application/api.py", "application/api.py"),
+            ("application/credentials.py", "application/credentials.py"),
+            ("application/resources.py", "application/resources.py"),
+            ("application/schema.py", "application/schema.py"),
             (str(application_path / "metadata.yaml"), "metadata.yaml"),
         ]
     )
