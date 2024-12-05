@@ -1,5 +1,6 @@
 import ast
 import base64
+from functools import partial
 import hashlib
 import io
 import json
@@ -17,7 +18,6 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import psutil
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
@@ -25,16 +25,20 @@ from openai import OpenAI
 from plotly.subplots import make_subplots
 from pydantic import BaseModel, field_validator, validator
 
-# Load environment variables
-env_path = Path(os.getcwd()) / ".env"
-load_dotenv(env_path)
+from application.resources import ChatAgentDeployment
+
 
 # Get environment variables
-deployment_id = os.getenv("DEPLOYMENT_ID")
-openai_api_key = os.getenv("DATAROBOT_API_KEY")
-openai_base_url = os.getenv("OPENAI_BASE_URL")
+deployment_id = ChatAgentDeployment().id
+openai_base_url = "https://app.datarobot.com/api/v2/deployments/"
 
-client = OpenAI(api_key=openai_api_key, base_url=openai_base_url + deployment_id)
+client = OpenAI(api_key=os.getenv("DATAROBOT_API_TOKEN"), base_url=openai_base_url + deployment_id)
+create_completion = partial(client.chat.completions.create, model="gpt-4o")
+
+resp = create_completion(
+    messages=[{"role": "user", "content": "Who are you and who built you?"}],
+)
+resp.choices[0].message.content
 
 # Initialize FastAPI app
 app = FastAPI(

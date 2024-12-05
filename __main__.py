@@ -106,19 +106,19 @@ app_runtime_parameters = [
     )
 ]
 
-# app_source = datarobot.ApplicationSource(
-#     files=settings_app_infra.get_app_files(
-#         runtime_parameter_values=app_runtime_parameters
-#     ),
-#     runtime_parameter_values=app_runtime_parameters,
-#     base_environment_id=GlobalRuntimeEnvironment.PYTHON_39_STREAMLIT.value.id,
-#     **settings_app_infra.app_source_args,
-# )
+app_source = datarobot.ApplicationSource(
+    files=settings_app_infra.get_app_files(
+        runtime_parameter_values=app_runtime_parameters
+    ),
+    runtime_parameter_values=app_runtime_parameters,
+    base_environment_id=GlobalRuntimeEnvironment.PYTHON_39_STREAMLIT.value.id,
+    **settings_app_infra.app_source_args,
+)
 
-# app = datarobot.CustomApplication(
-#     resource_name=settings_app_infra.app_resource_name,
-#     source_version_id=app_source.version_id,
-# )
+app = datarobot.CustomApplication(
+    resource_name=settings_app_infra.app_resource_name,
+    source_version_id=app_source.version_id,
+)
 
 # app.id.apply(settings_app_infra.ensure_app_settings)
 

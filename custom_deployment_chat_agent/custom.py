@@ -89,8 +89,7 @@ def chat(
         the completion object with generated choices.
     """
     client = model[0]
-    if "model" not in completion_create_params:
-        completion_create_params["model"] = model[2]
+    completion_create_params["model"] = model[2]
     return client.chat.completions.create(**completion_create_params)
 
 
@@ -101,11 +100,11 @@ if __name__ == "__main__":
     print(
         chat(
             {
-                "model": AzureOpenAICredentials().azure_deployment,
+                # "model": AzureOpenAICredentials().azure_deployment,
                 "messages": [
                     {"role": "user", "content": "hello"},
                 ],
-                "temperature": ChatAgentDeploymentSettings().temperature,
+                # "temperature": ChatAgentDeploymentSettings().temperature,
             },
             model,
         )

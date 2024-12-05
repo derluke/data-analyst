@@ -39,9 +39,14 @@ console = Console()
 
 # Available data files
 DATA_FILES = {
-    "lending_club_profile": r"C:\Users\BrettOlmstead\Downloads\lending_club_SAFER\lending_club_SAFER\profile.csv",
-    "lending_club_target": r"C:\Users\BrettOlmstead\Downloads\lending_club_SAFER\lending_club_SAFER\target.csv",
-    "lending_club_transactions": r"C:\Users\BrettOlmstead\Downloads\lending_club_SAFER\lending_club_SAFER\transactions.csv",
+
+    target_path = "https://s3.amazonaws.com/datarobot_public_datasets/drx/Lending+Club+Target.csv"
+profile_path = "https://s3.amazonaws.com/datarobot_public_datasets/drx/Lending+Club+Profile.csv"
+transactions_path = "https://s3.amazonaws.com/datarobot_public_datasets/drx/Lending+Club+Transactions.csv"
+
+    "lending_club_profile": "https://s3.amazonaws.com/datarobot_public_datasets/drx/Lending+Club+Profile.csv",
+    "lending_club_target": "https://s3.amazonaws.com/datarobot_public_datasets/drx/Lending+Club+Target.csv",
+    "lending_club_transactions": "https://s3.amazonaws.com/datarobot_public_datasets/drx/Lending+Club+Transactions.csv",
     "diabetes": r"C:\Users\BrettOlmstead\Downloads\AI Feature Engineer\10k_diabetes.csv",
     "cpg": r"C:\Users\BrettOlmstead\Downloads\CPG Data Sample for DataRobot_csv.csv",
     "gannett": r"C:\Users\BrettOlmstead\Downloads\Promotional Activity - Gannett.csv",
