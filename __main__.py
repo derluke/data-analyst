@@ -81,14 +81,15 @@ if settings_main.core.genai_deployment_type == "diy":
 
     chat_agent_deployment = CustomModelDeployment(
         resource_name=f"Chat Agent Custom Model Deployment [{settings_main.project_name}]",
+        use_case=use_case,
         custom_model_version_id=chat_agent_custom_model.version_id,
         registered_model_args=settings_chat_agent.registered_model_args,
         prediction_environment=prediction_environment,
         deployment_args=settings_chat_agent.deployment_args,
     )
 elif settings_main.core.genai_deployment_type == "dr":
-    rag_custom_model = PlaygroundCustomModel(
-        resource_name=f"Guarded RAG Prep [{settings_main.project_name}]",
+    chat_agent_deployment = PlaygroundCustomModel(
+        resource_name=f"Chat Agent Buzok Deployment [{settings_main.project_name}]",
         use_case=use_case,
         playground_args=settings_chat_agent.playground_args,
         llm_blueprint_args=settings_chat_agent.llm_blueprint_args,
@@ -96,6 +97,8 @@ elif settings_main.core.genai_deployment_type == "dr":
         guard_configurations=settings_chat_agent,
         custom_model_args=settings_chat_agent.custom_model_args,
     )
+else:
+    raise ValueError("GenAI Deployment type must be one of DIY and DR")
 
 
 app_runtime_parameters = [
@@ -107,9 +110,7 @@ app_runtime_parameters = [
 ]
 
 app_source = datarobot.ApplicationSource(
-    files=settings_app_infra.get_app_files(
-        runtime_parameter_values=app_runtime_parameters
-    ),
+    files=settings_app_infra.get_app_files(),
     runtime_parameter_values=app_runtime_parameters,
     base_environment_id=GlobalRuntimeEnvironment.PYTHON_39_STREAMLIT.value.id,
     **settings_app_infra.app_source_args,
@@ -118,9 +119,10 @@ app_source = datarobot.ApplicationSource(
 app = datarobot.CustomApplication(
     resource_name=settings_app_infra.app_resource_name,
     source_version_id=app_source.version_id,
+    use_case_ids=[use_case.id],
 )
 
-# app.id.apply(settings_app_infra.ensure_app_settings)
+app.id.apply(settings_app_infra.ensure_app_settings)
 
 # Chat Agent output
 pulumi.export(chat_agent_deployment_env_name, chat_agent_deployment.id)
@@ -129,9 +131,9 @@ pulumi.export(
     chat_agent_deployment.id.apply(get_deployment_url),
 )
 
-# # App output
-# pulumi.export(app_env_name, app.id)
-# pulumi.export(
-#     settings_app_infra.app_resource_name,
-#     app.application_url,
-# )
+# App output
+pulumi.export(app_env_name, app.id)
+pulumi.export(
+    settings_app_infra.app_resource_name,
+    app.application_url,
+)

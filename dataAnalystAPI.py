@@ -32,7 +32,9 @@ from application.resources import ChatAgentDeployment
 deployment_id = ChatAgentDeployment().id
 openai_base_url = "https://app.datarobot.com/api/v2/deployments/"
 
-client = OpenAI(api_key=os.getenv("DATAROBOT_API_TOKEN"), base_url=openai_base_url + deployment_id)
+client = OpenAI(
+    api_key=os.getenv("DATAROBOT_API_TOKEN"), base_url=openai_base_url + deployment_id
+)
 create_completion = partial(client.chat.completions.create, model="gpt-4o")
 
 resp = create_completion(

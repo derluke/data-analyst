@@ -24,6 +24,7 @@ class CustomModelDeployment(pulumi.ComponentResource):
     def __init__(
         self,
         resource_name: str,
+        use_case: datarobot.UseCase,
         registered_model_args: RegisteredModelArgs,
         prediction_environment: datarobot.PredictionEnvironment,
         deployment_args: DeploymentArgs,
@@ -79,6 +80,7 @@ class CustomModelDeployment(pulumi.ComponentResource):
             registered_model_version_id=self.registered_model.version_id,
             **deployment_args.model_dump(),
             opts=pulumi.ResourceOptions(parent=self),
+            use_case_ids=[use_case.id],
         )
 
         self.register_outputs(

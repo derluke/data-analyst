@@ -40,46 +40,11 @@ def ensure_app_settings(app_id: str) -> None:
 app_resource_name: str = f"Data Analyst Application [{project_name}]"
 
 
-def _prep_metadata_yaml(
-    runtime_parameter_values: Sequence[
-        datarobot.ApplicationSourceRuntimeParameterValueArgs,
-    ],
-) -> None:
-    from jinja2 import BaseLoader, Environment
-
-    llm_runtime_parameter_specs = "\n".join(
-        [
-            textwrap.dedent(
-                f"""\
-            - fieldName: {param.key}
-              type: {param.type}"""
-            )
-            for param in runtime_parameter_values
-        ]
-    )
-    with open(application_path / "metadata.yaml.jinja") as f:
-        template = Environment(loader=BaseLoader()).from_string(f.read())
-
-    (application_path / "metadata.yaml").write_text(
-        template.render(
-            runtime_parameters=llm_runtime_parameter_specs,
-        )
-    )
-
-
-def get_app_files(
-    runtime_parameter_values: Sequence[
-        datarobot.ApplicationSourceRuntimeParameterValueArgs
-    ],
-) -> List[Tuple[str, str]]:
-    _prep_metadata_yaml(runtime_parameter_values)
-
+def get_app_files() -> List[Tuple[str, str]]:
     source_files = [
         (str(f), str(f.relative_to(application_path)))
         for f in application_path.glob("**/*")
-        if f.is_file()
-        and f.name != "metadata.yaml.jinja"
-        and not f.name.endswith(".yaml")
+        if f.is_file() and not f.name.endswith(".yaml")
     ]
 
     source_files.extend(

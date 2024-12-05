@@ -94,7 +94,6 @@ def chat(
 
 
 if __name__ == "__main__":
-
     model = load_model()
     print(score(pd.DataFrame({"promptText": ["hello"]}), model))
     print(

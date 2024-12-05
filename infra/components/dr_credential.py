@@ -142,7 +142,6 @@ class DRCredential(pulumi.ComponentResource):
     def app_runtime_parameter_values(
         self,
     ) -> List[datarobot.ApplicationSourceRuntimeParameterValueArgs]:
-
         if isinstance(self.credential_raw, OpenAICredentials):
             runtime_parameter_values = [
                 datarobot.ApplicationSourceRuntimeParameterValueArgs(
