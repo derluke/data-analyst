@@ -29,6 +29,10 @@ import base64
 from concurrent.futures import ProcessPoolExecutor
 import psutil
 from fastapi.openapi.utils import get_openapi
+import scipy
+import statsmodels
+import sklearn
+import kaleido
 
 # Load environment variables
 env_path = Path(os.getcwd()) / '.env'
@@ -40,6 +44,7 @@ openai_api_key = os.getenv('DATAROBOT_API_KEY')
 openai_base_url = os.getenv('OPENAI_BASE_URL')
 
 client = OpenAI(api_key=openai_api_key, base_url=openai_base_url+deployment_id)
+# client = OpenAI()
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -225,6 +230,9 @@ For example:
 def analyze_data(dfs):
     import pandas as pd
     import numpy as np
+    # High level explanation 
+    # of what the code does
+    # should be included at the top of the function
     
     # Access individual dataframes by name
     df = dfs['dataset_name']  # Access specific dataset
@@ -240,19 +248,28 @@ NECESSARY CONSIDERATIONS:
 - Access dataframes using their names as dictionary keys, e.g. dfs['dataset_name']
 - Your code should handle cases where some expected columns might be in different dataframes
 - Consider appropriate joins/merges between dataframes when needed
-- Return a single DataFrame with the analysis results
+- Document the code with comments at the top of the function explaining at a high level what the code does
+- Include comments at each step to explain the code in more detail
+- The function must return a single DataFrame with the analysis results
+- The function shall not return a list of dataframes, a dict of dataframes, or anything other than a single dataframe.
+- You may perform advanced analysis using statsmodels, scipy, numpy, pandas and scikit-learn.
 ...
 """
 SYSTEM_PROMPT_PLOTLY_CHART = """
 ROLE:
 You are a data visualization expert with a focus on Python and Plotly.
 Your task is to create a Python function that returns 2 complementary Plotly visualizations designed to answer a business question.
+Carefully review the metadata about the columns in the dataframe to help you choose the right chart type and properly construct the chart using plotly without making mistakes.
+The metadata will contain information such as the names and data types of the columns in the dataset that your charts will run against. Therefor, only refer to columns that specifically noted in the metadata. 
+Choose charts types that not only complement each other superficially, but provide a comprehensive view of the data and deeper insights into the data. 
+Plotly has a feature called subplots that allows you to create multiple charts in a single figure which can be useful for showing metrics for different groups or categories. 
+So for example, you could make 2 complementary figures by having an aggregated view of the data in the first figure, and a more detailed breakdown by category in the second figure by using subplots. 
 
 CONTEXT:
 You will be given:
 1. A business question
 2. A pandas DataFrame containing the data relevant to the question
-3. Metadata about the columns in the dataframe to help you choose the right chart type and properly construct the chart using plotly without making mistakes.
+3. Metadata about the columns in the dataframe to help you choose the right chart type and properly construct the chart using plotly without making mistakes. You may only reference column names that actually are listed in the metadata!
 
 YOUR RESPONSE:
 Your response must be a Python function that returns 2 plotly.graph_objects.Figure objects.
@@ -279,14 +296,12 @@ def create_charts(df):
     return fig1, fig2
 
 NECESSARY CONSIDERATIONS:
-The input dfs is a dictionary of pandas DataFrames where keys are dataset names
-Access dataframes using their names as dictionary keys, e.g. dfs['dataset_name']
-Consider appropriate joins/merges between dataframes when needed
+The input df is a pandas DataFrame that is described by the included metadata
 Choose visualizations that effectively display the data and complement each other
-ONLY REFER TO COLUMNS THAT ACTUALLY EXIST IN THE INPUT DATA.
-You must never refer to columns that don't exist in the input dataframe.
-When referring to columns in your code, spell them EXACTLY as they appear in the pandas dataframe - this might be different from how they are referenced in the business question! Only refer to columns that exist IN THE DATAFRAME.
-For example, if the question asks "What is the total amount paid ("AMTPAID") for each type of order?" but the dataframe does not contain "AMTPAID" but rather "TOTAL_AMTPAID", you should use "TOTAL_AMTPAID" in your code because that's the column name in the data.
+ONLY REFER TO COLUMNS THAT ACTUALLY EXIST IN THE METADATA.
+You must never refer to columns that will not exist in the input dataframe.
+When referring to columns in your code, spell them EXACTLY as they appear in the pandas dataframe according to the provided metadata - this might be different from how they are referenced in the business question! 
+For example, if the question asks "What is the total amount paid ("AMTPAID") for each type of order?" but the metadata does not contain "AMTPAID" but rather "TOTAL_AMTPAID", you should use "TOTAL_AMTPAID" in your code because that's the column name in the data.
 Data Availability: If some data is missing, plot what you can in the most sensible way.
 Package Imports: If your code requires a package to run, such as statsmodels, numpy, scipy, etc, you must import the package within your function.
 
@@ -310,13 +325,64 @@ Choropleth and Indicator Chart: Highlight overall metrics with an indicator char
 Line Chart and Area Chart: Pair a line chart to show temporal trends (e.g., sales over months) with an area chart to emphasize cumulative totals or overlapping data.
 Treemap and Parallel Coordinates Plot: Use a treemap for hierarchical data visualization (e.g., sales by category and subcategory) and a parallel coordinates plot to analyze relationships between multiple attributes (e.g., sales, profit margin, and costs).
 Scatter Geo and Choropleth: Use scatter geo plots to mark specific data points (e.g., retail store locations) and a choropleth to highlight regional metrics (e.g., revenue per capita).Design Guidelines:
+Avoid Box and Whisker plots unless it's highly appropriate for the data or the user specifically requests it.
+Avoid heatmaps unless it's highly appropriate for the data or the user specifically requests it.
+
 Simple, not overly busy or complex.
 No background colors or themes; use the default theme.
-Complementary colors you could use: #0B0A0D, #243E73, #1D3159, #8BB4D9, #A67E6F, #011826, #1A3940, #8C5946, #BF8D7A, #0D0D0D, #3805F2, #2703A6, #150259, #63A1F2, #84F266, #232625, #35403A, #4C594F, #A4A69C, #BFBFB8
-Gradient - Coral to Teal: #FF5F5D, #F76F67, #EE8071, #E6907C, #DD9F86, #D5AF90, #CDBF9A, #C4CFA4, #BCD0AF, #A3CCAB, #8BB8A7, #72A4A3, #59809F, #3F7C85
-Gradient - Teal to Aqua: #3F7C85, #367B88, #2D7A8A, #24798D, #1B7890, #117893, #087796, #007699, #00759C, #00749F, #0074A2, #0073A5, #0072A7, #00CCBF
-Gradient - Dark Teal to Light Gray: #14140F,#23231E,#32312D,#41403C,#51504B,#60605A,#707069,#808078,#909087,#A0A096,#B0B0A5,#C0C0B4,#D0D0C3,#CACACA
-Gradient - Ocean Blues: #003840,#00424A,#004C55,#00565F,#006069,#006A73,#00747C,#007E86,#008891,#00929B,#009CA5,#00A6AF,#00B0B9,#00BBC9
+
+Use DataRobot Brand Colors
+Primary Colors:
+DataRobot Green:
+HEX: #81FBA5
+DataRobot Blue:
+HEX: #44BFFC
+DataRobot Yellow:
+HEX: #FFFF54
+DataRobot Purple:
+HEX: #909BF5
+Accent Colors:
+Green Variants:
+Light Green: HEX #BFFD7E
+Dark Green: HEX #86DAC0, #8AC2D5
+Blue Variants:
+Light Blue: HEX #4CCCEA
+Teal: HEX #61D7CF
+Yellow Variant:
+Lime Yellow: HEX #EDFE60
+Purple Variants:
+Light Purple: HEX #8080F0, #746AFC
+Deep Purple: HEX #5C41FF
+Neutral Colors:
+White:
+HEX: #FFFFFF
+Black:
+HEX: #0B0B0B
+Grey Variants:
+Light Grey: HEX #E4E4E4, #A2A2A2
+Dark Grey: HEX #6C6A6B, #231F20
+Suggested Usage in Charts
+Based on the color pairings and branding guidelines, here are my suggestions for using these colors in charts:
+
+Primary Colors for Data Differentiation:
+
+Use DataRobot Green (#81FBA5) and DataRobot Blue (#44BFFC) for major categories or distinct data series.
+Use DataRobot Yellow (#FFFF54) for highlighting or calling attention to key points.
+DataRobot Purple (#909BF5) can be used to differentiate less critical data or secondary information.
+Accent Colors for Detailed Insights:
+
+Variants like Light Green and Teal can be used to represent related data that needs to be distinguished from the primary green or blue.
+Purple Variants (Light Purple or Deep Purple) can be used to show comparison data alongside primary categories without overwhelming the viewer.
+Yellow Variant (Lime Yellow) can also serve as an accent to highlight notable metrics or trends in the data.
+Neutral Colors for Background and Context:
+
+Black (#0B0B0B) can be used for text labels, axis lines, and borders to maintain readability.
+Grey Variants like Light Grey (#E4E4E4) can be used for gridlines or background elements to add structure without distracting from the data.
+Color Pairings for Emphasis:
+
+Use the pairing combinations as shown (Green/Black/Grey, Purple/Black/Grey, etc.) to maintain consistency with brand visual identity. These pairings can be applied to legends, titles, and annotations in charts to enhance readability while sticking to the brand.
+Avoid Overuse:
+
 Include titles, axis names, and legends.
 Robustness:
 Ensure the function is free of syntax errors and logical problems.
@@ -351,13 +417,13 @@ Use markdown to format your repsonse for readability. While you might organize t
 Follow Up Questions
 Offer 2 or 3 follow up questions the user could ask to get deeper insight into the issue in another round of question and answer.
 When you word these questions, do not use pronouns to refer to the data - always use specific column names. Only refer to data that 
-actually exists in the dataset. For example, don't refer to "sales volume" if there is no "sales volume" column.
+that is described in the data dictionary. For example, don't refer to "sales volume" if there is no "sales volume" column.
 
 CONTEXT:
 The user has provided a business question and a dataset containing information relevant to the question.
-You will also be provided with a data dictionary that might describe available data and information beyond the current dataset.
-You may suggest retrieving and analysing data described in that dictionary as it might be helpful for shedding more light on the topic raised 
-by the user.
+You will also be provided with a data dictionary that describes the underlying data from which this dataset was derived. 
+Based solely on the content within the provided data dictionary, you may suggest analysing other data that might be relevant or helpful for shedding more light on the topic raised by the user.
+Do not suggest analysing data outside of the scope of this data dictionary.
 
 YOUR RESPONSE:
 Your response should be output as a JSON object with the following fields:
@@ -638,7 +704,7 @@ def process_column_batch(
     columns: List[str], 
     df: pd.DataFrame,
     batch_size: int = 5
-) -> Dict[str, List[str]]:
+) -> Dict[str, str]:
     """Process a batch of columns to get their descriptions"""
     
     # Get sample data and stats for just these columns
@@ -696,7 +762,22 @@ def process_column_batch(
         stream=False
     )
     
-    return json.loads(completion.choices[0].message.content)
+    response = json.loads(completion.choices[0].message.content)
+    
+    # Extract descriptions from response and map to columns
+    descriptions = {}
+    if isinstance(response, dict):
+        # Check if response has descriptions list
+        if 'descriptions' in response and isinstance(response['descriptions'], list):
+            # Map descriptions to columns, handling potential length mismatch
+            for col, desc in zip(columns, response['descriptions']):
+                descriptions[col] = desc
+        # Fallback: check if response has column-specific descriptions
+        else:
+            for col in columns:
+                descriptions[col] = response.get(col, "No description available")
+    
+    return descriptions
 
 @app.post("/get_dictionary",
     response_model=Dict[str, Any],
@@ -819,9 +900,8 @@ def process_dataset(dataset: DatasetInput) -> Dict[str, Any]:
         logging.info(f"Created {len(column_batches)} batches for {len(df.columns)} columns")
         
         # Process column batches using ThreadPoolExecutor
-        batch_results = []
+        batch_results = {}  # Change to dictionary to maintain column-description mapping
         with ThreadPoolExecutor() as executor:
-            # Map batches to futures
             batch_futures = {
                 executor.submit(
                     process_column_batch, 
@@ -836,8 +916,8 @@ def process_dataset(dataset: DatasetInput) -> Dict[str, Any]:
             for future in as_completed(batch_futures):
                 try:
                     result = future.result()
-                    logging.info(f"Batch result: {result}")  # Add this debug log
-                    batch_results.extend(result.get("descriptions", []))
+                    # Assuming process_column_batch returns a dictionary mapping columns to descriptions
+                    batch_results.update(result)  # Merge results maintaining column mapping
                 except Exception as e:
                     logging.error(f"Error processing batch: {str(e)}")
                     continue
@@ -847,9 +927,9 @@ def process_dataset(dataset: DatasetInput) -> Dict[str, Any]:
             {
                 "data_type": str(df[col].dtype),
                 "column": col,
-                "description": desc
+                "description": batch_results.get(col, "No description available")
             }
-            for col, desc in zip(df.columns, batch_results)
+            for col in df.columns
         ]
         
         logging.info(f"Created dictionary with {len(dictionary)} entries for dataset {dataset.name}")
@@ -1188,7 +1268,9 @@ async def get_python_analysis_code(request: RunAnalysisRequest) -> Dict[str, str
         for dataset_name, dataset in request.data.items():
             df = pd.DataFrame(dataset)
             all_shapes.append(f"{dataset_name}: {df.shape[0]} rows x {df.shape[1]} columns")
-            all_samples.append(f"{dataset_name}:\n{df.head().to_string()}")
+            # Limit sample to 10 rows
+            sample_df = df.head(10)
+            all_samples.append(f"{dataset_name}:\n{sample_df.to_string()}")
 
         shape_info = "\n".join(all_shapes)
         sample_data = "\n\n".join(all_samples)
@@ -1202,10 +1284,20 @@ async def get_python_analysis_code(request: RunAnalysisRequest) -> Dict[str, str
             {"role": "user", "content": f"Data Dictionary:\n{json.dumps(dictionary_data)}"}
         ]
 
+        # Add error context if available
+        if request.error_message and request.failed_code:
+            messages.extend([
+                {"role": "user", "content": "Previous attempt failed with error:"},
+                {"role": "user", "content": request.error_message},
+                {"role": "user", "content": "Failed code:"},
+                {"role": "user", "content": request.failed_code},
+                {"role": "user", "content": "Please generate new code that avoids this error."}
+            ])
+
         # Get response from OpenAI
         completion = client.chat.completions.create(
             model="gpt-4o",
-            temperature=0.5,
+            temperature=0.1,
             messages=messages,
             response_format={"type": "json_object"},
             stream=False
@@ -1309,7 +1401,7 @@ async def create_charts(
     metadata: Dict[str, Any],
     error_message: Optional[str] = None,
     failed_code: Optional[str] = None,
-    max_attempts: int = 6
+    max_attempts: int = 3
 ) -> ChartGenerationResult:
     """Generate and validate chart code with retry logic"""
     attempts = 0
@@ -1324,10 +1416,12 @@ async def create_charts(
             # Get chart code from OpenAI
             completion = client.chat.completions.create(
                 model="gpt-4o",
+                temperature=0,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT_PLOTLY_CHART},
                     {"role": "user", "content": f"Question: {question}"},
                     {"role": "user", "content": f"Data Metadata:\n{json.dumps(metadata)}"},
+                    {"role": "user", "content": f"Data top 25 rows:\n{df.head(25).to_string()}"},
                     *(
                         [
                             {"role": "user", "content": f"Previous error: {error_message}"},
@@ -1447,35 +1541,10 @@ class RunChartsRequest(BaseModel):
             raise ValueError("Each record must be a dictionary")
         return v
 
-@app.post("/run_charts",
-    response_model=Dict[str, Any],
-    summary="Generate and execute chart code",
-    description="""
-    Generate and execute Plotly chart code with validation and error handling.
-    
-    The endpoint:
-    - Generates complementary visualizations
-    - Validates chart code
-    - Handles execution errors
-    - Provides base64 encoded images
-    
-    Returns generated charts and metadata.
-    """,
-    response_description="Generated charts with metadata",
-    tags=["Visualization"]
-)
+@app.post("/run_charts")
 async def run_charts(request: RunChartsRequest) -> Dict[str, Any]:
     """
     Generate and execute chart code with validation.
-    
-    Parameters:
-    - request: RunChartsRequest containing data and question
-    
-    Returns:
-    - Dictionary containing charts and metadata
-    
-    Raises:
-    - HTTPException: If chart generation fails
     """
     try:
         # Convert JSON to DataFrame
@@ -1485,61 +1554,78 @@ async def run_charts(request: RunChartsRequest) -> Dict[str, Any]:
 
         # Generate metadata about the dataframe
         metadata = {
-            'metadata_shape': list(df.shape),  # Convert to list for JSON serialization
+            'metadata_shape': list(df.shape),
             'metadata_describe': json.loads(df.describe(include='all').to_json()),
             'metadata_dtypes': json.loads(df.dtypes.astype(str).to_json())
         }
 
-        # Generate charts with retry logic
-        result = await create_charts(
-            df=df,
-            question=request.question,
-            metadata=metadata,  # Pass metadata instead of dictionary_data
-            error_message=request.error_message,
-            failed_code=request.failed_code
-        )
-        
-        # Convert figures to base64
-        fig1_base64 = figure_to_base64(result.fig1) if result.fig1 else None
-        fig2_base64 = figure_to_base64(result.fig2) if result.fig2 else None
-        
-        return {
-            "fig1": result.fig1,
-            "fig2": result.fig2,
-            "fig1_base64": fig1_base64,
-            "fig2_base64": fig2_base64,
-            "code": result.code,
-            "metadata": {
-                **result.metadata,
-                "dataframe_metadata": metadata,  # Include the generated metadata in the response
-                "validation": result.validation,
-                "attempts": result.attempts,
-                "validation_errors": result.validation_errors,
-                "execution_errors": result.execution_errors,
-                "code_history": result.code_history,
-                "performance": {
-                    "memory_usage": get_memory_usage(),
-                    "total_time": (
-                        datetime.fromisoformat(result.metadata["timestamp"]) - 
-                        datetime.fromisoformat(result.code_history[0]["timestamp"])
-                    ).total_seconds()
+        max_attempts = 3
+        attempt = 0
+        last_error = None
+        last_failed_code = None
+
+        while attempt < max_attempts:
+            try:
+                # Generate charts with retry logic
+                result = await create_charts(
+                    df=df.head(25),
+                    question=request.question,
+                    metadata=metadata,
+                    error_message=last_error,
+                    failed_code=last_failed_code
+                )
+                
+                # Convert figures to base64
+                fig1_base64 = figure_to_base64(result.fig1) if result.fig1 else None
+                fig2_base64 = figure_to_base64(result.fig2) if result.fig2 else None
+                
+                return {
+                    "fig1": result.fig1,
+                    "fig2": result.fig2,
+                    "fig1_base64": fig1_base64,
+                    "fig2_base64": fig2_base64,
+                    "code": result.code,
+                    "metadata": {
+                        **result.metadata,
+                        "dataframe_metadata": metadata,
+                        "validation": result.validation,
+                        "attempts": result.attempts,
+                        "validation_errors": result.validation_errors,
+                        "execution_errors": result.execution_errors,
+                        "code_history": result.code_history,
+                        "performance": {
+                            "memory_usage": get_memory_usage(),
+                            "total_time": (
+                                datetime.fromisoformat(result.metadata["timestamp"]) - 
+                                datetime.fromisoformat(result.code_history[0]["timestamp"])
+                            ).total_seconds()
+                        }
+                    }
                 }
-            }
-        }
-            
-    except Exception as e:
-        error_context = {
-            "error_type": type(e).__name__,
-            "error_message": str(e),
-            "validation_errors": result.validation_errors if 'result' in locals() else [],
-            "execution_errors": result.execution_errors if 'result' in locals() else [],
-            "code_history": result.code_history if 'result' in locals() else [],
-            "timestamp": datetime.now().isoformat()
-        }
-        raise HTTPException(
-            status_code=500, 
-            detail={"error": str(e), "context": error_context}
-        )
+
+            except Exception as e:
+                attempt += 1
+                last_error = str(e)
+                last_failed_code = result.code if 'result' in locals() else None
+                
+                if attempt >= max_attempts:
+                    error_context = {
+                        "error_type": type(e).__name__,
+                        "error_message": str(e),
+                        "validation_errors": result.validation_errors if 'result' in locals() else [],
+                        "execution_errors": result.execution_errors if 'result' in locals() else [],
+                        "code_history": result.code_history if 'result' in locals() else [],
+                        "attempts": attempt,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    raise HTTPException(
+                        status_code=500, 
+                        detail={"error": str(e), "context": error_context}
+                    )
+
+    except ValueError as e:
+        # Only catch and re-raise validation errors without retrying
+        raise HTTPException(status_code=422, detail=str(e))
 
 class BusinessAnalysisRequest(BaseModel):
     data: List[Dict[str, Any]]  # JSON data
@@ -1604,7 +1690,7 @@ async def get_business_analysis(request: BusinessAnalysisRequest) -> Dict[str, A
         df = pd.DataFrame(request.data)
         
         # Get first 1000 rows as CSV with quoted values for context
-        df_csv = df.head(1000).to_csv(index=False, quoting=1)
+        df_csv = df.head(750).to_csv(index=False, quoting=1)
         
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT_BUSINESS_ANALYSIS},
@@ -1616,6 +1702,7 @@ async def get_business_analysis(request: BusinessAnalysisRequest) -> Dict[str, A
         # Get non-streaming response from OpenAI
         completion = client.chat.completions.create(
             model="gpt-4o",
+            temperature=0.1,
             messages=messages,
             response_format={"type": "json_object"},
             stream=False
@@ -1690,7 +1777,8 @@ async def process_chat(messages: List[Dict[str, str]]) -> Dict[str, str]:
 
     # Get non-streaming response from OpenAI
     completion = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4o-mini",
+        temperature=0,
         messages=prompt_messages,
         response_format={"type": "json_object"},
         stream=False
@@ -1734,6 +1822,15 @@ async def chat(request: ChatRequest) -> Dict[str, Any]:
     except Exception as e:
         logging.error(f"Error processing chat: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+
+
+
+
+
+
 
 
 @dataclass
@@ -1795,7 +1892,7 @@ class CodeGenerationResult:
 
 async def generate_analysis_code(
     request: RunAnalysisRequest,
-    max_attempts: int = 5
+    max_attempts: int = 10
 ) -> CodeGenerationResult:
     """Generate and validate analysis code with retry logic
     
@@ -1855,41 +1952,15 @@ async def generate_analysis_code(
     )
 
 # Update original endpoint to use new retry logic
-@app.post("/run_analysis",
-    response_model=Dict[str, Any],
-    summary="Run complete data analysis",
-    description="""
-    Execute complete data analysis workflow.
-    
-    The endpoint:
-    - Generates analysis code
-    - Validates code safety
-    - Executes analysis
-    - Handles errors and retries
-    
-    Returns analysis results with metadata.
-    """,
-    response_description="Analysis results with metadata",
-    tags=["Analysis Execution"]
-)
+@app.post("/run_analysis")
 async def run_analysis(request: RunAnalysisRequest) -> Dict[str, Any]:
     """
-    Execute complete data analysis workflow.
-    
-    Parameters:
-    - request: RunAnalysisRequest containing data and question
-    
-    Returns:
-    - Dictionary containing analysis results and metadata
-    
-    Raises:
-    - HTTPException: If analysis execution fails
+    Execute complete data analysis workflow with integrated generation and execution retry logic.
     """
-    max_execution_attempts = 3
-    execution_attempts = 0
-    last_error = None
-    last_failed_code = None
-
+    max_attempts = 5  # Single attempt counter for the generate-execute cycle
+    attempts = 0
+    error_history = []
+    
     try:
         # Input validation
         if not request.data:
@@ -1904,64 +1975,65 @@ async def run_analysis(request: RunAnalysisRequest) -> Dict[str, Any]:
             else:
                 dataframes[dataset_name] = pd.DataFrame()
 
-        while execution_attempts < max_execution_attempts:
-            execution_attempts += 1
+        while attempts < max_attempts:
+            attempts += 1
             
             try:
-                # Update request with previous error if it exists
-                if last_error and last_failed_code:
-                    request.error_message = str(last_error)
-                    request.failed_code = last_failed_code
+                # Update request with error context if available
+                if error_history:
+                    request.error_message = error_history[-1]["error"]
+                    request.failed_code = error_history[-1]["code"]
 
-                # Generate code with retry logic
+                # Generate code
                 code_result = await generate_analysis_code(request)
 
-                # If code is invalid after all attempts, return the error history
+                # Validate the generated code
                 if not code_result.validation["is_valid"]:
-                    return {
+                    error_info = {
+                        "attempt": attempts,
+                        "error": code_result.validation["message"],
                         "code": code_result.code,
-                        "validation_error": code_result.validation["message"],
-                        "validation_history": code_result.validation_errors,
-                        "attempts": code_result.attempts,
-                        "status": "failed_validation"
+                        "timestamp": datetime.now().isoformat(),
+                        "type": "validation_error"
                     }
+                    error_history.append(error_info)
+                    continue
 
                 # Create namespace for execution
                 namespace = {
                     'pd': pd,
                     'np': np,
-                    'dfs': dataframes  # Pass the dictionary of dataframes
+                    'dfs': dataframes
                 }
 
                 # Capture stdout and stderr
                 stdout = io.StringIO()
                 stderr = io.StringIO()
 
+                # Execute the code
                 with redirect_stdout(stdout), redirect_stderr(stderr):
                     exec(code_result.code, namespace)
                     
                     if 'analyze_data' not in namespace:
                         raise ValueError("Generated code did not define analyze_data function")
                         
-                    result = namespace['analyze_data'](dataframes)  # Pass the dictionary
+                    result = namespace['analyze_data'](dataframes)
                     
                     if not isinstance(result, (pd.DataFrame, list, dict)):
                         result = pd.DataFrame(result)
 
                 # If we get here, execution was successful
                 return {
+                    "status": "success",
                     "code": code_result.code,
                     "data": result.to_dict('records') if isinstance(result, pd.DataFrame) else result,
                     "metadata": {
                         "execution_time": datetime.now().isoformat(),
-                        "code_generation": {
-                            "attempts": code_result.attempts,
-                            "validation_history": code_result.validation_errors
-                        },
+                        "attempts": attempts,
+                        "error_history": error_history,
                         "execution_details": {
                             "stdout": stdout.getvalue(),
-                            "stderr": stderr.getvalue(),
-                            "execution_attempts": execution_attempts
+                            "stderr": stderr.getvalue()
                         },
                         "datasets_analyzed": len(dataframes),
                         "total_rows_analyzed": sum(len(df) for df in dataframes.values() if not df.empty),
@@ -1970,59 +2042,30 @@ async def run_analysis(request: RunAnalysisRequest) -> Dict[str, Any]:
                 }
 
             except Exception as e:
-                # Store the error and failed code for the next attempt
-                last_error = str(e)
-                last_failed_code = code_result.code if 'code_result' in locals() else None
-                
-                # If this was our last attempt, raise the error with full context
-                if execution_attempts >= max_execution_attempts:
-                    error_context = {
-                        "error_type": type(e).__name__,
-                        "error_message": str(e),
-                        "stdout": stdout.getvalue() if 'stdout' in locals() else "",
-                        "stderr": stderr.getvalue() if 'stderr' in locals() else "",
-                        "generated_code": last_failed_code,
-                        "execution_attempts": execution_attempts,
-                        "dataframes_info": [
-                            f"\nDataFrame {name}:\n{df.info(buf=io.StringIO())}"
-                            for name, df in dataframes.items()
-                        ],
-                        "sample_data": [
-                            f"\nDataFrame {name}:\n{df.head().to_string() if not df.empty else 'Empty DataFrame'}"
-                            for name, df in dataframes.items()
-                        ]
+                # Classify and record the error
+                error_info = {
+                    "attempt": attempts,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "code": code_result.code if 'code_result' in locals() else None,
+                    "stdout": stdout.getvalue() if 'stdout' in locals() else "",
+                    "stderr": stderr.getvalue() if 'stderr' in locals() else "",
+                    "timestamp": datetime.now().isoformat()
+                }
+                error_history.append(error_info)
+
+                if attempts >= max_attempts:
+                    return {
+                        "status": "failed",
+                        "error_history": error_history,
+                        "last_error": str(e),
+                        "suggestions": "Consider reformulating the question or checking data quality"
                     }
-                    
-                    error_msg = f"""
-Code Execution Failed after {execution_attempts} attempts:
-Error Type: {error_context['error_type']}
-Error Message: {error_context['error_message']}
 
-Last Generated Code:
-{error_context['generated_code']}
-
-DataFrames Info:
-{error_context['dataframes_info']}
-
-Sample Data:
-{error_context['sample_data']}
-
-Stdout:
-{error_context['stdout']}
-
-Stderr:
-{error_context['stderr']}
-"""
-                    raise HTTPException(status_code=500, detail=error_msg)
-                
-                # If we have more attempts, continue to the next iteration
-                continue
-                
-    except HTTPException:
-        raise
     except Exception as e:
         logging.error(f"Error in run_analysis: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 def is_date_column(series: pd.Series) -> bool:
     """Check if a pandas Series likely contains date values
@@ -2106,6 +2149,24 @@ def convert_datetime_series(series: pd.Series) -> pd.Series:
     except Exception as e:
         logging.warning(f"Initial datetime conversion failed: {str(e)}")
         return series
+
+class AnalysisError(Exception):
+    def __init__(self, message: str, error_type: str, code: str = None):
+        self.message = message
+        self.error_type = error_type
+        self.code = code
+        super().__init__(self.message)
+
+def classify_error(error: Exception, code: str = None) -> AnalysisError:
+    """Classify the type of error to inform retry strategy"""
+    if isinstance(error, SyntaxError):
+        return AnalysisError(str(error), "syntax", code)
+    elif isinstance(error, NameError):
+        return AnalysisError(str(error), "undefined_variable", code)
+    elif isinstance(error, ValueError):
+        return AnalysisError(str(error), "value_error", code)
+    # ... add more classifications
+    return AnalysisError(str(error), "unknown", code)
 
 
 

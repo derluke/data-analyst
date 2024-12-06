@@ -423,552 +423,415 @@ async def main():
         )
         console.print(current_table)
         
-        # Run analysis
-        console.print("\n[bold]Running Analysis...[/bold]")
-        analysis_start_time = time.time()
-
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            transient=True
-        ) as progress:
-            task = progress.add_task("Analyzing data...", total=None)
-            
-            # Create analysis request with cleaned data
-            analysis_request = RunAnalysisRequest(
-                # Convert list of datasets to dictionary with dataset names as keys
-                data={
-                    dataset['name']: dataset['data'] 
-                    for dataset in result['datasets']
-                },
-                # Convert dictionary result to expected format
-                dictionary={
-                    dataset['name']: [
-                        {
-                            'column': col['column'],
-                            'description': col['description'],
-                            'data_type': col['data_type']
-                        }
-                        for col in dataset.get('dictionary', [])
-                    ]
-                    for dataset in dictionary_result.get('dictionaries', [])
-                },
-                question=chat_result.get('enhanced_user_message', selected_question)
-            )
-            
-            # Run analysis
+        # Start analysis loop
+        analysis_success = False
+        while not analysis_success:
             try:
-                analysis_result = await run_analysis(analysis_request)
-                progress.update(task, completed=True)
-                
-                # Display analysis execution details
-                console.print("\n[bold cyan]Analysis Execution Details:[/bold cyan]")
-                if 'metadata' in analysis_result:
-                    metadata = analysis_result['metadata']
-                    if 'code_generation' in metadata:
-                        console.print(f"Code Generation Attempts: {metadata['code_generation']['attempts']}")
-                        if metadata['code_generation']['validation_history']:
-                            console.print("Validation History:")
-                            for idx, error in enumerate(metadata['code_generation']['validation_history'], 1):
-                                console.print(f"  {idx}. {error}")
+                # Run analysis
+                console.print("\n[bold]Running Analysis...[/bold]")
+                analysis_start_time = time.time()
+
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    transient=True
+                ) as progress:
+                    task = progress.add_task("Analyzing data...", total=None)
                     
-                    console.print(f"Datasets Analyzed: {metadata.get('datasets_analyzed', 'N/A')}")
-                    console.print(f"Total Rows Analyzed: {metadata.get('total_rows_analyzed', 'N/A')}")
-                    console.print(f"Total Columns Analyzed: {metadata.get('total_columns_analyzed', 'N/A')}")
-                    
-                    if 'execution_details' in metadata:
-                        if metadata['execution_details']['stdout']:
-                            console.print("\n[bold]Analysis Output:[/bold]")
-                            console.print(metadata['execution_details']['stdout'])
-                        if metadata['execution_details']['stderr']:
-                            console.print("\n[bold red]Analysis Errors:[/bold red]")
-                            console.print(metadata['execution_details']['stderr'])
-            
-            except Exception as e:
-                progress.update(task, completed=True)
-                console.print(f"\n[bold red]Analysis Failed:[/bold red]")
-                console.print(f"Error: {str(e)}")
-                raise
-
-        analysis_elapsed_time = time.time() - analysis_start_time
-
-        # Display analysis results
-        if 'analysis_result' in locals():
-            console.print("\n[bold green]Analysis Results:[/bold green]")
-            
-            # Display generated code in a clean format
-            if analysis_result.get('code'):
-                console.print("\n[bold cyan]Generated Python Code:[/bold cyan]")
-                console.print("```python")
-                console.print(analysis_result['code'])
-                console.print("```")
-            
-            # Display analysis summary if available
-            if analysis_result.get('summary'):
-                console.print("\n[bold cyan]Analysis Summary:[/bold cyan]")
-                console.print(analysis_result['summary'])
-            
-            # Display analysis data results in a clean table format
-            if 'data' in analysis_result and analysis_result['data']:
-                console.print("\n[bold cyan]Analysis Results Data:[/bold cyan]")
-                result_df = pd.DataFrame(analysis_result['data'])
-                
-                # Format numeric columns to 2 decimal places
-                numeric_cols = result_df.select_dtypes(include=['float64', 'float32']).columns
-                for col in numeric_cols:
-                    result_df[col] = result_df[col].round(2)
-                
-                # Display with clean formatting
-                console.print(result_df.to_string(index=False))
-            
-            # Display any visualizations or plots if available
-            if analysis_result.get('visualizations'):
-                console.print("\n[bold cyan]Visualizations:[/bold cyan]")
-                for viz in analysis_result['visualizations']:
-                    console.print(f"\n{viz['title']}")
-                    console.print(viz['data'])
-            
-            # Display any additional insights or recommendations
-            if analysis_result.get('insights'):
-                console.print("\n[bold cyan]Key Insights:[/bold cyan]")
-                for idx, insight in enumerate(analysis_result['insights'], 1):
-                    console.print(f"{idx}. {insight}")
-
-        console.print(f"\n[cyan]Analysis time: {analysis_elapsed_time:.2f} seconds[/cyan]")
-
-        # Update the result dictionary to include analysis results
-        result['analysis_results'] = analysis_result
-        
-        # Run business analysis
-        console.print("\n[bold]Running Business Analysis...[/bold]")
-        analysis_start_time = time.time()
-
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            transient=True
-        ) as progress:
-            task = progress.add_task("Analyzing business implications...", total=None)
-            
-            try:
-                # Create business analysis request with the analysis results
-                if 'data' in analysis_result and isinstance(analysis_result['data'], list):
-                    business_request = BusinessAnalysisRequest(
-                        data=analysis_result['data'],
-                        dictionary=[
-                            {
-                                'column': col['column'],
-                                'description': col['description'],
-                                'data_type': col['data_type']
-                            }
+                    # Create analysis request with cleaned data
+                    analysis_request = RunAnalysisRequest(
+                        data={
+                            dataset['name']: dataset['data'] 
+                            for dataset in result['datasets']
+                        },
+                        dictionary={
+                            dataset['name']: [
+                                {
+                                    'column': col['column'],
+                                    'description': col['description'],
+                                    'data_type': col['data_type']
+                                }
+                                for col in dataset.get('dictionary', [])
+                            ]
                             for dataset in dictionary_result.get('dictionaries', [])
-                            for col in dataset.get('dictionary', [])
-                        ],
+                        },
                         question=chat_result.get('enhanced_user_message', selected_question)
                     )
                     
-                    # Get business analysis
-                    business_analysis = await get_business_analysis(business_request)
-                    progress.update(task, completed=True)
-
-                    # Display business analysis results
-                    console.print("\n[bold green]Business Analysis:[/bold green]")
-                    
-                    # Display The Bottom Line
-                    console.print("\n[bold cyan]The Bottom Line:[/bold cyan]")
-                    console.print(business_analysis['bottom_line'])
-                    
-                    # Display Additional Insights
-                    console.print("\n[bold cyan]Additional Insights:[/bold cyan]")
-                    console.print(business_analysis['additional_insights'])
-                    
-                    # Display Follow-up Questions
-                    console.print("\n[bold cyan]Follow-up Questions:[/bold cyan]")
-                    for i, question in enumerate(business_analysis['follow_up_questions'], 1):
-                        console.print(f"{i}. {question}")
-
-                    # Add business analysis to results
-                    result['business_analysis'] = business_analysis
-
-                else:
-                    console.print("\n[yellow]Warning: Analysis results not in expected format for business analysis[/yellow]")
-
-            except Exception as e:
-                progress.update(task, completed=True)
-                console.print(f"\n[bold red]Business Analysis Failed:[/bold red]")
-                console.print(f"Error: {str(e)}")
-
-        analysis_elapsed_time = time.time() - analysis_start_time
-        console.print(f"\n[cyan]Business analysis time: {analysis_elapsed_time:.2f} seconds[/cyan]")
-
-        # Run charts
-        console.print("\n[bold]Generating Charts...[/bold]")
-        charts_start_time = time.time()
-        charts_result = None  # Initialize outside try block
-
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            transient=True
-        ) as progress:
-            task = progress.add_task("Creating visualizations...", total=None)
-            
-            try:
-                # Get the analysis results data - this should be a list of dictionaries
-                analysis_data = analysis_result.get('data', [])
-                
-                # Create charts request with the analysis results
-                charts_request = RunChartsRequest(
-                    data=analysis_data,  # Pass the flat list of dictionaries directly
-                    question=chat_result.get('enhanced_user_message', selected_question)
-                )
-                
-                # Run charts
-                charts_result = await run_charts(charts_request)
-                progress.update(task, completed=True)
-
-                # Display chart generation details
-                console.print("\n[bold cyan]Chart Generation Details:[/bold cyan]")
-                
-                # Display validation status
-                validation = charts_result['metadata']['validation']
-                console.print(f"\nValidation Status: [{'green' if validation['is_valid'] else 'red'}]{validation['message']}[/]")
-                
-                # Display attempt information
-                console.print(f"\nTotal Attempts: {charts_result['metadata']['attempts']}")
-                
-                # Display any validation errors
-                if charts_result['metadata']['validation_errors']:
-                    console.print("\n[yellow]Validation Errors:[/yellow]")
-                    for error in charts_result['metadata']['validation_errors']:
-                        console.print(f"\nAttempt {error['attempt']} at {error['timestamp']}:")
-                        console.print(f"Error: {error['error']}")
-                        console.print("\nCode that failed validation:")
-                        console.print("```python")
-                        console.print(error['code'])
-                        console.print("```")
-                
-                # Display any execution errors
-                if charts_result['metadata']['execution_errors']:
-                    console.print("\n[red]Execution Errors:[/red]")
-                    for error in charts_result['metadata']['execution_errors']:
-                        console.print(f"\nAttempt {error['attempt']} at {error['timestamp']}:")
-                        console.print(f"Error Type: {error['error_type']}")
-                        console.print(f"Error Message: {error['error_message']}")
-                        if error['stdout']:
-                            console.print("\nStandard Output:")
-                            console.print(error['stdout'])
-                        if error['stderr']:
-                            console.print("\nStandard Error:")
-                            console.print(error['stderr'])
-                        console.print("\nCode that failed execution:")
-                        console.print("```python")
-                        console.print(error['code'])
-                        console.print("```")
-                
-                # Display performance metrics
-                console.print("\n[cyan]Performance Metrics:[/cyan]")
-                memory_usage = charts_result['metadata']['performance']['memory_usage']
-                console.print(f"Memory Usage: {memory_usage['rss']:.2f}MB RSS, {memory_usage['vms']:.2f}MB VMS")
-                console.print(f"Memory Usage %: {memory_usage['percent']:.2f}%")
-                console.print(f"Total Time: {charts_result['metadata']['performance']['total_time']:.2f} seconds")
-                
-                # Display final code if successful
-                if charts_result['code']:
-                    console.print("\n[bold cyan]Final Generated Code:[/bold cyan]")
-                    console.print("```python")
-                    console.print(charts_result['code'])
-                    console.print("```")
-
-                # Open charts in browser if both figures are available
-                if charts_result.get('fig1') and charts_result.get('fig2'):
-                    console.print("\n[bold cyan]Opening Charts in Browser...[/bold cyan]")
-                    
                     try:
-                        # Create a temporary HTML file for the charts
-                        html_content = f"""
-                        <html>
-                        <head>
-                            <title>Analysis Charts</title>
-                            <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-                            <style>
-                                .chart-container {{ margin: 20px; padding: 20px; }}
-                                body {{ max-width: 1200px; margin: 0 auto; padding: 20px; }}
-                                h2 {{ text-align: center; color: #444; }}
-                            </style>
-                        </head>
-                        <body>
-                            <h2>{chat_result.get('enhanced_user_message', selected_question)}</h2>
-                            <div class="chart-container">
-                                <div id="chart1" style="width: 100%; height: 600px;"></div>
-                            </div>
-                            <div class="chart-container">
-                                <div id="chart2" style="width: 100%; height: 600px;"></div>
-                            </div>
-                            <script>
-                                var fig1 = {charts_result['fig1'].to_json()};
-                                var fig2 = {charts_result['fig2'].to_json()};
-                                Plotly.newPlot('chart1', fig1.data, fig1.layout);
-                                Plotly.newPlot('chart2', fig2.data, fig2.layout);
-                            </script>
-                        </body>
-                        </html>
-                        """
+                        analysis_result = await run_analysis(analysis_request)
+                        progress.update(task, completed=True)
                         
-                        # Save and open the HTML file
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        html_file = f"analysis_charts_{timestamp}.html"
+                        # Display analysis execution details
+                        console.print("\n[bold cyan]Analysis Execution Details:[/bold cyan]")
+                        if 'metadata' in analysis_result:
+                            metadata = analysis_result['metadata']
+                            if 'code_generation' in metadata:
+                                console.print(f"Code Generation Attempts: {metadata['code_generation']['attempts']}")
+                                if metadata['code_generation']['validation_history']:
+                                    console.print("Validation History:")
+                                    for idx, error in enumerate(metadata['code_generation']['validation_history'], 1):
+                                        console.print(f"  {idx}. {error}")
+                            
+                            console.print(f"Datasets Analyzed: {metadata.get('datasets_analyzed', 'N/A')}")
+                            console.print(f"Total Rows Analyzed: {metadata.get('total_rows_analyzed', 'N/A')}")
+                            console.print(f"Total Columns Analyzed: {metadata.get('total_columns_analyzed', 'N/A')}")
+                            
+                            if 'execution_details' in metadata:
+                                if metadata['execution_details']['stdout']:
+                                    console.print("\n[bold]Analysis Output:[/bold]")
+                                    console.print(metadata['execution_details']['stdout'])
+                                if metadata['execution_details']['stderr']:
+                                    console.print("\n[bold red]Analysis Errors:[/bold red]")
+                                    console.print(metadata['execution_details']['stderr'])
                         
-                        with open(html_file, 'w', encoding='utf-8') as f:
-                            f.write(html_content)
+                        analysis_success = True  # Mark as successful
                         
-                        # Open in default browser
-                        import webbrowser
-                        webbrowser.open(f'file://{os.path.abspath(html_file)}')
-                        console.print(f"Charts saved to: {html_file}")
+                        # Display analysis results
+                        console.print("\n[bold green]Analysis Results:[/bold green]")
                         
-                    except Exception as e:
-                        console.print(f"\n[red]Error saving/opening charts: {str(e)}[/red]")
-                else:
-                    console.print("\n[yellow]Warning: One or both charts were not generated successfully[/yellow]")
-                    
-            except Exception as e:
-                progress.update(task, completed=True)
-                console.print(f"\n[bold red]Chart Generation Failed:[/bold red]")
-                
-                # Check if we have detailed error context
-                if hasattr(e, 'detail') and isinstance(e.detail, dict):
-                    error_context = e.detail.get('context', {})
-                    
-                    console.print(f"\nError Type: {error_context.get('error_type', 'Unknown')}")
-                    console.print(f"Error Message: {error_context.get('error_message', str(e))}")
-                    
-                    # Display validation errors if any
-                    if error_context.get('validation_errors'):
-                        console.print("\n[yellow]Validation Errors:[/yellow]")
-                        for error in error_context['validation_errors']:
-                            console.print(f"\nAttempt {error['attempt']}:")
-                            console.print(f"Error: {error['error']}")
-                    
-                    # Display execution errors if any
-                    if error_context.get('execution_errors'):
-                        console.print("\n[red]Execution Errors:[/red]")
-                        for error in error_context['execution_errors']:
-                            console.print(f"\nAttempt {error['attempt']}:")
-                            console.print(f"Error Type: {error['error_type']}")
-                            console.print(f"Error Message: {error['error_message']}")
-                    
-                    # Display code history if available
-                    if error_context.get('code_history'):
-                        console.print("\n[cyan]Code History:[/cyan]")
-                        for attempt in error_context['code_history']:
-                            console.print(f"\nAttempt {attempt['attempt']} at {attempt['timestamp']}:")
+                        # Display generated code
+                        if analysis_result.get('code'):
+                            console.print("\n[bold cyan]Generated Python Code:[/bold cyan]")
                             console.print("```python")
-                            console.print(attempt['code'])
+                            console.print(analysis_result['code'])
                             console.print("```")
-                else:
+                        
+                        # Display analysis summary
+                        if analysis_result.get('summary'):
+                            console.print("\n[bold cyan]Analysis Summary:[/bold cyan]")
+                            console.print(analysis_result['summary'])
+                        
+                        # Display analysis data results
+                        if 'data' in analysis_result and analysis_result['data']:
+                            console.print("\n[bold cyan]Analysis Results Data:[/bold cyan]")
+                            result_df = pd.DataFrame(analysis_result['data'])
+                            
+                            # Format numeric columns
+                            numeric_cols = result_df.select_dtypes(include=['float64', 'float32']).columns
+                            for col in numeric_cols:
+                                result_df[col] = result_df[col].round(2)
+                            
+                            console.print(result_df.to_string(index=False))
+                        
+                        # Display visualizations
+                        if analysis_result.get('visualizations'):
+                            console.print("\n[bold cyan]Visualizations:[/bold cyan]")
+                            for viz in analysis_result['visualizations']:
+                                console.print(f"\n{viz['title']}")
+                                console.print(viz['data'])
+                        
+                        # Display insights
+                        if analysis_result.get('insights'):
+                            console.print("\n[bold cyan]Key Insights:[/bold cyan]")
+                            for idx, insight in enumerate(analysis_result['insights'], 1):
+                                console.print(f"{idx}. {insight}")
+                    
+                    except Exception as e:
+                        progress.update(task, completed=True)
+                        console.print(f"\n[bold red]Analysis Failed[/bold red]")
+                        
+                        # Create error details table
+                        error_table = Table(show_header=True, header_style="bold red", show_lines=True)
+                        error_table.add_column("Error Details", style="red")
+                        error_table.add_column("Information", style="yellow")
+                        
+                        # Extract error details if available
+                        if hasattr(e, 'detail') and isinstance(e.detail, dict):
+                            error_context = e.detail.get('context', {})
+                            
+                            # Add basic error info
+                            error_table.add_row(
+                                "Error Type",
+                                error_context.get('error_type', 'Unknown')
+                            )
+                            error_table.add_row(
+                                "Error Message",
+                                error_context.get('error_message', str(e))
+                            )
+                            
+                            # Add attempt information
+                            if 'attempts' in error_context:
+                                error_table.add_row(
+                                    "Total Attempts",
+                                    str(error_context['attempts'])
+                                )
+                            
+                            # Display the table
+                            console.print("\n[bold red]Error Details:[/bold red]")
+                            console.print(error_table)
+                            
+                            # Display code generation history if available
+                            if error_context.get('code_history'):
+                                console.print("\n[bold cyan]Code Generation History:[/bold cyan]")
+                                for attempt in error_context['code_history']:
+                                    console.print(f"\n[bold]Attempt {attempt['attempt']} at {attempt['timestamp']}:[/bold]")
+                                    if 'error' in attempt:
+                                        console.print(f"[red]Error: {attempt['error']}[/red]")
+                                    console.print("\nGenerated Code:")
+                                    console.print("```python")
+                                    console.print(attempt['code'])
+                                    console.print("```")
+                                    if 'stdout' in attempt and attempt['stdout']:
+                                        console.print("\nOutput:")
+                                        console.print(attempt['stdout'])
+                                    if 'stderr' in attempt and attempt['stderr']:
+                                        console.print("\nErrors:")
+                                        console.print(f"[red]{attempt['stderr']}[/red]")
+                        else:
+                            # Simple error case
+                            error_table.add_row("Error Message", str(e))
+                            console.print(error_table)
+                        
+                        # Ask user what they want to do
+                        questions = [
+                            InquirerList(
+                                'error_action',
+                                message="How would you like to proceed?",
+                                choices=[
+                                    "1. Try a different question",
+                                    "2. Exit the program"
+                                ]
+                            )
+                        ]
+                        
+                        error_answer = inquirer.prompt(questions)
+                        
+                        if error_answer['error_action'].startswith("2"):
+                            console.print("\n[yellow]Exiting program...[/yellow]")
+                            return
+                        else:
+                            # Get new question from user
+                            custom_question = [
+                                inquirer.Text('custom',
+                                            message="Enter your new analysis question")
+                            ]
+                            custom_answer = inquirer.prompt(custom_question)
+                            selected_question = custom_answer['custom']
+
+            except Exception as e:
+                console.print(f"\n[bold red]Unexpected error: {str(e)}[/bold red]")
+                return
+
+        # Only proceed with business analysis and charts if analysis was successful
+        if analysis_success:
+            analysis_elapsed_time = time.time() - analysis_start_time
+            console.print(f"\n[cyan]Analysis time: {analysis_elapsed_time:.2f} seconds[/cyan]")
+
+            # Run business analysis
+            console.print("\n[bold]Running Business Analysis...[/bold]")
+            analysis_start_time = time.time()
+
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                transient=True
+            ) as progress:
+                task = progress.add_task("Analyzing business implications...", total=None)
+                
+                try:
+                    # Create business analysis request
+                    if 'data' in analysis_result and isinstance(analysis_result['data'], list):
+                        business_request = BusinessAnalysisRequest(
+                            data=analysis_result['data'],
+                            dictionary=[
+                                {
+                                    'column': col['column'],
+                                    'description': col['description'],
+                                    'data_type': col['data_type']
+                                }
+                                for dataset in dictionary_result.get('dictionaries', [])
+                                for col in dataset.get('dictionary', [])
+                            ],
+                            question=chat_result.get('enhanced_user_message', selected_question)
+                        )
+                        
+                        # Get business analysis
+                        business_analysis = await get_business_analysis(business_request)
+                        progress.update(task, completed=True)
+
+                        # Display business analysis results
+                        console.print("\n[bold green]Business Analysis:[/bold green]")
+                        
+                        # Display The Bottom Line
+                        console.print("\n[bold cyan]The Bottom Line:[/bold cyan]")
+                        console.print(business_analysis['bottom_line'])
+                        
+                        # Display Additional Insights
+                        console.print("\n[bold cyan]Additional Insights:[/bold cyan]")
+                        console.print(business_analysis['additional_insights'])
+                        
+                        # Display Follow-up Questions
+                        console.print("\n[bold cyan]Follow-up Questions:[/bold cyan]")
+                        for i, question in enumerate(business_analysis['follow_up_questions'], 1):
+                            console.print(f"{i}. {question}")
+
+                        # Add business analysis to results
+                        result['business_analysis'] = business_analysis
+
+                except Exception as e:
+                    console.print(f"\n[bold red]Business Analysis Failed:[/bold red]")
                     console.print(f"Error: {str(e)}")
 
-        charts_elapsed_time = time.time() - charts_start_time
-        console.print(f"\n[cyan]Chart generation time: {charts_elapsed_time:.2f} seconds[/cyan]")
-
-        # Add loop for follow-up questions
-        while True:
-            # Get follow-up questions from business analysis if available
-            follow_up_questions = []
-            if 'business_analysis' in result and 'follow_up_questions' in result['business_analysis']:
-                follow_up_questions = result['business_analysis']['follow_up_questions']
-
-            # Create question selection prompt
-            questions = [
-                InquirerList(
-                    'selected_question',
-                    message="Would you like to analyze another question?",
-                    choices=[
-                        *[f"{i+1}. {q}" for i, q in enumerate(follow_up_questions)],
-                        f"{len(follow_up_questions) + 1}. Enter my own question",
-                        f"{len(follow_up_questions) + 2}. Exit"
-                    ]
-                )
-            ]
-            
-            answer = inquirer.prompt(questions)
-            
-            # Check if user wants to exit
-            if answer['selected_question'].endswith("Exit"):
-                break
-                
-            # Get the new question
-            if answer['selected_question'].startswith(f"{len(follow_up_questions) + 1}."):
-                custom_question = [
-                    inquirer.Text('custom',
-                                message="Enter your analysis question")
-                ]
-                custom_answer = inquirer.prompt(custom_question)
-                selected_question = custom_answer['custom']
-            else:
-                # Extract the question text from the selected option
-                selected_question = answer['selected_question'].split('. ', 1)[1]
-            
-            console.print(f"\n[bold cyan]Selected Question:[/bold cyan] {selected_question}")
-            
-            # Run the analysis cycle again with the new question
-            # Chat enhancement
-            console.print("\n[bold]Enhancing question with chat analysis...[/bold]")
-            
-            # Create chat history table
-            history_table = Table(show_header=True, header_style="bold magenta", show_lines=True)
-            history_table.add_column("Original Question", style="cyan")
-            history_table.add_column("Enhanced Question", style="yellow")
-            
-            # Add previous questions to history if they exist
-            if 'question_history' not in result:
-                result['question_history'] = []
-            
-            # Display question history
-            if result['question_history']:
-                console.print("\n[bold cyan]Question History:[/bold cyan]")
-                for hist in result['question_history']:
-                    history_table.add_row(
-                        hist['original'],
-                        hist['enhanced']
-                    )
-                console.print(history_table)
-            
-            # Create chat request with history context
-            chat_messages = []
-            # Add history context if available
-            for hist in result['question_history'][-2:]:  # Include last 2 questions for context
-                chat_messages.extend([
-                    {"role": "user", "content": hist['original']},
-                    {"role": "assistant", "content": hist['enhanced']}
-                ])
-            # Add current question
-            chat_messages.append({"role": "user", "content": selected_question})
-            
-            chat_request = ChatRequest(messages=chat_messages)
-            chat_result = await chat(chat_request)
-            
-            # Add new question to history
-            result['question_history'].append({
-                'original': selected_question,
-                'enhanced': chat_result.get('enhanced_user_message', selected_question),
-                'timestamp': datetime.now().isoformat()
-            })
-            
-            # Display current question enhancement
-            console.print("\n[bold cyan]Current Question Enhancement:[/bold cyan]")
-            current_table = Table(show_header=True, header_style="bold magenta", show_lines=True)
-            current_table.add_column("Original Question", style="cyan")
-            current_table.add_column("Enhanced Question", style="yellow")
-            current_table.add_row(
-                selected_question,
-                chat_result.get('enhanced_user_message', selected_question)
-            )
-            console.print(current_table)
-            
-            # Run analysis
-            console.print("\n[bold]Running Analysis...[/bold]")
-            analysis_request = RunAnalysisRequest(
-                data={
-                    dataset['name']: dataset['data'] 
-                    for dataset in result['datasets']
-                },
-                dictionary={
-                    dataset['name']: [
-                        {
-                            'column': col['column'],
-                            'description': col['description'],
-                            'data_type': col['data_type']
-                        }
-                        for col in dataset.get('dictionary', [])
-                    ]
-                    for dataset in dictionary_result.get('dictionaries', [])
-                },
-                question=chat_result.get('enhanced_user_message', selected_question)
-            )
-            
-            analysis_result = await run_analysis(analysis_request)
-            
-            # Run business analysis
-            if 'data' in analysis_result and isinstance(analysis_result['data'], list):
-                business_request = BusinessAnalysisRequest(
-                    data=analysis_result['data'],
-                    dictionary=[
-                        {
-                            'column': col['column'],
-                            'description': col['description'],
-                            'data_type': col['data_type']
-                        }
-                        for dataset in dictionary_result.get('dictionaries', [])
-                        for col in dataset.get('dictionary', [])
-                    ],
-                    question=chat_result.get('enhanced_user_message', selected_question)
-                )
-                
-                business_analysis = await get_business_analysis(business_request)
-                
-                # Display business analysis results
-                console.print("\n[bold green]Business Analysis:[/bold green]")
-                console.print("\n[bold cyan]The Bottom Line:[/bold cyan]")
-                console.print(business_analysis['bottom_line'])
-                console.print("\n[bold cyan]Additional Insights:[/bold cyan]")
-                console.print(business_analysis['additional_insights'])
-            
             # Run charts
             console.print("\n[bold]Generating Charts...[/bold]")
-            charts_request = RunChartsRequest(
-                data=analysis_result.get('data', []),
-                question=chat_result.get('enhanced_user_message', selected_question)
-            )
-            
-            charts_result = await run_charts(charts_request)
-            
-            # Display and save charts as before
-            if charts_result.get('fig1') and charts_result.get('fig2'):
-                # ... (keep existing chart display code) ...
+            charts_start_time = time.time()
+
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                transient=True
+            ) as progress:
+                task = progress.add_task("Creating visualizations...", total=None)
+                
                 try:
-                    html_content = f"""
-                    <html>
-                    <head>
-                        <title>Analysis Charts</title>
-                        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-                        <style>
-                            .chart-container {{ margin: 20px; padding: 20px; }}
-                            body {{ max-width: 1200px; margin: 0 auto; padding: 20px; }}
-                            h2 {{ text-align: center; color: #444; }}
-                        </style>
-                    </head>
-                    <body>
-                        <h2>{chat_result.get('enhanced_user_message', selected_question)}</h2>
-                        <div class="chart-container">
-                            <div id="chart1" style="width: 100%; height: 600px;"></div>
-                        </div>
-                        <div class="chart-container">
-                            <div id="chart2" style="width: 100%; height: 600px;"></div>
-                        </div>
-                        <script>
-                            var fig1 = {charts_result['fig1'].to_json()};
-                            var fig2 = {charts_result['fig2'].to_json()};
-                            Plotly.newPlot('chart1', fig1.data, fig1.layout);
-                            Plotly.newPlot('chart2', fig2.data, fig2.layout);
-                        </script>
-                    </body>
-                    </html>
-                    """
+                    # Get the analysis results data
+                    analysis_data = analysis_result.get('data', [])
                     
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    html_file = f"analysis_charts_{timestamp}.html"
+                    # Create charts request
+                    charts_request = RunChartsRequest(
+                        data=analysis_data,
+                        question=chat_result.get('enhanced_user_message', selected_question)
+                    )
                     
-                    with open(html_file, 'w', encoding='utf-8') as f:
-                        f.write(html_content)
-                    
-                    import webbrowser
-                    webbrowser.open(f'file://{os.path.abspath(html_file)}')
-                    console.print(f"Charts saved to: {html_file}")
-                    
+                    # Run charts
+                    charts_result = await run_charts(charts_request)
+                    progress.update(task, completed=True)
+
+                    # Open charts in browser if available
+                    if charts_result.get('fig1') and charts_result.get('fig2'):
+                        console.print("\n[bold cyan]Opening Charts in Browser...[/bold cyan]")
+                        
+                        try:
+                            # Create HTML file for charts
+                            html_content = f"""
+                            <html>
+                            <head>
+                                <title>Analysis Charts</title>
+                                <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+                                <style>
+                                    .chart-container {{ margin: 20px; padding: 20px; }}
+                                    body {{ max-width: 1200px; margin: 0 auto; padding: 20px; }}
+                                    h2 {{ text-align: center; color: #444; }}
+                                </style>
+                            </head>
+                            <body>
+                                <h2>{chat_result.get('enhanced_user_message', selected_question)}</h2>
+                                <div class="chart-container">
+                                    <div id="chart1" style="width: 100%; height: 600px;"></div>
+                                </div>
+                                <div class="chart-container">
+                                    <div id="chart2" style="width: 100%; height: 600px;"></div>
+                                </div>
+                                <script>
+                                    var fig1 = {charts_result['fig1'].to_json()};
+                                    var fig2 = {charts_result['fig2'].to_json()};
+                                    Plotly.newPlot('chart1', fig1.data, fig1.layout);
+                                    Plotly.newPlot('chart2', fig2.data, fig2.layout);
+                                </script>
+                            </body>
+                            </html>
+                            """
+                            
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            html_file = f"analysis_charts_{timestamp}.html"
+                            
+                            with open(html_file, 'w', encoding='utf-8') as f:
+                                f.write(html_content)
+                            
+                            import webbrowser
+                            webbrowser.open(f'file://{os.path.abspath(html_file)}')
+                            console.print(f"Charts saved to: {html_file}")
+                            
+                        except Exception as e:
+                            console.print(f"\n[red]Error saving/opening charts: {str(e)}[/red]")
+                    else:
+                        console.print("\n[yellow]Warning: One or both charts were not generated successfully[/yellow]")
+
                 except Exception as e:
-                    console.print(f"\n[red]Error saving/opening charts: {str(e)}[/red]")
+                    console.print(f"\n[bold red]Chart Generation Failed:[/bold red]")
+                    console.print(f"Error: {str(e)}")
+
+            # After completing the full analysis cycle, prompt for follow-up
+            while True:
+                # Get follow-up questions from business analysis if available
+                follow_up_questions = []
+                if 'business_analysis' in result and 'follow_up_questions' in result['business_analysis']:
+                    follow_up_questions = result['business_analysis']['follow_up_questions']
+
+                # Create question selection prompt
+                questions = [
+                    InquirerList(
+                        'selected_question',
+                        message="Would you like to analyze another question?",
+                        choices=[
+                            *[f"{i+1}. {q}" for i, q in enumerate(follow_up_questions)],
+                            f"{len(follow_up_questions) + 1}. Enter my own question",
+                            f"{len(follow_up_questions) + 2}. Exit"
+                        ]
+                    )
+                ]
+                
+                answer = inquirer.prompt(questions)
+                
+                # Check if user wants to exit
+                if answer['selected_question'].endswith("Exit"):
+                    break
+                    
+                # Get the new question
+                if answer['selected_question'].startswith(f"{len(follow_up_questions) + 1}."):
+                    custom_question = [
+                        inquirer.Text('custom',
+                                    message="Enter your analysis question")
+                    ]
+                    custom_answer = inquirer.prompt(custom_question)
+                    selected_question = custom_answer['custom']
+                else:
+                    # Extract the question text from the selected option
+                    selected_question = answer['selected_question'].split('. ', 1)[1]
+                
+                console.print(f"\n[bold cyan]Selected Question:[/bold cyan] {selected_question}")
+                
+                # Run the analysis cycle again with the new question
+                # Chat enhancement
+                console.print("\n[bold]Enhancing question with chat analysis...[/bold]")
+                
+                # Create chat request with history context
+                chat_messages = []
+                # Add history context if available
+                for hist in result['question_history'][-2:]:  # Include last 2 questions for context
+                    chat_messages.extend([
+                        {"role": "user", "content": hist['original']},
+                        {"role": "assistant", "content": hist['enhanced']}
+                    ])
+                # Add current question
+                chat_messages.append({"role": "user", "content": selected_question})
+                
+                chat_request = ChatRequest(messages=chat_messages)
+                chat_result = await chat(chat_request)
+                
+                # Add new question to history
+                result['question_history'].append({
+                    'original': selected_question,
+                    'enhanced': chat_result.get('enhanced_user_message', selected_question),
+                    'timestamp': datetime.now().isoformat()
+                })
+                
+                # Display current question enhancement
+                console.print("\n[bold cyan]Current Question Enhancement:[/bold cyan]")
+                current_table = Table(show_header=True, header_style="bold magenta", show_lines=True)
+                current_table.add_column("Original Question", style="cyan")
+                current_table.add_column("Enhanced Question", style="yellow")
+                current_table.add_row(
+                    selected_question,
+                    chat_result.get('enhanced_user_message', selected_question)
+                )
+                console.print(current_table)
+                
+                # Reset analysis_success flag for the new question
+                analysis_success = False
+                # Continue with the main analysis loop
+                break
 
         # Save final results
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
