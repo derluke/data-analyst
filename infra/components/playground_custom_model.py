@@ -19,10 +19,8 @@ import pulumi_datarobot as datarobot
 
 from ..common.schema import (
     CustomModelArgs,
-    DatasetArgs,
     LLMBlueprintArgs,
     PlaygroundArgs,
-    VectorDatabaseArgs,
 )
 
 

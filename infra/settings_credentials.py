@@ -14,7 +14,7 @@
 
 from pydantic import BaseModel, ValidationError
 
-from application.credentials import (
+from utils.credentials import (
     AzureOpenAICredentials,
     GoogleLLMCredentials,
     OpenAICredentials,

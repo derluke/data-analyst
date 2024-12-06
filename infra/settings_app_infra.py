@@ -49,11 +49,11 @@ def get_app_files() -> List[Tuple[str, str]]:
 
     source_files.extend(
         [
-            ("application/__init__.py", "application/__init__.py"),
-            ("application/api.py", "application/api.py"),
-            ("application/credentials.py", "application/credentials.py"),
-            ("application/resources.py", "application/resources.py"),
-            ("application/schema.py", "application/schema.py"),
+            ("utils/__init__.py", "utils/__init__.py"),
+            ("utils/api.py", "utils/api.py"),
+            ("utils/credentials.py", "utils/credentials.py"),
+            ("utils/resources.py", "utils/resources.py"),
+            ("utils/schema.py", "utils/schema.py"),
             (str(application_path / "metadata.yaml"), "metadata.yaml"),
         ]
     )

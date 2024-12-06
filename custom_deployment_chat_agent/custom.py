@@ -11,8 +11,8 @@ from openai.types.chat import (
 import pandas as pd
 from collections.abc import Iterator
 
-from application.credentials import AzureOpenAICredentials
-from application.schema import ChatAgentDeploymentSettings
+from utils.credentials import AzureOpenAICredentials
+from utils.schema import ChatAgentDeploymentSettings
 
 
 # TODO: Custom should work with multiple model types

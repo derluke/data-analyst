@@ -22,7 +22,7 @@ from pydantic import ValidationError
 
 sys.path.append("..")
 
-from application.resources import ChatAgentDeployment
+from utils.resources import ChatAgentDeployment
 
 try:
     chat_agent_deployment_id = ChatAgentDeployment().id

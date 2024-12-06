@@ -20,7 +20,7 @@ import infra.settings_credentials as credentials
 import pulumi
 import pulumi_datarobot as datarobot
 
-from application.resources import app_env_name, chat_agent_deployment_env_name
+from utils.resources import app_env_name, chat_agent_deployment_env_name
 
 from infra import (
     settings_app_infra,
@@ -32,7 +32,8 @@ from infra.common.globals import GlobalRuntimeEnvironment
 from infra.common.urls import get_deployment_url
 from infra.components.custom_model_deployment import CustomModelDeployment
 from infra.components.dr_credential import DRCredential
-from infra.components.rag_custom_model import PlaygroundCustomModel
+from infra.components.playground_custom_model import PlaygroundCustomModel
+from infra.settings_prompt_injection_guardrail import prompt_injection_guardrail
 
 check_feature_flags(pathlib.Path("infra/feature_flag_requirements.yaml"))
 
@@ -67,38 +68,62 @@ llm_credential = DRCredential(
     credential_args=credentials.llm_credential_args,
 )
 
+
+prompt_injection_guard_deployment = datarobot.Deployment(
+    registered_model_version_id=datarobot.get_global_model(
+        name=prompt_injection_guardrail.registered_model_name,
+    ).version_id,
+    prediction_environment_id=prediction_environment.id,
+    use_case_ids=[use_case.id],
+    **prompt_injection_guardrail.deployment_args.model_dump(),
+)
+
+prompt_injection_guardrails_config = (
+    prompt_injection_guardrail.custom_model_guard_configuration_args
+)
+
+prompt_injection_guard_configuration = [
+    datarobot.CustomModelGuardConfigurationArgs(
+        deployment_id=prompt_injection_guard_deployment.id,
+        **prompt_injection_guardrails_config.model_dump(mode="json", exclude_none=True),
+    )
+]
+
 if settings_main.core.genai_deployment_type == "diy":
     # Custom model
-    chat_agent_custom_model = datarobot.CustomModel(
+    chat_agent_registered_llm = datarobot.CustomModel(
         files=settings_chat_agent.get_files(
             runtime_parameter_values=llm_credential.runtime_parameter_values,
         ),
         runtime_parameter_values=llm_credential.runtime_parameter_values,
+        guard_configurations=prompt_injection_guard_configuration,
         **settings_chat_agent.custom_model_args.model_dump(
             mode="json", exclude_none=True
         ),
     )
 
-    chat_agent_deployment = CustomModelDeployment(
-        resource_name=f"Chat Agent Custom Model Deployment [{settings_main.project_name}]",
-        use_case=use_case,
-        custom_model_version_id=chat_agent_custom_model.version_id,
-        registered_model_args=settings_chat_agent.registered_model_args,
-        prediction_environment=prediction_environment,
-        deployment_args=settings_chat_agent.deployment_args,
-    )
 elif settings_main.core.genai_deployment_type == "dr":
-    chat_agent_deployment = PlaygroundCustomModel(
+    chat_agent_registered_llm = PlaygroundCustomModel(
         resource_name=f"Chat Agent Buzok Deployment [{settings_main.project_name}]",
         use_case=use_case,
         playground_args=settings_chat_agent.playground_args,
         llm_blueprint_args=settings_chat_agent.llm_blueprint_args,
         runtime_parameter_values=llm_credential.runtime_parameter_values,
-        guard_configurations=settings_chat_agent,
+        guard_configurations=prompt_injection_guard_configuration,
         custom_model_args=settings_chat_agent.custom_model_args,
     )
 else:
     raise ValueError("GenAI Deployment type must be one of DIY and DR")
+
+
+chat_agent_deployment = CustomModelDeployment(
+    resource_name=f"Chat Agent Custom Model Deployment [{settings_main.project_name}]",
+    use_case=use_case,
+    custom_model_version_id=chat_agent_registered_llm.version_id,
+    registered_model_args=settings_chat_agent.registered_model_args,
+    prediction_environment=prediction_environment,
+    deployment_args=settings_chat_agent.deployment_args,
+)
 
 
 app_runtime_parameters = [

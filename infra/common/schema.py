@@ -27,7 +27,11 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
-from .globals import GlobalPredictionEnvironmentPlatforms, GlobalLLM
+from .globals import (
+    GlobalPredictionEnvironmentPlatforms,
+    GlobalLLM,
+    GlobalGuardrailTemplateName,
+)
 
 
 class GenAIDeploymentType(str, Enum):
@@ -39,8 +43,58 @@ class GenAIBuzokDeploymentType(str, Enum):
     AZ = "azure"
     GOOG = "google"
     AMZN = "amazon"
-    ANTH = "anthropic"
-    OAI = "openai"
+
+
+class ModerationAction(str, Enum):
+    BLOCK = "block"
+    REPORT = "report"
+    REPORT_AND_BLOCK = "reportAndBlock"
+
+
+class GuardConditionComparator(Enum):
+    """The comparator used in a guard condition."""
+
+    GREATER_THAN = "greaterThan"
+    LESS_THAN = "lessThan"
+    EQUALS = "equals"
+    NOT_EQUALS = "notEquals"
+    IS = "is"
+    IS_NOT = "isNot"
+    MATCHES = "matches"
+    DOES_NOT_MATCH = "doesNotMatch"
+    CONTAINS = "contains"
+    DOES_NOT_CONTAIN = "doesNotContain"
+
+
+class Condition(BaseModel):
+    comparand: float | str | bool | list[str]
+    comparator: GuardConditionComparator
+
+
+class Intervention(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    action: ModerationAction
+    condition: str
+    message: str
+    # send_notification: bool
+
+
+class GuardrailTemplate(BaseModel):
+    template_name: str
+    registered_model_name: Optional[str] = None
+    name: str
+    stages: list[Stage]
+    intervention: Intervention
+
+
+class CustomModelGuardConfigurationArgs(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    name: str
+    stages: list[Stage]
+    template_name: GlobalGuardrailTemplateName
+    intervention: Intervention
+    input_column_name: str | None = None
+    output_column_name: str | None = None
 
 
 class CoreSettings(BaseSettings):

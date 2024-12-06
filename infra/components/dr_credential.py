@@ -18,7 +18,7 @@ from typing import List, Optional, Union
 import pulumi
 import pulumi_datarobot as datarobot
 
-from application.credentials import (
+from utils.credentials import (
     AzureOpenAICredentials,
     GoogleLLMCredentials,
     OpenAICredentials,

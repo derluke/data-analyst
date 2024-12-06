@@ -109,3 +109,23 @@ class GlobalPredictionEnvironmentPlatforms(str, Enum):
     OTHER = "other"
     SNOWFLAKE = "snowflake"
     SAP_AI_CORE = "sapAiCore"
+
+
+class GlobalRegisteredModelName(str, Enum):
+    TOXICITY = "[Hugging Face] Toxicity Classifier"
+    SENTIMENT = "[Hugging Face] Sentiment Classifier"
+    REFUSAL = "[DataRobot] LLM Refusal Score"
+    PROMPT_INJECTION = "[Hugging Face] Prompt Injection Classifier"
+
+
+class GlobalGuardrailTemplateName(str, Enum):
+    CUSTOM_DEPLOYMENT = "Custom Deployment"
+    FAITHFULNESS = "Faithfulness"
+    PII_DETECTION = "PII Detection"
+    PROMPT_INJECTION = "Prompt Injection"
+    ROUGE_1 = "Rouge 1"
+    SENTIMENT_CLASSIFIER = "Sentiment Classifier"
+    STAY_ON_TOPIC_FOR_INPUTS = "Stay on topic for inputs"
+    STAY_ON_TOPIC_FOR_OUTPUTS = "Stay on topic for output"
+    TOKEN_COUNT = "Token Count"
+    TOXICITY = "Toxicity"

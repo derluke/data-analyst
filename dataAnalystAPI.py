@@ -25,7 +25,7 @@ from openai import OpenAI
 from plotly.subplots import make_subplots
 from pydantic import BaseModel, field_validator, validator
 
-from application.resources import ChatAgentDeployment
+from utils.resources import ChatAgentDeployment
 
 
 # Get environment variables

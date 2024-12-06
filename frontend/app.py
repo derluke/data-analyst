@@ -19,7 +19,7 @@ import streamlit as st
 
 sys.path.append("..")
 
-from application.api import create_completion
+from utils.api import create_completion
 
 if "message_history" not in st.session_state:
     st.session_state.message_history = []

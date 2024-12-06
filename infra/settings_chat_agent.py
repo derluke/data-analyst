@@ -19,7 +19,7 @@ import datarobot as dr
 import pulumi_datarobot as datarobot
 from jinja2 import BaseLoader, Environment
 
-from application.schema import ChatAgentDeploymentSettings
+from utils.schema import ChatAgentDeploymentSettings
 from .common.globals import GlobalRuntimeEnvironment, GlobalLLM
 
 from .common.schema import (
@@ -120,10 +120,10 @@ elif core.genai_deployment_type == "diy":
             if f.is_file() and f.name not in ("README.md", "model-metadata.yaml.jinja")
         ] + [
             (
-                "application/__init__.py",
-                "application/__init__.py",
+                "utils/__init__.py",
+                "utils/__init__.py",
             ),
-            ("application/schema.py", "application/schema.py"),
-            ("application/credentials.py", "application/credentials.py"),
+            ("utils/schema.py", "utils/schema.py"),
+            ("utils/credentials.py", "utils/credentials.py"),
         ]
         return files
