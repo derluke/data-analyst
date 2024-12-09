@@ -630,7 +630,9 @@ def process_dataset(dataset: DatasetInput) -> Dict[str, Any]:
         )
 
         # Process column batches using ThreadPoolExecutor
-        batch_results = {}  # Change to dictionary to maintain column-description mapping
+        batch_results = (
+            {}
+        )  # Change to dictionary to maintain column-description mapping
         with ThreadPoolExecutor() as executor:
             batch_futures = {
                 executor.submit(
@@ -1406,15 +1408,15 @@ async def run_charts(request: RunChartsRequest) -> Dict[str, Any]:
                     error_context = {
                         "error_type": type(e).__name__,
                         "error_message": str(e),
-                        "validation_errors": result.validation_errors
-                        if "result" in locals()
-                        else [],
-                        "execution_errors": result.execution_errors
-                        if "result" in locals()
-                        else [],
-                        "code_history": result.code_history
-                        if "result" in locals()
-                        else [],
+                        "validation_errors": (
+                            result.validation_errors if "result" in locals() else []
+                        ),
+                        "execution_errors": (
+                            result.execution_errors if "result" in locals() else []
+                        ),
+                        "code_history": (
+                            result.code_history if "result" in locals() else []
+                        ),
                         "attempts": attempt,
                         "timestamp": datetime.now().isoformat(),
                     }

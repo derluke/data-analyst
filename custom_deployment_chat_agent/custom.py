@@ -93,6 +93,7 @@ def chat(
     try:
         return client.chat.completions.create(**completion_create_params)
     except NotFoundError:
+        print(f"{completion_create_params["model"]} not found, deferring to default")
         completion_create_params["model"] = default_model_name
         return client.chat.completions.create(**completion_create_params)
 
