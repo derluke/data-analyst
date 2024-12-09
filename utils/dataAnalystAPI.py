@@ -22,11 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from openai import OpenAI
 from plotly.subplots import make_subplots
-from pydantic import BaseModel, ValidationError, validator
-import scipy
-import statsmodels
-import sklearn
-import kaleido
+from pydantic import field_validator, BaseModel, ValidationError
 
 sys.path.append("..")
 
@@ -158,7 +154,8 @@ class CleanseResponse(BaseModel):
 class DictionaryRequest(BaseModel):
     data: List[Dict[str, Any]]
 
-    @validator("data")
+    @field_validator("data")
+    @classmethod
     def validate_data(cls, v):
         if not isinstance(v, list):
             raise ValueError("Input data must be a list of dictionaries")
@@ -403,9 +400,7 @@ def generate_df_hash(df: pd.DataFrame) -> str:
 
 
 def process_column_batch(
-    columns: List[str], 
-    df: pd.DataFrame,
-    batch_size: int = 5
+    columns: List[str], df: pd.DataFrame, batch_size: int = 5
 ) -> Dict[str, str]:
     """Process a batch of columns to get their descriptions"""
 
@@ -471,22 +466,22 @@ def process_column_batch(
         response_format={"type": "json_object"},
         stream=False,
     )
-    
+
     response = json.loads(completion.choices[0].message.content)
-    
+
     # Extract descriptions from response and map to columns
     descriptions = {}
     if isinstance(response, dict):
         # Check if response has descriptions list
-        if 'descriptions' in response and isinstance(response['descriptions'], list):
+        if "descriptions" in response and isinstance(response["descriptions"], list):
             # Map descriptions to columns, handling potential length mismatch
-            for col, desc in zip(columns, response['descriptions']):
+            for col, desc in zip(columns, response["descriptions"]):
                 descriptions[col] = desc
         # Fallback: check if response has column-specific descriptions
         else:
             for col in columns:
                 descriptions[col] = response.get(col, "No description available")
-    
+
     return descriptions
 
     response = json.loads(completion.choices[0].message.content)
@@ -649,7 +644,9 @@ def process_dataset(dataset: DatasetInput) -> Dict[str, Any]:
                 try:
                     result = future.result()
                     # Assuming process_column_batch returns a dictionary mapping columns to descriptions
-                    batch_results.update(result)  # Merge results maintaining column mapping
+                    batch_results.update(
+                        result
+                    )  # Merge results maintaining column mapping
                 except Exception as e:
                     logging.error(f"Error processing batch: {str(e)}")
                     continue
@@ -659,7 +656,7 @@ def process_dataset(dataset: DatasetInput) -> Dict[str, Any]:
             {
                 "data_type": str(df[col].dtype),
                 "column": col,
-                "description": batch_results.get(col, "No description available")
+                "description": batch_results.get(col, "No description available"),
             }
             for col in df.columns
         ]
@@ -792,7 +789,7 @@ async def generate_question_suggestions(
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
         )
 
         # Parse response
@@ -906,7 +903,8 @@ class RunAnalysisRequest(BaseModel):
     error_message: Optional[str] = None
     failed_code: Optional[str] = None
 
-    @validator("data")
+    @field_validator("data")
+    @classmethod
     def validate_data(cls, v):
         if not isinstance(v, dict):
             raise ValueError("Input data must be a dictionary of datasets")
@@ -914,7 +912,8 @@ class RunAnalysisRequest(BaseModel):
             raise ValueError("Each dataset must be a list of dictionaries")
         return v
 
-    @validator("dictionary")
+    @field_validator("dictionary")
+    @classmethod
     def validate_dictionary(cls, v):
         if not isinstance(v, dict):
             raise ValueError("Dictionary must be a dictionary of dataset descriptions")
@@ -932,7 +931,8 @@ class PythonAnalysisRequest(BaseModel):
     error_message: Optional[str] = None
     failed_code: Optional[str] = None
 
-    @validator("data")
+    @field_validator("data")
+    @classmethod
     def validate_data(cls, v):
         if not isinstance(v, list):
             raise ValueError("Input data must be a list of JSON objects")
@@ -940,7 +940,8 @@ class PythonAnalysisRequest(BaseModel):
             raise ValueError("Data cannot be empty")
         return v
 
-    @validator("dictionary")
+    @field_validator("dictionary")
+    @classmethod
     def validate_dictionary(cls, v):
         if not isinstance(v, list):
             raise ValueError("Dictionary must be a list")
@@ -949,7 +950,8 @@ class PythonAnalysisRequest(BaseModel):
             raise ValueError(f"Dictionary entries must contain keys: {required_keys}")
         return v
 
-    @validator("question")
+    @field_validator("question")
+    @classmethod
     def validate_question(cls, v):
         if not v.strip():
             raise ValueError("Question cannot be empty")
@@ -1013,7 +1015,9 @@ async def get_python_analysis_code(request: RunAnalysisRequest) -> Dict[str, str
 
         for dataset_name, dataset in request.data.items():
             df = pd.DataFrame(dataset)
-            all_shapes.append(f"{dataset_name}: {df.shape[0]} rows x {df.shape[1]} columns")
+            all_shapes.append(
+                f"{dataset_name}: {df.shape[0]} rows x {df.shape[1]} columns"
+            )
             # Limit sample to 10 rows
             sample_df = df.head(10)
             all_samples.append(f"{dataset_name}:\n{sample_df.to_string()}")
@@ -1035,20 +1039,25 @@ async def get_python_analysis_code(request: RunAnalysisRequest) -> Dict[str, str
 
         # Add error context if available
         if request.error_message and request.failed_code:
-            messages.extend([
-                {"role": "user", "content": "Previous attempt failed with error:"},
-                {"role": "user", "content": request.error_message},
-                {"role": "user", "content": "Failed code:"},
-                {"role": "user", "content": request.failed_code},
-                {"role": "user", "content": "Please generate new code that avoids this error."}
-            ])
+            messages.extend(
+                [
+                    {"role": "user", "content": "Previous attempt failed with error:"},
+                    {"role": "user", "content": request.error_message},
+                    {"role": "user", "content": "Failed code:"},
+                    {"role": "user", "content": request.failed_code},
+                    {
+                        "role": "user",
+                        "content": "Please generate new code that avoids this error.",
+                    },
+                ]
+            )
 
         # Get response from OpenAI
         completion = client.chat.completions.create(
             model="gpt-4o",
             temperature=0.1,
             messages=messages,
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
         )
 
         # Parse and return the response
@@ -1079,7 +1088,8 @@ class ChartRequest(BaseModel):
     error_message: Optional[str] = None
     failed_code: Optional[str] = None
 
-    @validator("data")
+    @field_validator("data")
+    @classmethod
     def validate_data(cls, v):
         if not isinstance(v, list):
             raise ValueError("Input data must be a list of dictionaries")
@@ -1156,7 +1166,7 @@ async def create_charts(
     metadata: Dict[str, Any],
     error_message: Optional[str] = None,
     failed_code: Optional[str] = None,
-    max_attempts: int = 3
+    max_attempts: int = 3,
 ) -> ChartGenerationResult:
     """Generate and validate chart code with retry logic"""
     attempts = 0
@@ -1175,8 +1185,14 @@ async def create_charts(
                 messages=[
                     {"role": "system", "content": prompts.SYSTEM_PROMPT_PLOTLY_CHART},
                     {"role": "user", "content": f"Question: {question}"},
-                    {"role": "user", "content": f"Data Metadata:\n{json.dumps(metadata)}"},
-                    {"role": "user", "content": f"Data top 25 rows:\n{df.head(25).to_string()}"},
+                    {
+                        "role": "user",
+                        "content": f"Data Metadata:\n{json.dumps(metadata)}",
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Data top 25 rows:\n{df.head(25).to_string()}",
+                    },
                     *(
                         [
                             {
@@ -1307,13 +1323,15 @@ class RunChartsRequest(BaseModel):
     error_message: Optional[str] = None
     failed_code: Optional[str] = None
 
-    @validator("data")
+    @field_validator("data")
+    @classmethod
     def validate_data(cls, v):
         if not isinstance(v, list):
             raise ValueError("Input data must be a list of dictionaries")
         if not all(isinstance(record, dict) for record in v):
             raise ValueError("Each record must be a dictionary")
         return v
+
 
 @app.post("/run_charts")
 async def run_charts(request: RunChartsRequest) -> Dict[str, Any]:
@@ -1328,9 +1346,9 @@ async def run_charts(request: RunChartsRequest) -> Dict[str, Any]:
 
         # Generate metadata about the dataframe
         metadata = {
-            'metadata_shape': list(df.shape),
-            'metadata_describe': json.loads(df.describe(include='all').to_json()),
-            'metadata_dtypes': json.loads(df.dtypes.astype(str).to_json())
+            "metadata_shape": list(df.shape),
+            "metadata_describe": json.loads(df.describe(include="all").to_json()),
+            "metadata_dtypes": json.loads(df.dtypes.astype(str).to_json()),
         }
 
         max_attempts = 3
@@ -1346,13 +1364,13 @@ async def run_charts(request: RunChartsRequest) -> Dict[str, Any]:
                     question=request.question,
                     metadata=metadata,
                     error_message=last_error,
-                    failed_code=last_failed_code
+                    failed_code=last_failed_code,
                 )
-                
+
                 # Convert figures to base64
                 fig1_base64 = figure_to_base64(result.fig1) if result.fig1 else None
                 fig2_base64 = figure_to_base64(result.fig2) if result.fig2 else None
-                
+
                 return {
                     "fig1": result.fig1,
                     "fig2": result.fig2,
@@ -1370,43 +1388,53 @@ async def run_charts(request: RunChartsRequest) -> Dict[str, Any]:
                         "performance": {
                             "memory_usage": get_memory_usage(),
                             "total_time": (
-                                datetime.fromisoformat(result.metadata["timestamp"]) - 
-                                datetime.fromisoformat(result.code_history[0]["timestamp"])
-                            ).total_seconds()
-                        }
-                    }
+                                datetime.fromisoformat(result.metadata["timestamp"])
+                                - datetime.fromisoformat(
+                                    result.code_history[0]["timestamp"]
+                                )
+                            ).total_seconds(),
+                        },
+                    },
                 }
 
             except Exception as e:
                 attempt += 1
                 last_error = str(e)
-                last_failed_code = result.code if 'result' in locals() else None
-                
+                last_failed_code = result.code if "result" in locals() else None
+
                 if attempt >= max_attempts:
                     error_context = {
                         "error_type": type(e).__name__,
                         "error_message": str(e),
-                        "validation_errors": result.validation_errors if 'result' in locals() else [],
-                        "execution_errors": result.execution_errors if 'result' in locals() else [],
-                        "code_history": result.code_history if 'result' in locals() else [],
+                        "validation_errors": result.validation_errors
+                        if "result" in locals()
+                        else [],
+                        "execution_errors": result.execution_errors
+                        if "result" in locals()
+                        else [],
+                        "code_history": result.code_history
+                        if "result" in locals()
+                        else [],
                         "attempts": attempt,
-                        "timestamp": datetime.now().isoformat()
+                        "timestamp": datetime.now().isoformat(),
                     }
                     raise HTTPException(
-                        status_code=500, 
-                        detail={"error": str(e), "context": error_context}
+                        status_code=500,
+                        detail={"error": str(e), "context": error_context},
                     )
 
     except ValueError as e:
         # Only catch and re-raise validation errors without retrying
         raise HTTPException(status_code=422, detail=str(e))
 
+
 class BusinessAnalysisRequest(BaseModel):
     data: List[Dict[str, Any]]  # JSON data
     dictionary: List[Dict[str, str]]  # JSON dictionary
     question: str
 
-    @validator("data")
+    @field_validator("data")
+    @classmethod
     def validate_data(cls, v):
         if not isinstance(v, list):
             raise ValueError("Input data must be a list of JSON objects")
@@ -1414,7 +1442,8 @@ class BusinessAnalysisRequest(BaseModel):
             raise ValueError("Data cannot be empty")
         return v
 
-    @validator("dictionary")
+    @field_validator("dictionary")
+    @classmethod
     def validate_dictionary(cls, v):
         if not isinstance(v, list):
             raise ValueError("Dictionary must be a list of objects")
@@ -1423,7 +1452,8 @@ class BusinessAnalysisRequest(BaseModel):
             raise ValueError(f"Dictionary entries must contain keys: {required_keys}")
         return v
 
-    @validator("question")
+    @field_validator("question")
+    @classmethod
     def validate_question(cls, v):
         if not v.strip():
             raise ValueError("Question cannot be empty")
@@ -1467,7 +1497,7 @@ async def get_business_analysis(request: BusinessAnalysisRequest) -> Dict[str, A
 
         # Get first 1000 rows as CSV with quoted values for context
         df_csv = df.head(750).to_csv(index=False, quoting=1)
-        
+
         messages = [
             {"role": "system", "content": prompts.SYSTEM_PROMPT_BUSINESS_ANALYSIS},
             {"role": "user", "content": f"Business Question: {request.question}"},
@@ -1483,7 +1513,7 @@ async def get_business_analysis(request: BusinessAnalysisRequest) -> Dict[str, A
             model="gpt-4o",
             temperature=0.1,
             messages=messages,
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
         )
 
         # Parse the response
@@ -1520,7 +1550,8 @@ class ChatRequest(BaseModel):
 
     messages: List[Dict[str, str]]
 
-    @validator("messages")
+    @field_validator("messages")
+    @classmethod
     def validate_messages(cls, v):
         if not v:
             raise ValueError("Messages list cannot be empty")
@@ -1609,15 +1640,6 @@ async def chat(request: ChatRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-
-
-
-
-
-
-
-
-
 @dataclass
 class AnalysisResult:
     """Container for analysis results"""
@@ -1684,8 +1706,7 @@ class CodeGenerationResult:
 
 
 async def generate_analysis_code(
-    request: RunAnalysisRequest,
-    max_attempts: int = 10
+    request: RunAnalysisRequest, max_attempts: int = 10
 ) -> CodeGenerationResult:
     """Generate and validate analysis code with retry logic
 
@@ -1753,7 +1774,7 @@ async def run_analysis(request: RunAnalysisRequest) -> Dict[str, Any]:
     max_attempts = 5  # Single attempt counter for the generate-execute cycle
     attempts = 0
     error_history = []
-    
+
     try:
         # Input validation
         if not request.data:
@@ -1770,7 +1791,7 @@ async def run_analysis(request: RunAnalysisRequest) -> Dict[str, Any]:
 
         while attempts < max_attempts:
             attempts += 1
-            
+
             try:
                 # Update request with error context if available
                 if error_history:
@@ -1787,17 +1808,13 @@ async def run_analysis(request: RunAnalysisRequest) -> Dict[str, Any]:
                         "error": code_result.validation["message"],
                         "code": code_result.code,
                         "timestamp": datetime.now().isoformat(),
-                        "type": "validation_error"
+                        "type": "validation_error",
                     }
                     error_history.append(error_info)
                     continue
 
                 # Create namespace for execution
-                namespace = {
-                    'pd': pd,
-                    'np': np,
-                    'dfs': dataframes
-                }
+                namespace = {"pd": pd, "np": np, "dfs": dataframes}
 
                 # Capture stdout and stderr
                 stdout = io.StringIO()
@@ -1806,12 +1823,14 @@ async def run_analysis(request: RunAnalysisRequest) -> Dict[str, Any]:
                 # Execute the code
                 with redirect_stdout(stdout), redirect_stderr(stderr):
                     exec(code_result.code, namespace)
-                    
-                    if 'analyze_data' not in namespace:
-                        raise ValueError("Generated code did not define analyze_data function")
-                        
-                    result = namespace['analyze_data'](dataframes)
-                    
+
+                    if "analyze_data" not in namespace:
+                        raise ValueError(
+                            "Generated code did not define analyze_data function"
+                        )
+
+                    result = namespace["analyze_data"](dataframes)
+
                     if not isinstance(result, (pd.DataFrame, list, dict)):
                         result = pd.DataFrame(result)
 
@@ -1830,7 +1849,7 @@ async def run_analysis(request: RunAnalysisRequest) -> Dict[str, Any]:
                         "error_history": error_history,
                         "execution_details": {
                             "stdout": stdout.getvalue(),
-                            "stderr": stderr.getvalue()
+                            "stderr": stderr.getvalue(),
                         },
                         "datasets_analyzed": len(dataframes),
                         "total_rows_analyzed": sum(
@@ -1850,10 +1869,10 @@ async def run_analysis(request: RunAnalysisRequest) -> Dict[str, Any]:
                     "attempt": attempts,
                     "error": str(e),
                     "error_type": type(e).__name__,
-                    "code": code_result.code if 'code_result' in locals() else None,
-                    "stdout": stdout.getvalue() if 'stdout' in locals() else "",
-                    "stderr": stderr.getvalue() if 'stderr' in locals() else "",
-                    "timestamp": datetime.now().isoformat()
+                    "code": code_result.code if "code_result" in locals() else None,
+                    "stdout": stdout.getvalue() if "stdout" in locals() else "",
+                    "stderr": stderr.getvalue() if "stderr" in locals() else "",
+                    "timestamp": datetime.now().isoformat(),
                 }
                 error_history.append(error_info)
 
@@ -1862,7 +1881,7 @@ async def run_analysis(request: RunAnalysisRequest) -> Dict[str, Any]:
                         "status": "failed",
                         "error_history": error_history,
                         "last_error": str(e),
-                        "suggestions": "Consider reformulating the question or checking data quality"
+                        "suggestions": "Consider reformulating the question or checking data quality",
                     }
 
     except Exception as e:
@@ -1956,12 +1975,14 @@ def convert_datetime_series(series: pd.Series) -> pd.Series:
         logging.warning(f"Initial datetime conversion failed: {str(e)}")
         return series
 
+
 class AnalysisError(Exception):
     def __init__(self, message: str, error_type: str, code: str = None):
         self.message = message
         self.error_type = error_type
         self.code = code
         super().__init__(self.message)
+
 
 def classify_error(error: Exception, code: str = None) -> AnalysisError:
     """Classify the type of error to inform retry strategy"""
