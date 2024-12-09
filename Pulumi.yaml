@@ -1,0 +1,11 @@
+name: analyst
+runtime:
+  name: python
+  options:
+    toolchain: pip
+    virtualenv: .venv
+description: Data Analyst
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: python

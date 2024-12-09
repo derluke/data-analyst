@@ -1,0 +1,5 @@
+name: runtime-params
+
+runtimeParameterDefinitions:
+- fieldName: CHAT_AGENT_DEPLOYMENT_ID
+  type: deployment
