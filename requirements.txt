@@ -2,6 +2,7 @@ pulumi>=3.133.0,<4
 pulumi-datarobot>=0.2.5,<1.0
 datarobot>=3.4.0,<3.6
 datarobot-predict>=1.9.0,<1.10
+datarobotx-idp==0.2.13
 
 ruff==0.3.0
 
