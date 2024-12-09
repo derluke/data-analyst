@@ -100,6 +100,7 @@ async def generate_dictionaries_async(_cleansed_data: Dict[str, Dict[str, Any]])
                         data=df.to_dict(orient='records')
                     )
                 )
+                logger.info(f"Added dataset {name} for dictionary generation")
 
         # Create the request with the datasets
         request_data = CleanseRequest(datasets=datasets)
@@ -108,11 +109,17 @@ async def generate_dictionaries_async(_cleansed_data: Dict[str, Dict[str, Any]])
         
         if dictionary_response and isinstance(dictionary_response, dict):
             if 'dictionaries' in dictionary_response:
-                return {
+                result_dict = {
                     dict_entry['name']: dict_entry['dictionary']
                     for dict_entry in dictionary_response['dictionaries']
                     if dict_entry.get('name') and 'dictionary' in dict_entry
                 }
+                logger.info(f"Successfully generated dictionaries for {len(result_dict)} datasets")
+                return result_dict
+            else:
+                logger.warning("Dictionary response missing 'dictionaries' key")
+        else:
+            logger.warning(f"Unexpected dictionary response format: {type(dictionary_response)}")
         
         return {}
             
@@ -122,22 +129,47 @@ async def generate_dictionaries_async(_cleansed_data: Dict[str, Dict[str, Any]])
 
 @st.cache_data(show_spinner=False)
 def process_uploaded_file(file):
-    """Process a single uploaded file and return the dataframe
+    """Process a single uploaded file and return a list of (dataset_name, dataframe) tuples
     
     Args:
         file: The uploaded file object
     Returns:
-        tuple: (dataset_name, dataframe) or (None, None) if error
+        list: List of (dataset_name, dataframe) tuples, or empty list if error
     """
     try:
         logger.info(f"Processing uploaded file: {file.name}")
-        df = pd.read_csv(file)
-        dataset_name = os.path.splitext(file.name)[0]
-        logger.info(f"Loaded {dataset_name}: {len(df)} rows, {len(df.columns)} columns")
-        return dataset_name, df
+        file_extension = os.path.splitext(file.name)[1].lower()
+        results = []
+        
+        if file_extension == '.csv':
+            df = pd.read_csv(file)
+            dataset_name = os.path.splitext(file.name)[0]
+            results.append((dataset_name, df))
+            logger.info(f"Loaded CSV {dataset_name}: {len(df)} rows, {len(df.columns)} columns")
+            
+        elif file_extension in ['.xlsx', '.xls']:
+            # Read all sheets
+            excel_file = pd.ExcelFile(file)
+            base_name = os.path.splitext(file.name)[0]
+            
+            for sheet_name in excel_file.sheet_names:
+                df = pd.read_excel(excel_file, sheet_name=sheet_name)
+                # Use sheet name as dataset name if multiple sheets, otherwise use file name
+                dataset_name = (
+                    f"{base_name}_{sheet_name}" 
+                    if len(excel_file.sheet_names) > 1 
+                    else base_name
+                )
+                results.append((dataset_name, df))
+                logger.info(f"Loaded Excel sheet {dataset_name}: {len(df)} rows, {len(df.columns)} columns")
+        else:
+            raise ValueError(f"Unsupported file type: {file_extension}")
+            
+        return results
+        
     except Exception as e:
         logger.error(f"Error loading {file.name}: {str(e)}", exc_info=True)
-        return None, None
+        return []
 
 # Add DataRobot initialization function
 @st.cache_resource
@@ -261,22 +293,22 @@ with st.sidebar:
     with col1:
         st.image("csv_File_Logo.svg", width=25)
     with col2:
-        st.write("**Load CSV Files**")
+        st.write("**Load Data Files**")
     uploaded_files = st.file_uploader(
-        "Select 1 or multiple CSV files",
-        type="csv",
+        "Select 1 or multiple files",
+        type=["csv", "xlsx", "xls"],
         accept_multiple_files=True
-        
     )
 
     if uploaded_files:
         with st.spinner("Loading and processing files..."):
             # Process uploaded files
             for file in uploaded_files:
-                dataset_name, df = process_uploaded_file(file)
-                if dataset_name and df is not None:
-                    st.session_state.datasets[dataset_name] = df
-                    st.success(f"✓ {dataset_name}: {len(df)} rows, {len(df.columns)} columns")
+                dataset_results = process_uploaded_file(file)
+                if dataset_results:
+                    for dataset_name, df in dataset_results:
+                        st.session_state.datasets[dataset_name] = df
+                        st.success(f"✓ {dataset_name}: {len(df)} rows, {len(df.columns)} columns")
                 else:
                     st.error(f"Error loading {file.name}")
             

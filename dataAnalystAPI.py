@@ -337,7 +337,7 @@ DataRobot Green:
 HEX: #81FBA5
 DataRobot Blue:
 HEX: #44BFFC
-DataRobot Yellow:
+DataRobot Yellow (use very sparingly, if at all):
 HEX: #FFFF54
 DataRobot Purple:
 HEX: #909BF5
@@ -367,13 +367,13 @@ Based on the color pairings and branding guidelines, here are my suggestions for
 Primary Colors for Data Differentiation:
 
 Use DataRobot Green (#81FBA5) and DataRobot Blue (#44BFFC) for major categories or distinct data series.
-Use DataRobot Yellow (#FFFF54) for highlighting or calling attention to key points.
+Use DataRobot Yellow (#FFFF54) for highlighting or calling attention to key points, but avoid using unl
 DataRobot Purple (#909BF5) can be used to differentiate less critical data or secondary information.
 Accent Colors for Detailed Insights:
 
 Variants like Light Green and Teal can be used to represent related data that needs to be distinguished from the primary green or blue.
 Purple Variants (Light Purple or Deep Purple) can be used to show comparison data alongside primary categories without overwhelming the viewer.
-Yellow Variant (Lime Yellow) can also serve as an accent to highlight notable metrics or trends in the data.
+Yellow Variants can also serve as an accent to highlight notable metrics or trends in the data, but should mostly be avoided.
 Neutral Colors for Background and Context:
 
 Black (#0B0B0B) can be used for text labels, axis lines, and borders to maintain readability.
@@ -381,9 +381,7 @@ Grey Variants like Light Grey (#E4E4E4) can be used for gridlines or background 
 Color Pairings for Emphasis:
 
 Use the pairing combinations as shown (Green/Black/Grey, Purple/Black/Grey, etc.) to maintain consistency with brand visual identity. These pairings can be applied to legends, titles, and annotations in charts to enhance readability while sticking to the brand.
-Avoid Overuse:
 
-Include titles, axis names, and legends.
 Robustness:
 Ensure the function is free of syntax errors and logical problems.
 Handle errors gracefully and ensure type casting for data integrity.
@@ -1052,8 +1050,7 @@ async def generate_question_suggestions(dictionary: pd.DataFrame, max_columns: i
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
-            response_format={"type": "json_object"},
-            stream=False
+            response_format={"type": "json_object"}
         )
         
         # Parse response
@@ -1299,8 +1296,7 @@ async def get_python_analysis_code(request: RunAnalysisRequest) -> Dict[str, str
             model="gpt-4o",
             temperature=0.1,
             messages=messages,
-            response_format={"type": "json_object"},
-            stream=False
+            response_format={"type": "json_object"}
         )
         
         # Parse and return the response
@@ -1704,8 +1700,7 @@ async def get_business_analysis(request: BusinessAnalysisRequest) -> Dict[str, A
             model="gpt-4o",
             temperature=0.1,
             messages=messages,
-            response_format={"type": "json_object"},
-            stream=False
+            response_format={"type": "json_object"}
         )
         
         # Parse the response

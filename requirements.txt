@@ -17,3 +17,5 @@ spacy
 textblob
 psutil
 kaleido
+openpyxl
+datarobot
