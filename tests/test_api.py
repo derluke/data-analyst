@@ -20,7 +20,6 @@ from dataanalyst.data_model import (
     SQLSnippetResult,
     URLSpec,
 )
-
 from dataanalyst.settings import DRCredentials
 from datarobotx.idp.datasets import get_or_create_dataset_from_df
 from fastapi.testclient import TestClient

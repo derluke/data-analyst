@@ -1,19 +1,18 @@
 import ast
 import base64
-from functools import partial
 import hashlib
 import io
 import json
 import logging
-import os
 import re
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import datarobot as dr
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -23,24 +22,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from openai import OpenAI
 from plotly.subplots import make_subplots
-from pydantic import BaseModel, field_validator, validator
+from pydantic import BaseModel, ValidationError, validator
 
+sys.path.append("..")
+
+from utils import prompts
 from utils.resources import ChatAgentDeployment
 
+try:
+    chat_agent_deployment_id = ChatAgentDeployment().id
+    deployment_chat_base_url = (
+        dr.Client().endpoint + f"/deployments/{chat_agent_deployment_id}/"
+    )
 
-# Get environment variables
-deployment_id = ChatAgentDeployment().id
-openai_base_url = "https://app.datarobot.com/api/v2/deployments/"
+    client = OpenAI(api_key=dr.Client().token, base_url=deployment_chat_base_url)
 
-client = OpenAI(
-    api_key=os.getenv("DATAROBOT_API_TOKEN"), base_url=openai_base_url + deployment_id
-)
-create_completion = partial(client.chat.completions.create, model="gpt-4o")
-
-resp = create_completion(
-    messages=[{"role": "user", "content": "Who are you and who built you?"}],
-)
-resp.choices[0].message.content
+except ValidationError as e:
+    raise ValueError(
+        "Unable to load Deployment ID."
+        "If running locally, verify you have selected the correct "
+        "stack and that it is active using `pulumi stack output`. "
+        "If running in DataRobot, verify your runtime parameters have been set correctly."
+    ) from e
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -56,8 +59,6 @@ app = FastAPI(
     
     The API uses OpenAI's GPT models for intelligent analysis and response generation.
     """,
-    version="1.0.0",
-    contact={"name": "API Support", "email": "support@example.com"},
     license_info={
         "name": "Apache 2.0",
         "url": "https://www.apache.org/licenses/LICENSE-2.0.html",
@@ -96,273 +97,6 @@ def custom_openapi():
 
 
 app.openapi = custom_openapi
-
-SYSTEM_PROMPT_GET_DICTIONARY = """
-YOUR ROLE:
-You are a data dictionary maker.
-Inspect this metadata to decipher what each column in the dataset is about is about.
-Write a short description for each column that will help an analyst effectively leverage this data in their analysis.
-
-CONTEXT:
-You will receive the following:
-1) The first 10 rows of a dataframe
-2) A summary of the data computed using pandas .describe()
-3) For categorical data, a list of the unique values limited to the top 10 most frequent values.
-
-CONSIDERATIONS:
-The description should communicate what any acronyms might mean, what the business value of the data is, and what the analytic value might be.
-You must describe ALL of the columns in the dataset to the best of your ability.
-
-RESPONSE:
-Respond with a JSON object containing the following fields:
-1) columns: A list of all of the columns in the dataset
-2) descriptions: A list of descriptions for each column.
-"""
-DICTIONARY_BATCH_SIZE = 5
-SYSTEM_PROMPT_SUGGEST_A_QUESTION = """
-YOUR ROLE:
-Your job is to examine some meta data and suggest 3 business analytics questions that might yeild interesting insight from the data.
-Inspect the user's metadata and suggest 3 different questions. They might be related, or completely unrelated to one another.
-Your suggested questions might require analysis across multiple tables, or might be confined to 1 table.
-Another analyst will turn your question into a SQL query. As such, your suggested question should not require advanced statistics or machine learning to answer and should be straightforward to implement in SQL.
-
-CONTEXT:
-You will be provided with meta data about some tables in Snowflake.
-For each question, consider all of the tables.
-
-YOUR RESPONSE:
-Each question should be 1 or 2 sentences, no more.
-Format your response as a JSON object with the following fields:
-1) question1: A business question that might be answered by the data.
-2) question2: A second, totally different business question that might be answered by the data.
-3) question3: A third business question that touches on a different aspect of the data.
-
-NECESSARY CONSIDERATIONS:
-Do not refer to specific column names or tables in the data. Just use common language when suggesting a question. Let the next analyst figure out which columns and tables they'll need to use.
-"""
-SYSTEM_PROMPT_CHAT = """
-ROLE:
-Your job is to review a chat history between an AI assistant and a user, and possibly rephrase the user's most recent message so that it captures their complete thought in a single message. 
-We will then send this message to an analytics engine for processing. 
-
-There are a few rules to follow:
-If this is the first message from the user, you should just echo it.
-If this is not the first message from the user, you should decide if this most recent message constitutes a completely new question, or a revision/complication/addition to the previous question.  
-If it is a revision of a previous question, you should rephrase the most recent message so that it incorporates the context of the previous question.
-If it is a completely new or independent question, you should echo it.
-
-
-Let me give you an example:
-
-user: How many patients are there by race and gender?
-assistant: <responds with a pandas dataframe showing the number of patients by race and gender>
-user: Now sort that by patient count in ascending order
-Your response: How many patients are there by race and gender sorted by patient count in ascending order?
-
-We will then send this more complete thought to the analytics engine for processing so that we get the number of patients by race and gender sorted by patient count in ascending order
-
-The message chain could include several requests, revisions or complications by the user. They might ask about charts, different aggregations, changes to the data, etc.
-Your job is to carefully review the chain of the conversation and paraphrase the user's request such that it captures the full context of the analysis that they would like to perform.
-
-IF THIS IS THE USER'S FIRST MESSAGE:
-If this is the first/only user input message then there is no need to make any adjustments unless there is some kind of significant logical error.
-In most cases, if this is the first/only message from the user, you will simply echo the user's message.
-You might consider rephrasing the question so that data anlysts downstream can better understand it, but you typically should not be making any change to it.
-
-EXAMPLE - first message:
-user: Show me the sales by store, aggregated by year.
-Your response: Show me the sales by store, aggregated by year.
-
-EXAMPLE - revision of a previous question:
-user: Show me the sales by store, aggregated by year.
-assistant: <lists all stores, aggregated by year, with a bar chart and a line chart>
-user: Instead of the bar chart, show me a pie chart
-Your response: Show me the sales by store, aggregated by year. Show me a pie chart and a line chart.
-
-EXAMPLE - completely new question:
-user: Show me the sales by store, aggregated by year.
-assistant: <lists all stores, aggregated by year, with a bar chart and a line chart>
-user: Show me the sales by store, aggregated by year. Show me a pie chart and a line chart.
-assistant: <lists all stores, aggregated by year, with a pie chart and a line chart>
-user: Perform an analysis of the P&L by store
-Your response: Perform an analysis of the P&L by store
-
-YOUR RESPONSE:
-Respond with JSON where there are 2 fields:
-1) original_user_message: the most recent message from the user, unchanged
-2) enhanced_user_message: make the changes the user's message based on the guidelines provided
-
-CONSIDERATIONS:
-You may not need to make any changes to the user's most recent message if it is their only message or if it contains a complete independent request that requires no context.
-You must also consider the assistant's responses to the the user's questions. 
-"""
-SYSTEM_PROMPT_PYTHON_ANALYST = """
-ROLE:
-Your job is to write a Python function that analyzes one or more input dataframes, performing the necessary merges, calculations and aggregations required to answer the user's business question.
-Carefully inspect the datasets and metadata provided to ensure your code will execute against the data and return a single Pandas dataframe containing the data relevant to the user's question.
-Your function should return a dataframe that not only answers the question, but provides the necessary context so the user can fully understand the answer.
-For example, if the user asks, "Which State has the highest revenue?" Your function might return the top 10 states by revenue sorted in descending order.
-This way the user can analyze the context of the answer. It should also return other columns that are relevant to the question, providing additional context.
-
-CONTEXT:
-The user will provide:
-1. A dictionary of dataframes (dfs) where keys are dataset names and values are the dataframes
-2. A dict of data dictionaries that describe the columns across all dataframes
-3. A business question to answer
-
-YOUR RESPONSE:
-Your response shall only contain a Python function called analyze_data(dfs) that takes a dictionary of dataframes as input and returns the relevant data as a single dataframe.
-Your response shall be formatted as JSON with the following fields:
-1) code: A string of python code that will execute and return a single pandas dataframe.
-2) description: A brief description of how the code works, and how the results can be interpreted to answer the question.
-
-For example:
-
-def analyze_data(dfs):
-    import pandas as pd
-    import numpy as np
-    
-    # Access individual dataframes by name
-    df = dfs['dataset_name']  # Access specific dataset
-    
-    # Perform analysis
-    # Join/merge datasets if needed
-    # Compute metrics and aggregations
-    
-    return result_df
-
-NECESSARY CONSIDERATIONS:
-- The input dfs is a dictionary of pandas DataFrames where keys are dataset names
-- Access dataframes using their names as dictionary keys, e.g. dfs['dataset_name']
-- Your code should handle cases where some expected columns might be in different dataframes
-- Consider appropriate joins/merges between dataframes when needed
-- Return a single DataFrame with the analysis results
-...
-"""
-SYSTEM_PROMPT_PLOTLY_CHART = """
-ROLE:
-You are a data visualization expert with a focus on Python and Plotly.
-Your task is to create a Python function that returns 2 complementary Plotly visualizations designed to answer a business question.
-
-CONTEXT:
-You will be given:
-1. A business question
-2. A pandas DataFrame containing the data relevant to the question
-3. Metadata about the columns in the dataframe to help you choose the right chart type and properly construct the chart using plotly without making mistakes.
-
-YOUR RESPONSE:
-Your response must be a Python function that returns 2 plotly.graph_objects.Figure objects.
-Your function will accept a pandas DataFrame as input.
-Respond with JSON with the following fields:
-1) code: A string of python code that will execute and return 2 Plotly visualizations.
-2) description: A brief description of how the code works, and how the results can be interpreted to answer the question.
-
-FUNCTION REQUIREMENTS:
-Name: create_charts()
-Input: A pandas DataFrame containing the data relevant to the question
-Output: Two plotly.graph_objects.Figure objects
-Import required libraries within the function.
-
-EXAMPLE CODE STRUCTURE:
-def create_charts(df):
-    import pandas as pd
-    import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
-     
-    # Your visualization code here
-    # Create two complementary visualizations
-    
-    return fig1, fig2
-
-NECESSARY CONSIDERATIONS:
-The input dfs is a dictionary of pandas DataFrames where keys are dataset names
-Access dataframes using their names as dictionary keys, e.g. dfs['dataset_name']
-Consider appropriate joins/merges between dataframes when needed
-Choose visualizations that effectively display the data and complement each other
-ONLY REFER TO COLUMNS THAT ACTUALLY EXIST IN THE INPUT DATA.
-You must never refer to columns that don't exist in the input dataframe.
-When referring to columns in your code, spell them EXACTLY as they appear in the pandas dataframe - this might be different from how they are referenced in the business question! Only refer to columns that exist IN THE DATAFRAME.
-For example, if the question asks "What is the total amount paid ("AMTPAID") for each type of order?" but the dataframe does not contain "AMTPAID" but rather "TOTAL_AMTPAID", you should use "TOTAL_AMTPAID" in your code because that's the column name in the data.
-Data Availability: If some data is missing, plot what you can in the most sensible way.
-Package Imports: If your code requires a package to run, such as statsmodels, numpy, scipy, etc, you must import the package within your function.
-
-Data Handling:
-If there are more than 100 rows, consider grouping or aggregating data for clarity.
-Round values to 2 decimal places if they have more than 2.
-
-Visualization Principles:
-Choose visualizations that effectively display the data and complement each other.
-
-Examples:
-Gauge Chart and Choropleth: Display a key metric (e.g., national unemployment rate) using a gauge chart and show its variation across regions with a choropleth (e.g., state-level unemployment).
-Scatter Plot and Contour Plot: Combine scatter plots for individual data points with contour plots to visualize density gradients or clustering trends (e.g., customer locations vs. density).
-Bar Chart and Line Chart: Use a bar chart for categorical comparisons (e.g., monthly revenue) and overlay a line chart to illustrate trends or cumulative growth.
-Choropleth and Treemap: Use a choropleth to show regional data (e.g., population by state) and a treemap to display hierarchical contributions (e.g., city-level population).
-OpenStreetMap and Bubble Chart: Overlay a bubble chart on OpenStreetMap to represent multi-dimensional data points (e.g., branch size and revenue growth by location).
-Pie Chart and Sunburst Chart: Show high-level proportions with a pie chart (e.g., sales by region) and dive deeper into hierarchical relationships using a sunburst chart (e.g., product-level breakdown within each region).
-Scatter Plot and Histogram: Combine scatter plots to show relationships between variables with histograms to analyze frequency distributions (e.g., income vs. education level and distribution of income ranges).
-Bubble Chart and Sankey Diagram: Use a bubble chart for multi-dimensional comparisons (e.g., customer spending vs. loyalty scores) and a Sankey diagram to visualize flow relationships (e.g., customer journey stages).
-Choropleth and Indicator Chart: Highlight overall metrics with an indicator chart (e.g., average national GDP) and show spatial variations with a choropleth (e.g., GDP by state).
-Line Chart and Area Chart: Pair a line chart to show temporal trends (e.g., sales over months) with an area chart to emphasize cumulative totals or overlapping data.
-Treemap and Parallel Coordinates Plot: Use a treemap for hierarchical data visualization (e.g., sales by category and subcategory) and a parallel coordinates plot to analyze relationships between multiple attributes (e.g., sales, profit margin, and costs).
-Scatter Geo and Choropleth: Use scatter geo plots to mark specific data points (e.g., retail store locations) and a choropleth to highlight regional metrics (e.g., revenue per capita).Design Guidelines:
-Simple, not overly busy or complex.
-No background colors or themes; use the default theme.
-Complementary colors you could use: #0B0A0D, #243E73, #1D3159, #8BB4D9, #A67E6F, #011826, #1A3940, #8C5946, #BF8D7A, #0D0D0D, #3805F2, #2703A6, #150259, #63A1F2, #84F266, #232625, #35403A, #4C594F, #A4A69C, #BFBFB8
-Gradient - Coral to Teal: #FF5F5D, #F76F67, #EE8071, #E6907C, #DD9F86, #D5AF90, #CDBF9A, #C4CFA4, #BCD0AF, #A3CCAB, #8BB8A7, #72A4A3, #59809F, #3F7C85
-Gradient - Teal to Aqua: #3F7C85, #367B88, #2D7A8A, #24798D, #1B7890, #117893, #087796, #007699, #00759C, #00749F, #0074A2, #0073A5, #0072A7, #00CCBF
-Gradient - Dark Teal to Light Gray: #14140F,#23231E,#32312D,#41403C,#51504B,#60605A,#707069,#808078,#909087,#A0A096,#B0B0A5,#C0C0B4,#D0D0C3,#CACACA
-Gradient - Ocean Blues: #003840,#00424A,#004C55,#00565F,#006069,#006A73,#00747C,#007E86,#008891,#00929B,#009CA5,#00A6AF,#00B0B9,#00BBC9
-Include titles, axis names, and legends.
-Robustness:
-Ensure the function is free of syntax errors and logical problems.
-Handle errors gracefully and ensure type casting for data integrity.
-
-REATTEMPT:
-If your chart code fails to execute, you will also be provided with the failed code and the error message.
-Take error message into consideration when reattempting your chart code so that the problem doesn't happen again.
-Try again, but don't fail this time.
-"""
-SYSTEM_PROMPT_BUSINESS_ANALYSIS = """
-ROLE:
-You are a business analyst.
-Your job is to write an answer to the user's question in 3 sections: The Bottom Line, Additional Insights, Follow Up Questions.
-
-The Bottom Line
-Based on the context information provided, clearly and succinctly answer the user's question in plain language, tailored for 
-someone with a business background rather than a technical one.
-
-Additional Insights
-This section is all about the "why". Discuss the underlying reasons or causes for the answer in "The Bottom Line" section. This section, 
-while still business focused, should go a level deeper to help the user understand a possible root cause. Where possible, justify your answer 
-using data or information from the dataset. 
-Provide a bullet list, or numbered list of insights, reasons, root causes or justifications for your answer. 
-Provide business advice based on the outcome noted in "The Bottom Line" section.
-Suggest specific additional analyses based on the context of the question and the data available in the provided dataset.
-Offer actionable recommendations. 
-For example, if the data shows a declining trend in TOTAL_PROFIT, advise on potential areas to 
-investigate using other data in the dataset, and propose analytics strategies to gain insights that might improve profitability.
-Use markdown to format your repsonse for readability. While you might organize this content into sections, don't use headings with large
-
-Follow Up Questions
-Offer 2 or 3 follow up questions the user could ask to get deeper insight into the issue in another round of question and answer.
-When you word these questions, do not use pronouns to refer to the data - always use specific column names. Only refer to data that 
-actually exists in the dataset. For example, don't refer to "sales volume" if there is no "sales volume" column.
-
-CONTEXT:
-The user has provided a business question and a dataset containing information relevant to the question.
-You will also be provided with a data dictionary that might describe available data and information beyond the current dataset.
-You may suggest retrieving and analysing data described in that dictionary as it might be helpful for shedding more light on the topic raised 
-by the user.
-
-YOUR RESPONSE:
-Your response should be output as a JSON object with the following fields:
-1) bottom_line: A concise answer to the user's question in plain language, tailored for someone with a business background rather than a technical one. Formatted in markdown.
-2) additional_insights: A discussion of the underlying reasons or causes for the answer in "The Bottom Line" section. This section, while still business focused, should go a level deeper to help the user understand a possible root cause. Formatted in markdown.
-3) follow_up_questions: A list of 3 helpful follow up questions that would lead to deeper insight into the issue in another round of analysis. When you word these questions, do not use pronouns to refer to the data - always use specific column names. Only refer to data that actually exists in the provided dataset. For example, don't refer to "sales volume" if there is no "sales volume" column.
-
-
-"""
 
 
 # Add custom exceptions at the top of the file
@@ -420,7 +154,7 @@ class CleanseResponse(BaseModel):
 class DictionaryRequest(BaseModel):
     data: List[Dict[str, Any]]
 
-    @field_validator("data")
+    @validator("data")
     def validate_data(cls, v):
         if not isinstance(v, list):
             raise ValueError("Input data must be a list of dictionaries")
@@ -666,7 +400,7 @@ def generate_df_hash(df: pd.DataFrame) -> str:
 
 def process_column_batch(
     columns: List[str], df: pd.DataFrame, batch_size: int = 5
-) -> Dict[str, List[str]]:
+) -> Dict[str, str]:
     """Process a batch of columns to get their descriptions"""
 
     # Get sample data and stats for just these columns
@@ -711,7 +445,7 @@ def process_column_batch(
 
     # Create messages for OpenAI
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT_GET_DICTIONARY},
+        {"role": "system", "content": prompts.SYSTEM_PROMPT_GET_DICTIONARY},
         {"role": "user", "content": f"Data: {json.dumps(sample_data)}"},
         {
             "role": "user",
@@ -732,7 +466,22 @@ def process_column_batch(
         stream=False,
     )
 
-    return json.loads(completion.choices[0].message.content)
+    response = json.loads(completion.choices[0].message.content)
+
+    # Extract descriptions from response and map to columns
+    descriptions = {}
+    if isinstance(response, dict):
+        # Check if response has descriptions list
+        if "descriptions" in response and isinstance(response["descriptions"], list):
+            # Map descriptions to columns, handling potential length mismatch
+            for col, desc in zip(columns, response["descriptions"]):
+                descriptions[col] = desc
+        # Fallback: check if response has column-specific descriptions
+        else:
+            for col in columns:
+                descriptions[col] = response.get(col, "No description available")
+
+    return descriptions
 
 
 @app.post(
@@ -855,20 +604,21 @@ def process_dataset(dataset: DatasetInput) -> Dict[str, Any]:
 
         # Split columns into batches
         column_batches = [
-            list(df.columns[i : i + DICTIONARY_BATCH_SIZE])
-            for i in range(0, len(df.columns), DICTIONARY_BATCH_SIZE)
+            list(df.columns[i : i + prompts.DICTIONARY_BATCH_SIZE])
+            for i in range(0, len(df.columns), prompts.DICTIONARY_BATCH_SIZE)
         ]
         logging.info(
             f"Created {len(column_batches)} batches for {len(df.columns)} columns"
         )
 
         # Process column batches using ThreadPoolExecutor
-        batch_results = []
+        batch_results = (
+            {}
+        )  # Change to dictionary to maintain column-description mapping
         with ThreadPoolExecutor() as executor:
-            # Map batches to futures
             batch_futures = {
                 executor.submit(
-                    process_column_batch, batch, df, DICTIONARY_BATCH_SIZE
+                    process_column_batch, batch, df, prompts.DICTIONARY_BATCH_SIZE
                 ): batch
                 for batch in column_batches
             }
@@ -877,16 +627,22 @@ def process_dataset(dataset: DatasetInput) -> Dict[str, Any]:
             for future in as_completed(batch_futures):
                 try:
                     result = future.result()
-                    logging.info(f"Batch result: {result}")  # Add this debug log
-                    batch_results.extend(result.get("descriptions", []))
+                    # Assuming process_column_batch returns a dictionary mapping columns to descriptions
+                    batch_results.update(
+                        result
+                    )  # Merge results maintaining column mapping
                 except Exception as e:
                     logging.error(f"Error processing batch: {str(e)}")
                     continue
 
         # Combine results
         dictionary = [
-            {"data_type": str(df[col].dtype), "column": col, "description": desc}
-            for col, desc in zip(df.columns, batch_results)
+            {
+                "data_type": str(df[col].dtype),
+                "column": col,
+                "description": batch_results.get(col, "No description available"),
+            }
+            for col in df.columns
         ]
 
         logging.info(
@@ -1009,7 +765,7 @@ async def generate_question_suggestions(
 
         # Create OpenAI messages
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT_SUGGEST_A_QUESTION},
+            {"role": "system", "content": prompts.SYSTEM_PROMPT_SUGGEST_A_QUESTION},
             {"role": "user", "content": f"Data Dictionary:\n{json.dumps(dict_data)}"},
         ]
 
@@ -1242,14 +998,16 @@ async def get_python_analysis_code(request: RunAnalysisRequest) -> Dict[str, str
             all_shapes.append(
                 f"{dataset_name}: {df.shape[0]} rows x {df.shape[1]} columns"
             )
-            all_samples.append(f"{dataset_name}:\n{df.head().to_string()}")
+            # Limit sample to 10 rows
+            sample_df = df.head(10)
+            all_samples.append(f"{dataset_name}:\n{sample_df.to_string()}")
 
         shape_info = "\n".join(all_shapes)
         sample_data = "\n\n".join(all_samples)
 
         # Create messages for OpenAI
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT_PYTHON_ANALYST},
+            {"role": "system", "content": prompts.SYSTEM_PROMPT_PYTHON_ANALYST},
             {"role": "user", "content": f"Business Question: {request.question}"},
             {"role": "user", "content": f"Data Shapes:\n{shape_info}"},
             {"role": "user", "content": f"Sample Data:\n{sample_data}"},
@@ -1259,10 +1017,25 @@ async def get_python_analysis_code(request: RunAnalysisRequest) -> Dict[str, str
             },
         ]
 
+        # Add error context if available
+        if request.error_message and request.failed_code:
+            messages.extend(
+                [
+                    {"role": "user", "content": "Previous attempt failed with error:"},
+                    {"role": "user", "content": request.error_message},
+                    {"role": "user", "content": "Failed code:"},
+                    {"role": "user", "content": request.failed_code},
+                    {
+                        "role": "user",
+                        "content": "Please generate new code that avoids this error.",
+                    },
+                ]
+            )
+
         # Get response from OpenAI
         completion = client.chat.completions.create(
             model="gpt-4o",
-            temperature=0.5,
+            temperature=0.1,
             messages=messages,
             response_format={"type": "json_object"},
             stream=False,
@@ -1373,7 +1146,7 @@ async def create_charts(
     metadata: Dict[str, Any],
     error_message: Optional[str] = None,
     failed_code: Optional[str] = None,
-    max_attempts: int = 6,
+    max_attempts: int = 3,
 ) -> ChartGenerationResult:
     """Generate and validate chart code with retry logic"""
     attempts = 0
@@ -1388,12 +1161,17 @@ async def create_charts(
             # Get chart code from OpenAI
             completion = client.chat.completions.create(
                 model="gpt-4o",
+                temperature=0,
                 messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT_PLOTLY_CHART},
+                    {"role": "system", "content": prompts.SYSTEM_PROMPT_PLOTLY_CHART},
                     {"role": "user", "content": f"Question: {question}"},
                     {
                         "role": "user",
                         "content": f"Data Metadata:\n{json.dumps(metadata)}",
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Data top 25 rows:\n{df.head(25).to_string()}",
                     },
                     *(
                         [
@@ -1534,36 +1312,10 @@ class RunChartsRequest(BaseModel):
         return v
 
 
-@app.post(
-    "/run_charts",
-    response_model=Dict[str, Any],
-    summary="Generate and execute chart code",
-    description="""
-    Generate and execute Plotly chart code with validation and error handling.
-    
-    The endpoint:
-    - Generates complementary visualizations
-    - Validates chart code
-    - Handles execution errors
-    - Provides base64 encoded images
-    
-    Returns generated charts and metadata.
-    """,
-    response_description="Generated charts with metadata",
-    tags=["Visualization"],
-)
+@app.post("/run_charts")
 async def run_charts(request: RunChartsRequest) -> Dict[str, Any]:
     """
     Generate and execute chart code with validation.
-
-    Parameters:
-    - request: RunChartsRequest containing data and question
-
-    Returns:
-    - Dictionary containing charts and metadata
-
-    Raises:
-    - HTTPException: If chart generation fails
     """
     try:
         # Convert JSON to DataFrame
@@ -1573,62 +1325,86 @@ async def run_charts(request: RunChartsRequest) -> Dict[str, Any]:
 
         # Generate metadata about the dataframe
         metadata = {
-            "metadata_shape": list(df.shape),  # Convert to list for JSON serialization
+            "metadata_shape": list(df.shape),
             "metadata_describe": json.loads(df.describe(include="all").to_json()),
             "metadata_dtypes": json.loads(df.dtypes.astype(str).to_json()),
         }
 
-        # Generate charts with retry logic
-        result = await create_charts(
-            df=df,
-            question=request.question,
-            metadata=metadata,  # Pass metadata instead of dictionary_data
-            error_message=request.error_message,
-            failed_code=request.failed_code,
-        )
+        max_attempts = 3
+        attempt = 0
+        last_error = None
+        last_failed_code = None
 
-        # Convert figures to base64
-        fig1_base64 = figure_to_base64(result.fig1) if result.fig1 else None
-        fig2_base64 = figure_to_base64(result.fig2) if result.fig2 else None
+        while attempt < max_attempts:
+            try:
+                # Generate charts with retry logic
+                result = await create_charts(
+                    df=df.head(25),
+                    question=request.question,
+                    metadata=metadata,
+                    error_message=last_error,
+                    failed_code=last_failed_code,
+                )
 
-        return {
-            "fig1": result.fig1,
-            "fig2": result.fig2,
-            "fig1_base64": fig1_base64,
-            "fig2_base64": fig2_base64,
-            "code": result.code,
-            "metadata": {
-                **result.metadata,
-                "dataframe_metadata": metadata,  # Include the generated metadata in the response
-                "validation": result.validation,
-                "attempts": result.attempts,
-                "validation_errors": result.validation_errors,
-                "execution_errors": result.execution_errors,
-                "code_history": result.code_history,
-                "performance": {
-                    "memory_usage": get_memory_usage(),
-                    "total_time": (
-                        datetime.fromisoformat(result.metadata["timestamp"])
-                        - datetime.fromisoformat(result.code_history[0]["timestamp"])
-                    ).total_seconds(),
-                },
-            },
-        }
+                # Convert figures to base64
+                fig1_base64 = figure_to_base64(result.fig1) if result.fig1 else None
+                fig2_base64 = figure_to_base64(result.fig2) if result.fig2 else None
 
-    except Exception as e:
-        error_context = {
-            "error_type": type(e).__name__,
-            "error_message": str(e),
-            "validation_errors": (
-                result.validation_errors if "result" in locals() else []
-            ),
-            "execution_errors": result.execution_errors if "result" in locals() else [],
-            "code_history": result.code_history if "result" in locals() else [],
-            "timestamp": datetime.now().isoformat(),
-        }
-        raise HTTPException(
-            status_code=500, detail={"error": str(e), "context": error_context}
-        )
+                return {
+                    "fig1": result.fig1,
+                    "fig2": result.fig2,
+                    "fig1_base64": fig1_base64,
+                    "fig2_base64": fig2_base64,
+                    "code": result.code,
+                    "metadata": {
+                        **result.metadata,
+                        "dataframe_metadata": metadata,
+                        "validation": result.validation,
+                        "attempts": result.attempts,
+                        "validation_errors": result.validation_errors,
+                        "execution_errors": result.execution_errors,
+                        "code_history": result.code_history,
+                        "performance": {
+                            "memory_usage": get_memory_usage(),
+                            "total_time": (
+                                datetime.fromisoformat(result.metadata["timestamp"])
+                                - datetime.fromisoformat(
+                                    result.code_history[0]["timestamp"]
+                                )
+                            ).total_seconds(),
+                        },
+                    },
+                }
+
+            except Exception as e:
+                attempt += 1
+                last_error = str(e)
+                last_failed_code = result.code if "result" in locals() else None
+
+                if attempt >= max_attempts:
+                    error_context = {
+                        "error_type": type(e).__name__,
+                        "error_message": str(e),
+                        "validation_errors": (
+                            result.validation_errors if "result" in locals() else []
+                        ),
+                        "execution_errors": (
+                            result.execution_errors if "result" in locals() else []
+                        ),
+                        "code_history": (
+                            result.code_history if "result" in locals() else []
+                        ),
+                        "attempts": attempt,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                    raise HTTPException(
+                        status_code=500,
+                        detail={"error": str(e), "context": error_context},
+                    )
+
+    except ValueError as e:
+        # Only catch and re-raise validation errors without retrying
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 class BusinessAnalysisRequest(BaseModel):
@@ -1696,10 +1472,10 @@ async def get_business_analysis(request: BusinessAnalysisRequest) -> Dict[str, A
         df = pd.DataFrame(request.data)
 
         # Get first 1000 rows as CSV with quoted values for context
-        df_csv = df.head(1000).to_csv(index=False, quoting=1)
+        df_csv = df.head(750).to_csv(index=False, quoting=1)
 
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT_BUSINESS_ANALYSIS},
+            {"role": "system", "content": prompts.SYSTEM_PROMPT_BUSINESS_ANALYSIS},
             {"role": "user", "content": f"Business Question: {request.question}"},
             {"role": "user", "content": f"Analyzed Data:\n{df_csv}"},
             {
@@ -1711,6 +1487,7 @@ async def get_business_analysis(request: BusinessAnalysisRequest) -> Dict[str, A
         # Get non-streaming response from OpenAI
         completion = client.chat.completions.create(
             model="gpt-4o",
+            temperature=0.1,
             messages=messages,
             response_format={"type": "json_object"},
             stream=False,
@@ -1784,13 +1561,14 @@ async def process_chat(messages: List[Dict[str, str]]) -> Dict[str, str]:
     messages_str = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages])
 
     prompt_messages = [
-        {"role": "system", "content": SYSTEM_PROMPT_CHAT},
+        {"role": "system", "content": prompts.SYSTEM_PROMPT_CHAT},
         {"role": "user", "content": f"Message History:\n{messages_str}"},
     ]
 
     # Get non-streaming response from OpenAI
     completion = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4o-mini",
+        temperature=0,
         messages=prompt_messages,
         response_format={"type": "json_object"},
         stream=False,
@@ -1904,7 +1682,7 @@ class CodeGenerationResult:
 
 
 async def generate_analysis_code(
-    request: RunAnalysisRequest, max_attempts: int = 5
+    request: RunAnalysisRequest, max_attempts: int = 10
 ) -> CodeGenerationResult:
     """Generate and validate analysis code with retry logic
 
@@ -1964,41 +1742,14 @@ async def generate_analysis_code(
 
 
 # Update original endpoint to use new retry logic
-@app.post(
-    "/run_analysis",
-    response_model=Dict[str, Any],
-    summary="Run complete data analysis",
-    description="""
-    Execute complete data analysis workflow.
-    
-    The endpoint:
-    - Generates analysis code
-    - Validates code safety
-    - Executes analysis
-    - Handles errors and retries
-    
-    Returns analysis results with metadata.
-    """,
-    response_description="Analysis results with metadata",
-    tags=["Analysis Execution"],
-)
+@app.post("/run_analysis")
 async def run_analysis(request: RunAnalysisRequest) -> Dict[str, Any]:
     """
-    Execute complete data analysis workflow.
-
-    Parameters:
-    - request: RunAnalysisRequest containing data and question
-
-    Returns:
-    - Dictionary containing analysis results and metadata
-
-    Raises:
-    - HTTPException: If analysis execution fails
+    Execute complete data analysis workflow with integrated generation and execution retry logic.
     """
-    max_execution_attempts = 3
-    execution_attempts = 0
-    last_error = None
-    last_failed_code = None
+    max_attempts = 5  # Single attempt counter for the generate-execute cycle
+    attempts = 0
+    error_history = []
 
     try:
         # Input validation
@@ -2014,39 +1765,38 @@ async def run_analysis(request: RunAnalysisRequest) -> Dict[str, Any]:
             else:
                 dataframes[dataset_name] = pd.DataFrame()
 
-        while execution_attempts < max_execution_attempts:
-            execution_attempts += 1
+        while attempts < max_attempts:
+            attempts += 1
 
             try:
-                # Update request with previous error if it exists
-                if last_error and last_failed_code:
-                    request.error_message = str(last_error)
-                    request.failed_code = last_failed_code
+                # Update request with error context if available
+                if error_history:
+                    request.error_message = error_history[-1]["error"]
+                    request.failed_code = error_history[-1]["code"]
 
-                # Generate code with retry logic
+                # Generate code
                 code_result = await generate_analysis_code(request)
 
-                # If code is invalid after all attempts, return the error history
+                # Validate the generated code
                 if not code_result.validation["is_valid"]:
-                    return {
+                    error_info = {
+                        "attempt": attempts,
+                        "error": code_result.validation["message"],
                         "code": code_result.code,
-                        "validation_error": code_result.validation["message"],
-                        "validation_history": code_result.validation_errors,
-                        "attempts": code_result.attempts,
-                        "status": "failed_validation",
+                        "timestamp": datetime.now().isoformat(),
+                        "type": "validation_error",
                     }
+                    error_history.append(error_info)
+                    continue
 
                 # Create namespace for execution
-                namespace = {
-                    "pd": pd,
-                    "np": np,
-                    "dfs": dataframes,  # Pass the dictionary of dataframes
-                }
+                namespace = {"pd": pd, "np": np, "dfs": dataframes}
 
                 # Capture stdout and stderr
                 stdout = io.StringIO()
                 stderr = io.StringIO()
 
+                # Execute the code
                 with redirect_stdout(stdout), redirect_stderr(stderr):
                     exec(code_result.code, namespace)
 
@@ -2055,15 +1805,14 @@ async def run_analysis(request: RunAnalysisRequest) -> Dict[str, Any]:
                             "Generated code did not define analyze_data function"
                         )
 
-                    result = namespace["analyze_data"](
-                        dataframes
-                    )  # Pass the dictionary
+                    result = namespace["analyze_data"](dataframes)
 
                     if not isinstance(result, (pd.DataFrame, list, dict)):
                         result = pd.DataFrame(result)
 
                 # If we get here, execution was successful
                 return {
+                    "status": "success",
                     "code": code_result.code,
                     "data": (
                         result.to_dict("records")
@@ -2072,14 +1821,11 @@ async def run_analysis(request: RunAnalysisRequest) -> Dict[str, Any]:
                     ),
                     "metadata": {
                         "execution_time": datetime.now().isoformat(),
-                        "code_generation": {
-                            "attempts": code_result.attempts,
-                            "validation_history": code_result.validation_errors,
-                        },
+                        "attempts": attempts,
+                        "error_history": error_history,
                         "execution_details": {
                             "stdout": stdout.getvalue(),
                             "stderr": stderr.getvalue(),
-                            "execution_attempts": execution_attempts,
                         },
                         "datasets_analyzed": len(dataframes),
                         "total_rows_analyzed": sum(
@@ -2094,58 +1840,26 @@ async def run_analysis(request: RunAnalysisRequest) -> Dict[str, Any]:
                 }
 
             except Exception as e:
-                # Store the error and failed code for the next attempt
-                last_error = str(e)
-                last_failed_code = (
-                    code_result.code if "code_result" in locals() else None
-                )
+                # Classify and record the error
+                error_info = {
+                    "attempt": attempts,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "code": code_result.code if "code_result" in locals() else None,
+                    "stdout": stdout.getvalue() if "stdout" in locals() else "",
+                    "stderr": stderr.getvalue() if "stderr" in locals() else "",
+                    "timestamp": datetime.now().isoformat(),
+                }
+                error_history.append(error_info)
 
-                # If this was our last attempt, raise the error with full context
-                if execution_attempts >= max_execution_attempts:
-                    error_context = {
-                        "error_type": type(e).__name__,
-                        "error_message": str(e),
-                        "stdout": stdout.getvalue() if "stdout" in locals() else "",
-                        "stderr": stderr.getvalue() if "stderr" in locals() else "",
-                        "generated_code": last_failed_code,
-                        "execution_attempts": execution_attempts,
-                        "dataframes_info": [
-                            f"\nDataFrame {name}:\n{df.info(buf=io.StringIO())}"
-                            for name, df in dataframes.items()
-                        ],
-                        "sample_data": [
-                            f"\nDataFrame {name}:\n{df.head().to_string() if not df.empty else 'Empty DataFrame'}"
-                            for name, df in dataframes.items()
-                        ],
+                if attempts >= max_attempts:
+                    return {
+                        "status": "failed",
+                        "error_history": error_history,
+                        "last_error": str(e),
+                        "suggestions": "Consider reformulating the question or checking data quality",
                     }
 
-                    error_msg = f"""
-Code Execution Failed after {execution_attempts} attempts:
-Error Type: {error_context['error_type']}
-Error Message: {error_context['error_message']}
-
-Last Generated Code:
-{error_context['generated_code']}
-
-DataFrames Info:
-{error_context['dataframes_info']}
-
-Sample Data:
-{error_context['sample_data']}
-
-Stdout:
-{error_context['stdout']}
-
-Stderr:
-{error_context['stderr']}
-"""
-                    raise HTTPException(status_code=500, detail=error_msg)
-
-                # If we have more attempts, continue to the next iteration
-                continue
-
-    except HTTPException:
-        raise
     except Exception as e:
         logging.error(f"Error in run_analysis: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -2236,3 +1950,23 @@ def convert_datetime_series(series: pd.Series) -> pd.Series:
     except Exception as e:
         logging.warning(f"Initial datetime conversion failed: {str(e)}")
         return series
+
+
+class AnalysisError(Exception):
+    def __init__(self, message: str, error_type: str, code: str = None):
+        self.message = message
+        self.error_type = error_type
+        self.code = code
+        super().__init__(self.message)
+
+
+def classify_error(error: Exception, code: str = None) -> AnalysisError:
+    """Classify the type of error to inform retry strategy"""
+    if isinstance(error, SyntaxError):
+        return AnalysisError(str(error), "syntax", code)
+    elif isinstance(error, NameError):
+        return AnalysisError(str(error), "undefined_variable", code)
+    elif isinstance(error, ValueError):
+        return AnalysisError(str(error), "value_error", code)
+    # ... add more classifications
+    return AnalysisError(str(error), "unknown", code)

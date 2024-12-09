@@ -16,12 +16,10 @@ import os
 import pathlib
 
 import datarobot as dr
-import infra.settings_credentials as credentials
 import pulumi
 import pulumi_datarobot as datarobot
 
-from utils.resources import app_env_name, chat_agent_deployment_env_name
-
+import infra.settings_credentials as credentials
 from infra import (
     settings_app_infra,
     settings_chat_agent,
@@ -34,6 +32,7 @@ from infra.components.custom_model_deployment import CustomModelDeployment
 from infra.components.dr_credential import DRCredential
 from infra.components.playground_custom_model import PlaygroundCustomModel
 from infra.settings_prompt_injection_guardrail import prompt_injection_guardrail
+from utils.resources import app_env_name, chat_agent_deployment_env_name
 
 check_feature_flags(pathlib.Path("infra/feature_flag_requirements.yaml"))
 

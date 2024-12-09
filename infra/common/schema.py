@@ -17,9 +17,9 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Optional, Tuple, Type
 
-from datarobot.enums import VectorDatabaseChunkingMethod, VectorDatabaseEmbeddingModel
 import pulumi
 import pulumi_datarobot as datarobot
+from datarobot.enums import VectorDatabaseChunkingMethod, VectorDatabaseEmbeddingModel
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import (
     BaseSettings,
@@ -28,9 +28,9 @@ from pydantic_settings import (
 )
 
 from .globals import (
-    GlobalPredictionEnvironmentPlatforms,
-    GlobalLLM,
     GlobalGuardrailTemplateName,
+    GlobalLLM,
+    GlobalPredictionEnvironmentPlatforms,
 )
 
 
@@ -221,6 +221,7 @@ class ApplicationSourceArgs(BaseModel):
     files: Optional[Any] = None
     folder_path: Optional[str] = None
     name: Optional[str] = None
+    replicas: Optional[int] = None
 
 
 class PlaygroundArgs(BaseModel):

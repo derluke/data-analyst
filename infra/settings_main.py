@@ -16,16 +16,15 @@ from __future__ import annotations
 
 import os
 
-from .common.globals import GlobalPredictionEnvironmentPlatforms, GlobalLLM
+from .common.globals import GlobalLLM, GlobalPredictionEnvironmentPlatforms
 from .common.schema import (
+    CoreSettings,
     GenAIBuzokDeploymentType,
     GenAIDeploymentType,
-    CoreSettings,
     PredictionEnvironmentArgs,
     UseCaseArgs,
 )
 from .common.stack import get_stack
-
 
 # Core settings are overridable by environment variables; env values take precedence
 core = CoreSettings(

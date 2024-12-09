@@ -19,9 +19,10 @@ import datarobot as dr
 import pulumi_datarobot as datarobot
 from jinja2 import BaseLoader, Environment
 
+from infra.settings_main import core
 from utils.schema import ChatAgentDeploymentSettings
-from .common.globals import GlobalRuntimeEnvironment, GlobalLLM
 
+from .common.globals import GlobalRuntimeEnvironment
 from .common.schema import (
     CustomModelArgs,
     DeploymentArgs,
@@ -30,13 +31,10 @@ from .common.schema import (
     PlaygroundArgs,
     RegisteredModelArgs,
 )
-from infra.settings_main import core
-
 from .settings_main import (
     default_prediction_server_id,
     project_name,
 )
-
 
 custom_model_args = CustomModelArgs(
     resource_name=f"Chat Agent Custom Model [{project_name}]",
@@ -44,7 +42,7 @@ custom_model_args = CustomModelArgs(
     base_environment_id=GlobalRuntimeEnvironment.PYTHON_311_MODERATIONS.value.id,
     target_name=ChatAgentDeploymentSettings().target_feature_name,
     target_type=dr.enums.TARGET_TYPE.TEXT_GENERATION,
-    replicas=2,
+    replicas=4,
 )
 
 

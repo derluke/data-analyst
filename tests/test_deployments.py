@@ -8,8 +8,6 @@ import pytest
 from dataanalyst.data_model import (
     GenerationRequest,
     GenerationResponse,
-    PySandboxRequest,
-    PySandboxResponse,
     StructuredGenerationRequest,
 )
 

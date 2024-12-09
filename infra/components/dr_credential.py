@@ -21,8 +21,8 @@ import pulumi_datarobot as datarobot
 from utils.credentials import (
     AzureOpenAICredentials,
     GoogleLLMCredentials,
-    OpenAICredentials,
     LLMCredentials,
+    OpenAICredentials,
 )
 
 from ..common.schema import (

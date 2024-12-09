@@ -12,9 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from functools import partial
-import subprocess
 import sys
+from functools import partial
 
 import datarobot as dr
 from openai import OpenAI

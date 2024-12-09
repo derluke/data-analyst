@@ -2,14 +2,15 @@ import sys
 
 sys.path.append("../")
 
-from openai import AzureOpenAI
+from collections.abc import Iterator
+
+import pandas as pd
+from openai import AzureOpenAI, NotFoundError
 from openai.types.chat import (
     ChatCompletion,
     ChatCompletionChunk,
     CompletionCreateParams,
 )
-import pandas as pd
-from collections.abc import Iterator
 
 from utils.credentials import AzureOpenAICredentials
 from utils.schema import ChatAgentDeploymentSettings
@@ -88,9 +89,12 @@ def chat(
     ChatCompletion
         the completion object with generated choices.
     """
-    client = model[0]
-    completion_create_params["model"] = model[2]
-    return client.chat.completions.create(**completion_create_params)
+    client, default_model_name = model[0], model[2]
+    try:
+        return client.chat.completions.create(**completion_create_params)
+    except NotFoundError:
+        completion_create_params["model"] = default_model_name
+        return client.chat.completions.create(**completion_create_params)
 
 
 if __name__ == "__main__":

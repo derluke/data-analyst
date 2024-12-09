@@ -12,12 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import textwrap
 from pathlib import Path
-from typing import List, Sequence, Tuple
+from typing import List, Tuple
 
 import datarobot as dr
-import pulumi_datarobot as datarobot
 
 from infra.common.schema import ApplicationSourceArgs
 
@@ -27,6 +25,7 @@ application_path = Path("frontend/")
 
 app_source_args = ApplicationSourceArgs(
     resource_name=f"Data Analyst App Source [{project_name}]",
+    replicas=2,
 ).model_dump(mode="json", exclude_none=True)
 
 
