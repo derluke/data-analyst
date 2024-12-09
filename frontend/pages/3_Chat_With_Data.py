@@ -12,7 +12,7 @@ import io
 import traceback
 
 # Import FastAPI functions directly
-from dataAnalystAPI import (
+from utils.dataAnalystAPI import (
     CleanseRequest, 
     DatasetInput,
     cleanse_dataframes,

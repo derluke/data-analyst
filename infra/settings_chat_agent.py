@@ -42,7 +42,7 @@ custom_model_args = CustomModelArgs(
     base_environment_id=GlobalRuntimeEnvironment.PYTHON_311_MODERATIONS.value.id,
     target_name=ChatAgentDeploymentSettings().target_feature_name,
     target_type=dr.enums.TARGET_TYPE.TEXT_GENERATION,
-    replicas=4,
+    replicas=2,
 )
 
 
