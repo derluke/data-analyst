@@ -27,9 +27,6 @@ plotly>=5.0,<=6.0
 kaleido
 joblib==1.4.2
 
-snowflake-sqlalchemy>=1.6.1,<1.7.0
-databricks-sql-connector[sqlalchemy]>=3.4.0,<3.5.0
-
 mypy==1.11.2
 pandas-stubs==2.2.3.241009
 types-requests==2.32.0.20241016

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
-import plotly.graph_objects as go
 from pydantic import BaseModel, field_validator
+
+if TYPE_CHECKING:
+    import plotly.graph_objects as go
 
 
 # Add custom exceptions at the top of the file
