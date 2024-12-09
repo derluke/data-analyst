@@ -24,9 +24,10 @@ from typing import Callable
 import datarobot as dr
 import pandas as pd
 import pytest
-from dataanalyst.resources import GeneratorDeployment, SandboxDeployment
 from datarobot_predict.deployment import predict
 from dotenv import dotenv_values
+
+from utils.resources import ChatAgentDeployment
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -47,34 +48,17 @@ def pytest_addoption(parser):
     )
 
 
-@pytest.fixture(
-    params=["databricks", "snowflake"],
-    scope="session",
-)
-def db_mode(request, pytestconfig):
-    if pytestconfig.getoption("pulumi_up") is False:
-        os.environ["PULUMI_STACK_CONTEXT"] = "TEST_MOCK_STACK"
-        from infra.settings_main import core
-
-        db_type = core.database_type
-        db = request.param
-        if db != db_type:
-            pytest.skip(f"Skipping {request.param} test")
-    return request.param
-
-
 @pytest.fixture(scope="session")
-def stack_name(db_mode):
+def stack_name():
     short_uuid = str(uuid.uuid4())[:5]
-    return f"test-stack-{db_mode}-{short_uuid}"
+    return f"test-stack-{short_uuid}"
 
 
 @pytest.fixture(scope="session")
-def session_env_vars(request, stack_name, db_mode):
+def session_env_vars(request, stack_name):
     env_file = os.path.join(os.path.dirname(__file__), ".env")
     env_vars = dotenv_values(env_file)
     session_vars = {
-        "MAIN_DATABASE_TYPE": db_mode,
         "PROJECT_NAME": stack_name,
     }
     env_vars.update(session_vars)
@@ -216,10 +200,5 @@ def get_response():
 
 
 @pytest.fixture
-def sandbox_deployment_id():
-    return SandboxDeployment().id
-
-
-@pytest.fixture
-def generator_deployment_id():
-    return GeneratorDeployment().id
+def chat_agent_deployment_id():
+    return ChatAgentDeployment().id

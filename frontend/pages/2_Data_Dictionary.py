@@ -1,6 +1,7 @@
-import streamlit as st
-import pandas as pd
 import logging
+
+import pandas as pd
+import streamlit as st
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

@@ -1,10 +1,13 @@
-import streamlit as st
-import pandas as pd
+import asyncio
+import logging
 import os
 import warnings
-import logging
-from typing import Dict, Any, List
-import asyncio
+from typing import Any, Dict, List
+
+# Add imports for DataRobot
+import datarobot as dr
+import pandas as pd
+import streamlit as st
 
 # Import FastAPI functions
 from utils.dataAnalystAPI import (
@@ -12,11 +15,7 @@ from utils.dataAnalystAPI import (
     DatasetInput,
     cleanse_dataframes,
     get_dictionary,
-    DictionaryRequest,
 )
-
-# Add imports for DataRobot
-import datarobot as dr
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -79,7 +78,7 @@ async def process_data_async(datasets_dict: Dict[str, pd.DataFrame]) -> Dict[str
 # Modify generate_dictionaries similarly
 @st.cache_resource(show_spinner=False)
 def generate_dictionaries_cached(
-    _cleansed_data: Dict[str, Dict[str, Any]]
+    _cleansed_data: Dict[str, Dict[str, Any]],
 ) -> Dict[str, Any]:
     """
     Wrapper function to handle async dictionary generation with caching
@@ -88,7 +87,7 @@ def generate_dictionaries_cached(
 
 
 async def generate_dictionaries_async(
-    _cleansed_data: Dict[str, Dict[str, Any]]
+    _cleansed_data: Dict[str, Dict[str, Any]],
 ) -> Dict[str, Any]:
     """Generate data dictionaries for all datasets"""
     try:
