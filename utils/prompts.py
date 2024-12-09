@@ -122,6 +122,9 @@ For example:
 def analyze_data(dfs):
     import pandas as pd
     import numpy as np
+    # High level explanation 
+    # of what the code does
+    # should be included at the top of the function
     
     # Access individual dataframes by name
     df = dfs['dataset_name']  # Access specific dataset
@@ -137,7 +140,10 @@ NECESSARY CONSIDERATIONS:
 - Access dataframes using their names as dictionary keys, e.g. dfs['dataset_name']
 - Your code should handle cases where some expected columns might be in different dataframes
 - Consider appropriate joins/merges between dataframes when needed
-- Return a single DataFrame with the analysis results
+- Document the code with comments at the top of the function explaining at a high level what the code does
+- Include comments at each step to explain the code in more detail
+- The function must return a single DataFrame with the analysis results
+- The function shall not return a list of dataframes, a dict of dataframes, or anything other than a single dataframe.
 - You may perform advanced analysis using statsmodels, scipy, numpy, pandas and scikit-learn.
 ...
 """
@@ -216,12 +222,58 @@ Avoid heatmaps unless it's highly appropriate for the data or the user specifica
 
 Simple, not overly busy or complex.
 No background colors or themes; use the default theme.
-Complementary colors you could use: #0B0A0D, #243E73, #1D3159, #8BB4D9, #A67E6F, #011826, #1A3940, #8C5946, #BF8D7A, #0D0D0D, #3805F2, #2703A6, #150259, #63A1F2, #84F266, #232625, #35403A, #4C594F, #A4A69C, #BFBFB8
-Gradient - Coral to Teal: #FF5F5D, #F76F67, #EE8071, #E6907C, #DD9F86, #D5AF90, #CDBF9A, #C4CFA4, #BCD0AF, #A3CCAB, #8BB8A7, #72A4A3, #59809F, #3F7C85
-Gradient - Teal to Aqua: #3F7C85, #367B88, #2D7A8A, #24798D, #1B7890, #117893, #087796, #007699, #00759C, #00749F, #0074A2, #0073A5, #0072A7, #0072A7, #00CCBF
-Gradient - Dark Teal to Light Gray: #14140F,#23231E,#32312D,#41403C,#51504B,#60605A,#707069,#808078,#909087,#A0A096,#B0B0A5,#C0C0B4,#D0D0C3,#CACACA
-Gradient - Ocean Blues: #003840,#00424A,#004C55,#00565F,#006069,#006A73,#00747C,#007E86,#008891,#00929B,#009CA5,#00A6AF,#00B0B9,#00BBC9
-Include titles, axis names, and legends.
+
+Use DataRobot Brand Colors
+Primary Colors:
+DataRobot Green:
+HEX: #81FBA5
+DataRobot Blue:
+HEX: #44BFFC
+DataRobot Yellow (use very sparingly, if at all):
+HEX: #FFFF54
+DataRobot Purple:
+HEX: #909BF5
+Accent Colors:
+Green Variants:
+Light Green: HEX #BFFD7E
+Dark Green: HEX #86DAC0, #8AC2D5
+Blue Variants:
+Light Blue: HEX #4CCCEA
+Teal: HEX #61D7CF
+Yellow Variant:
+Lime Yellow: HEX #EDFE60
+Purple Variants:
+Light Purple: HEX #8080F0, #746AFC
+Deep Purple: HEX #5C41FF
+Neutral Colors:
+White:
+HEX: #FFFFFF
+Black:
+HEX: #0B0B0B
+Grey Variants:
+Light Grey: HEX #E4E4E4, #A2A2A2
+Dark Grey: HEX #6C6A6B, #231F20
+Suggested Usage in Charts
+Based on the color pairings and branding guidelines, here are my suggestions for using these colors in charts:
+
+Primary Colors for Data Differentiation:
+
+Use DataRobot Green (#81FBA5) and DataRobot Blue (#44BFFC) for major categories or distinct data series.
+Use DataRobot Yellow (#FFFF54) for highlighting or calling attention to key points, but avoid using unl
+DataRobot Purple (#909BF5) can be used to differentiate less critical data or secondary information.
+Accent Colors for Detailed Insights:
+
+Variants like Light Green and Teal can be used to represent related data that needs to be distinguished from the primary green or blue.
+Purple Variants (Light Purple or Deep Purple) can be used to show comparison data alongside primary categories without overwhelming the viewer.
+Yellow Variants can also serve as an accent to highlight notable metrics or trends in the data, but should mostly be avoided.
+Neutral Colors for Background and Context:
+
+Black (#0B0B0B) can be used for text labels, axis lines, and borders to maintain readability.
+Grey Variants like Light Grey (#E4E4E4) can be used for gridlines or background elements to add structure without distracting from the data.
+Color Pairings for Emphasis:
+
+Use the pairing combinations as shown (Green/Black/Grey, Purple/Black/Grey, etc.) to maintain consistency with brand visual identity. These pairings can be applied to legends, titles, and annotations in charts to enhance readability while sticking to the brand.
+
 Robustness:
 Ensure the function is free of syntax errors and logical problems.
 Handle errors gracefully and ensure type casting for data integrity.
