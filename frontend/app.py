@@ -42,5 +42,5 @@ if prompt := st.chat_input("Talk to me."):
     print(st.session_state.message_history)
     for message in st.session_state.message_history:
         st.session_state.message_log.chat_message(message["role"]).write(
-            message["content"]
+            str(message["content"])
         )
