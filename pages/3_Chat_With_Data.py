@@ -261,7 +261,7 @@ async def process_chat_and_analysis(question: str, chat_messages: list) -> None:
     
     try:
         # Create placeholder containers in desired order
-        with st.chat_message("assistant"):
+        with st.chat_message("assistant", avatar="bot.jpg"):
             message_placeholder = st.empty()
             
             # Create containers for each section
@@ -433,7 +433,10 @@ if not st.session_state.cleansed_data:
 else:
     # Display chat history
     for message in st.session_state.chat_messages:
-        with st.chat_message(message["role"]):
+        # Set avatar based on role
+        avatar = "bot.jpg" if message["role"] == "assistant" else "you.jpg"
+        
+        with st.chat_message(message["role"], avatar=avatar):
             st.markdown(message["content"])
             
             # Add components in the same structure as the original response
@@ -517,7 +520,9 @@ else:
         user_message = {"role": "user", "content": enhanced_question}
         st.session_state.chat_messages.append(user_message)
         
-        with st.chat_message("user"):
+        # Display user message with custom avatar
+        with st.chat_message("user", avatar="you.jpg"):
             st.markdown(enhanced_question)
         
+        # Process chat and display assistant response
         asyncio.run(process_chat_and_analysis(enhanced_question, valid_messages)) 
