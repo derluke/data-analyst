@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 
 # Import FastAPI functions
-from utils.dataAnalystAPI import (
+from utils.api import (
     CleanseRequest,
     DatasetInput,
     cleanse_dataframes,

@@ -1,9 +1,9 @@
 name: analyst
 runtime:
   name: python
-  options:
-    toolchain: pip
-    virtualenv: .venv
+  # options:
+  #   toolchain: pip
+  #   virtualenv: .venv
 description: Data Analyst
 config:
   pulumi:tags:
