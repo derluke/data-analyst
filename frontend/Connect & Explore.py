@@ -2,12 +2,15 @@ import asyncio
 import logging
 import os
 import warnings
+import sys
 from typing import Any, Dict, List
 
 # Add imports for DataRobot
 import datarobot as dr
 import pandas as pd
 import streamlit as st
+
+sys.path.append("..")
 
 # Import FastAPI functions
 from utils.api import (

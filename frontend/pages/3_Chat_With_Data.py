@@ -1,26 +1,26 @@
-import asyncio
-import io
-import json
-import logging
-import time
-import traceback
-import warnings
-from datetime import datetime
-from typing import Any, Dict
-
-import pandas as pd
 import streamlit as st
+import pandas as pd
+from typing import List, Dict, Any
+import os
+from datetime import datetime
+import warnings
+import time
+import asyncio
+import logging
+import json
+import io
+import traceback
 
 # Import FastAPI functions directly
-from utils.dataAnalystAPI import (
-    BusinessAnalysisRequest,
+from utils.api import (
+    chat,
     ChatRequest,
     RunAnalysisRequest,
-    RunChartsRequest,
-    chat,
-    get_business_analysis,
     run_analysis,
+    RunChartsRequest,
     run_charts,
+    BusinessAnalysisRequest,
+    get_business_analysis,
 )
 
 # Suppress warnings
@@ -98,9 +98,11 @@ class CustomJsonFormatter(logging.Formatter):
                     for msg in record.json_data["messages"]:
                         formatted_msg = {
                             "role": msg["role"],
-                            "content": msg["content"].replace("\n", "\\n")[:100] + "..."
-                            if len(msg["content"]) > 100
-                            else msg["content"],
+                            "content": (
+                                msg["content"].replace("\n", "\\n")[:100] + "..."
+                                if len(msg["content"]) > 100
+                                else msg["content"]
+                            ),
                         }
                         formatted_messages.append(formatted_msg)
 
@@ -204,10 +206,12 @@ Keyword Arguments:
                     "files": request_options.get("files"),
                     "json_data": request_options.get("json_data", {}),
                 }
-                logger.debug(f"""
+                logger.debug(
+                    f"""
 Request options:
 {json.dumps(formatted_options, indent=2, ensure_ascii=False)}
-""")
+"""
+                )
 
             output_log = f"""
 OUTPUT RESULTS [{request_id}]
