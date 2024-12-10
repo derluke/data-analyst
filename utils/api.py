@@ -29,11 +29,11 @@ from utils import prompts
 from utils.resources import ChatAgentDeployment
 from utils.schema import (
     BusinessAnalysisRequest,
-    ChatRequest,
     ChartGenerationResult,
+    ChatRequest,
     CleanseRequest,
-    CleansingReport,
     CleanseResponse,
+    CleansingReport,
     CodeGenerationResult,
     CodeValidator,
     DatasetInput,
@@ -43,7 +43,6 @@ from utils.schema import (
     QuestionValidationResult,
     RunAnalysisRequest,
     RunChartsRequest,
-    ChartGenerationResult,
 )
 
 try:
@@ -587,9 +586,7 @@ def process_dataset(dataset: DatasetInput) -> Dict[str, Any]:
         )
 
         # Process column batches using ThreadPoolExecutor
-        batch_results = (
-            {}
-        )  # Change to dictionary to maintain column-description mapping
+        batch_results = {}  # Change to dictionary to maintain column-description mapping
         with ThreadPoolExecutor() as executor:
             batch_futures = {
                 executor.submit(

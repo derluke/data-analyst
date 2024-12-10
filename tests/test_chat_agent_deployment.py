@@ -1,9 +1,7 @@
-import os
 
 import datarobot as dr
-from openai import OpenAI
-import pandas as pd
 import pytest
+from openai import OpenAI
 
 
 @pytest.fixture

@@ -132,9 +132,7 @@ def pulumi_up(
         stack = subprocess.check_output(
             ["pulumi", "stack"],
             text=True,
-        ).split(
-            "\n"
-        )[0]
+        ).split("\n")[0]
         logger.info(stack)
         yield
 

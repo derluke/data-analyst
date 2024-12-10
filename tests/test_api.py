@@ -1,33 +1,20 @@
-import base64
+import asyncio
 import os
 
-import asyncio
 import pandas as pd
 import pytest
-import requests
-from utils.api import app
-
 from datarobotx.idp.datasets import get_or_create_dataset_from_df
 from fastapi.testclient import TestClient
 
-
 # Import FastAPI functions directly
 from utils.api import (
-    chat,
+    app,
     cleanse_dataframes,
-    get_business_analysis,
     get_dictionary,
-    run_analysis,
-    run_charts,
-    suggest_questions,
 )
 from utils.schema import (
-    BusinessAnalysisRequest,
-    ChatRequest,
     CleanseRequest,
     DatasetInput,
-    RunAnalysisRequest,
-    RunChartsRequest,
 )
 
 client = TestClient(app)

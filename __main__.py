@@ -89,7 +89,6 @@ prompt_injection_guard_configuration = [
 ]
 
 if settings_main.core.genai_deployment_type == "diy":
-    # Custom model
     chat_agent_registered_llm = datarobot.CustomModel(
         files=settings_chat_agent.get_files(
             runtime_parameter_values=llm_credential.runtime_parameter_values,
