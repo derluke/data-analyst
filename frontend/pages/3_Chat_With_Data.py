@@ -10,18 +10,12 @@ from typing import Any, Dict
 
 import pandas as pd
 import streamlit as st
-
 # Import FastAPI functions directly
-from utils.api import (
-    BusinessAnalysisRequest,
-    ChatRequest,
-    RunAnalysisRequest,
-    RunChartsRequest,
-    chat,
-    get_business_analysis,
-    run_analysis,
-    run_charts,
-)
+from utils.api import (BusinessAnalysisRequest, ChatRequest,
+                       RunAnalysisRequest, RunChartsRequest, chat,
+                       get_business_analysis, run_analysis, run_charts)
+
+from utils.schema
 
 # Suppress warnings
 warnings.filterwarnings("ignore")

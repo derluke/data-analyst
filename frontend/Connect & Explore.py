@@ -13,12 +13,8 @@ import streamlit as st
 sys.path.append("..")
 
 # Import FastAPI functions
-from utils.api import (
-    CleanseRequest,
-    DatasetInput,
-    cleanse_dataframes,
-    get_dictionary,
-)
+from utils.rest_api import cleanse_dataframes, get_dictionary
+from utils.schema import CleanseRequest, DatasetInput
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
