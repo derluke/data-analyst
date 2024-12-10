@@ -19,7 +19,7 @@ import streamlit as st
 
 sys.path.append("..")
 
-from utils.api import create_completion
+from utils.api import client
 
 if "message_history" not in st.session_state:
     st.session_state.message_history = []
@@ -35,7 +35,11 @@ if prompt := st.chat_input("Talk to me."):
         }
     ]
     all_messages = st.session_state.message_history + input_message
-    response = str(create_completion(messages=all_messages).choices[0].message.content)
+    response = str(
+        client.chat.completions.create(messages=all_messages, model="gpt-4o")
+        .choices[0]
+        .message.content
+    )
     response_content = [{"role": "assistant", "content": response}]
 
     st.session_state.message_history += input_message + response_content
