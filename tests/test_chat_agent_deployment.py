@@ -1,4 +1,3 @@
-
 import datarobot as dr
 import pytest
 from openai import OpenAI

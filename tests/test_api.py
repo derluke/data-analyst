@@ -7,15 +7,8 @@ from datarobotx.idp.datasets import get_or_create_dataset_from_df
 from fastapi.testclient import TestClient
 
 # Import FastAPI functions directly
-from utils.api import (
-    app,
-    cleanse_dataframes,
-    get_dictionary,
-)
-from utils.schema import (
-    CleanseRequest,
-    DatasetInput,
-)
+from utils.api import app, cleanse_dataframes, get_dictionary
+from utils.schema import CleanseRequest, DatasetInput
 
 client = TestClient(app)
 

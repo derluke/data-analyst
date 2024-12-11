@@ -25,9 +25,7 @@ from utils.credentials import (
     OpenAICredentials,
 )
 
-from ..common.schema import (
-    CredentialArgs,
-)
+from ..common.schema import CredentialArgs
 
 
 class DRCredential(pulumi.ComponentResource):

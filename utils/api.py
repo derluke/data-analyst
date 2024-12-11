@@ -4,26 +4,49 @@ import hashlib
 import io
 import json
 import logging
+import os
 import re
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import tempfile
+import time
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
+from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
 import datarobot as dr
-from fastapi import HTTPException
+import kaleido
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import psutil
+import scipy
+import sklearn
+import snowflake.connector
+import statsmodels
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from dotenv import load_dotenv
+from fastapi import FastAPI, File, HTTPException, UploadFile, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import StreamingResponse
 from openai import OpenAI
 from plotly.subplots import make_subplots
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError, validator
+from snowflake.connector.errors import ProgrammingError
 
 sys.path.append("..")
 
 from utils import prompts
+from utils.datetime_helpers import (
+    convert_datetime_series,
+    is_date_column,
+)
 from utils.resources import ChatAgentDeployment
 from utils.schema import (
     BusinessAnalysisRequest,
@@ -31,10 +54,9 @@ from utils.schema import (
     ChatRequest,
     CodeGenerationResult,
     CodeValidator,
-    DataDictionaryColumn,
     DatasetInput,
     DictionaryRequest,
-    ProcessedDatasetStats,
+    DictionaryResponse,
     QuestionValidationResult,
     RunAnalysisRequest,
     RunChartsRequest,
@@ -56,9 +78,12 @@ except ValidationError as e:
         "If running in DataRobot, verify your runtime parameters have been set correctly."
     ) from e
 
+MODEL_MODE = "openai"
+DICTIONARY_BATCH_SIZE = 5
+
 
 # Cache key generator for DataFrames
-def _generate_df_hash(df: pd.DataFrame) -> str:
+def generate_df_hash(df: pd.DataFrame) -> str:
     """Generate a hash key for DataFrame caching based on content"""
     # Get sample of data and column info for hash
     sample = df.head(100).to_json()
@@ -131,32 +156,49 @@ def process_column_batch(
         )
 
     # Get descriptions from OpenAI
-    completion = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=messages,
-        response_format={"type": "json_object"},
-        stream=False,
-    )
-
-    response = json.loads(completion.choices[0].message.content)
-
-    # Extract descriptions from response and map to columns
-    descriptions = {}
-    if isinstance(response, dict):
-        # Check if response has descriptions list
-        if "descriptions" in response and isinstance(response["descriptions"], list):
-            # Map descriptions to columns, handling potential length mismatch
-            for col, desc in zip(columns, response["descriptions"]):
-                descriptions[col] = desc
-        # Fallback: check if response has column-specific descriptions
+    if MODEL_MODE == "openai":
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            response_format={"type": "json_object"},
+            stream=False,
+        )
+        response = json.loads(completion.choices[0].message.content)
+    elif MODEL_MODE in ["gemini", "anthropic"]:
+        completion = client.chat.completions.create(
+            model="gemini-1.5-pro",
+            messages=messages,  # or appropriate model name
+        )
+        # Extract JSON from response by looking for ```json blocks
+        content = completion.choices[0].message.content
+        json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
+        if json_match:
+            response = json.loads(json_match.group(1))
         else:
-            for col in columns:
-                descriptions[col] = response.get(col, "No description available")
+            raise ValueError("No JSON block found in model response")
 
-    return descriptions
+    try:
+        # Validate response using DictionaryResponse
+        validated = DictionaryResponse(
+            columns=response.get("columns", []),
+            descriptions=response.get("descriptions", []),
+        )
+
+        # Convert to dictionary format
+        descriptions = validated.to_dict()
+
+        # Only return descriptions for requested columns
+        return {
+            col: descriptions.get(col, "No description available") for col in columns
+        }
+
+    except ValueError as e:
+        logging.error(f"Invalid dictionary response: {str(e)}")
+        # Fallback: return basic descriptions
+        return {col: "No valid description available" for col in columns}
 
 
-def process_dataset(dataset: DatasetInput) -> ProcessedDatasetStats:
+def process_dataset(dataset: DatasetInput) -> Dict[str, Any]:
     """Process a single dataset with parallel column batch processing"""
     try:
         batch_start = datetime.now()
@@ -170,17 +212,20 @@ def process_dataset(dataset: DatasetInput) -> ProcessedDatasetStats:
         # Handle empty dataset
         if df.empty:
             logging.warning(f"Dataset {dataset.name} is empty")
-            return ProcessedDatasetStats(
-                name=dataset.name,
-                dictionary=[],
-                cache_hit=False,
-                batch_time=0,
-            )
+            return {
+                "name": dataset.name,
+                "dictionary": [],
+                "cache_hit": False,
+                "batch_time": 0,
+            }
+
+        # Generate cache key
+        df_hash = generate_df_hash(df)
 
         # Split columns into batches
         column_batches = [
-            list(df.columns[i : i + prompts.DICTIONARY_BATCH_SIZE])
-            for i in range(0, len(df.columns), prompts.DICTIONARY_BATCH_SIZE)
+            list(df.columns[i : i + DICTIONARY_BATCH_SIZE])
+            for i in range(0, len(df.columns), DICTIONARY_BATCH_SIZE)
         ]
         logging.info(
             f"Created {len(column_batches)} batches for {len(df.columns)} columns"
@@ -193,7 +238,7 @@ def process_dataset(dataset: DatasetInput) -> ProcessedDatasetStats:
         with ThreadPoolExecutor() as executor:
             batch_futures = {
                 executor.submit(
-                    process_column_batch, batch, df, prompts.DICTIONARY_BATCH_SIZE
+                    process_column_batch, batch, df, DICTIONARY_BATCH_SIZE
                 ): batch
                 for batch in column_batches
             }
@@ -212,11 +257,11 @@ def process_dataset(dataset: DatasetInput) -> ProcessedDatasetStats:
 
         # Combine results
         dictionary = [
-            DataDictionaryColumn(
-                data_type=str(df[col].dtype),
-                column=col,
-                description=batch_results.get(col, "No description available"),
-            )
+            {
+                "data_type": str(df[col].dtype),
+                "column": col,
+                "description": batch_results.get(col, "No description available"),
+            }
             for col in df.columns
         ]
 
@@ -226,12 +271,12 @@ def process_dataset(dataset: DatasetInput) -> ProcessedDatasetStats:
 
         batch_time = (datetime.now() - batch_start).total_seconds()
 
-        return ProcessedDatasetStats(
-            name=dataset.name,
-            dictionary=dictionary,
-            cache_hit=False,
-            batch_time=batch_time,
-        )
+        return {
+            "name": dataset.name,
+            "dictionary": dictionary,
+            "cache_hit": False,
+            "batch_time": batch_time,
+        }
 
     except Exception as e:
         logging.error(f"Error processing dataset {dataset.name}: {str(e)}")
@@ -334,14 +379,26 @@ async def generate_question_suggestions(
         ]
 
         # Get suggestions from OpenAI
-        completion = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages,
-            response_format={"type": "json_object"},
-        )
-
-        # Parse response
-        response = json.loads(completion.choices[0].message.content)
+        if MODEL_MODE == "openai":
+            completion = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                response_format={"type": "json_object"},
+                stream=False,
+            )
+            response = json.loads(completion.choices[0].message.content)
+        elif MODEL_MODE in ["gemini", "anthropic"]:
+            completion = client.chat.completions.create(
+                model="gemini-1.5-pro",
+                messages=messages,  # or appropriate model name
+            )
+            # Extract JSON from response by looking for ```json blocks
+            content = completion.choices[0].message.content
+            json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
+            if json_match:
+                response = json.loads(json_match.group(1))
+            else:
+                raise ValueError("No JSON block found in model response")
 
         # Validate each suggested question
         available_columns = dictionary["column"].tolist()
@@ -442,38 +499,49 @@ async def create_charts(
         attempts += 1
 
         try:
-            # Get chart code from OpenAI
-            completion = client.chat.completions.create(
-                model="gpt-4o",
-                temperature=0,
-                messages=[
-                    {"role": "system", "content": prompts.SYSTEM_PROMPT_PLOTLY_CHART},
-                    {"role": "user", "content": f"Question: {question}"},
-                    {
-                        "role": "user",
-                        "content": f"Data Metadata:\n{json.dumps(metadata)}",
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Data top 25 rows:\n{df.head(25).to_string()}",
-                    },
-                    *(
-                        [
-                            {
-                                "role": "user",
-                                "content": f"Previous error: {error_message}",
-                            },
-                            {"role": "user", "content": f"Failed code:\n{failed_code}"},
-                        ]
-                        if error_message and failed_code
-                        else []
-                    ),
-                ],
-                response_format={"type": "json_object"},
-                stream=False,
-            )
+            # Create messages for OpenAI
+            messages = [
+                {"role": "system", "content": prompts.SYSTEM_PROMPT_PLOTLY_CHART},
+                {"role": "user", "content": f"Question: {question}"},
+                {"role": "user", "content": f"Data Metadata:\n{json.dumps(metadata)}"},
+                {
+                    "role": "user",
+                    "content": f"Data top 25 rows:\n{df.head(25).to_string()}",
+                },
+            ]
 
-            response = json.loads(completion.choices[0].message.content)
+            # Add error context if available
+            if error_message and failed_code:
+                messages.extend(
+                    [
+                        {"role": "user", "content": f"Previous error: {error_message}"},
+                        {"role": "user", "content": f"Failed code:\n{failed_code}"},
+                    ]
+                )
+
+            # Get response based on model mode
+            if MODEL_MODE == "openai":
+                completion = client.chat.completions.create(
+                    model="gpt-4o",
+                    temperature=0,
+                    messages=messages,
+                    response_format={"type": "json_object"},
+                    stream=False,
+                )
+                response = json.loads(completion.choices[0].message.content)
+            elif MODEL_MODE in ["gemini", "anthropic"]:
+                completion = client.chat.completions.create(
+                    model="gemini-1.5-pro",  # or appropriate model name
+                    messages=messages,
+                )
+                # Extract JSON from response by looking for ```json blocks
+                content = completion.choices[0].message.content
+                json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
+                if json_match:
+                    response = json.loads(json_match.group(1))
+                else:
+                    raise ValueError("No JSON block found in model response")
+
             code = response.get("code")
 
             # Track code history
@@ -592,16 +660,137 @@ async def process_chat(messages: List[Dict[str, str]]) -> Dict[str, str]:
         {"role": "user", "content": f"Message History:\n{messages_str}"},
     ]
 
-    # Get non-streaming response from OpenAI
-    completion = client.chat.completions.create(
-        model="gpt-4o-mini",
-        temperature=0,
-        messages=prompt_messages,
-        response_format={"type": "json_object"},
-        stream=False,
-    )
+    # Get response based on model mode
+    if MODEL_MODE == "openai":
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0,
+            messages=prompt_messages,
+            response_format={"type": "json_object"},
+        )
+        response = json.loads(completion.choices[0].message.content)
+    elif MODEL_MODE in ["gemini", "anthropic"]:
+        completion = client.chat.completions.create(
+            model="gemini-1.5-pro",  # or appropriate model name
+            messages=prompt_messages,
+        )
+        # Extract JSON from response by looking for ```json blocks
+        content = completion.choices[0].message.content
+        json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
+        if json_match:
+            response = json.loads(json_match.group(1))
+        else:
+            raise ValueError("No JSON block found in model response")
 
-    return json.loads(completion.choices[0].message.content)
+    return response
+
+
+async def genererate_python_analysis_code(request: RunAnalysisRequest) -> Dict[str, str]:
+    """
+    Generate Python analysis code based on JSON data and question.
+
+    Parameters:
+    - request: RunAnalysisRequest containing data and question
+
+    Returns:
+    - Dictionary containing generated code and description
+
+    Raises:
+    - HTTPException: If code generation fails
+    """
+    # Convert dictionary data structure to list of columns for all datasets
+    all_columns = []
+    all_descriptions = []
+    all_data_types = []
+
+    for dataset_name, dictionary_list in request.dictionary.items():
+        for entry in dictionary_list:
+            if isinstance(entry, dict) and "column" in entry:
+                all_columns.append(f"{dataset_name}.{entry['column']}")
+                all_descriptions.append(entry.get("description", ""))
+                all_data_types.append(entry.get("data_type", ""))
+
+    # Create dictionary format for prompt
+    dictionary_data = {
+        "columns": all_columns,
+        "descriptions": all_descriptions,
+        "data_types": all_data_types,
+    }
+
+    # Get sample data and shape info for all datasets
+    all_samples = []
+    all_shapes = []
+
+    for dataset_name, dataset in request.data.items():
+        df = pd.DataFrame(dataset)
+        all_shapes.append(
+            f"{dataset_name}: {df.shape[0]} rows x {df.shape[1]} columns"
+        )
+        # Limit sample to 10 rows
+        sample_df = df.head(10)
+        all_samples.append(f"{dataset_name}:\n{sample_df.to_string()}")
+
+    shape_info = "\n".join(all_shapes)
+    sample_data = "\n\n".join(all_samples)
+
+    # Create messages for OpenAI
+    messages = [
+        {"role": "system", "content": prompts.SYSTEM_PROMPT_PYTHON_ANALYST},
+        {"role": "user", "content": f"Business Question: {request.question}"},
+        {"role": "user", "content": f"Data Shapes:\n{shape_info}"},
+        {"role": "user", "content": f"Sample Data:\n{sample_data}"},
+        {
+            "role": "user",
+            "content": f"Data Dictionary:\n{json.dumps(dictionary_data)}",
+        },
+    ]
+
+    # Add error context if available
+    if request.error_message and request.failed_code:
+        messages.extend(
+            [
+                {"role": "user", "content": "Previous attempt failed with error:"},
+                {"role": "user", "content": request.error_message},
+                {"role": "user", "content": "Failed code:"},
+                {"role": "user", "content": request.failed_code},
+                {
+                    "role": "user",
+                    "content": "Please generate new code that avoids this error.",
+                },
+            ]
+        )
+
+    # Get response from OpenAI
+    if MODEL_MODE == "openai":
+        completion = client.chat.completions.create(
+            model="gpt-4o",
+            temperature=0.1,
+            messages=messages,
+            response_format={"type": "json_object"},
+            stream=False,
+        )
+        response = json.loads(completion.choices[0].message.content)
+    elif MODEL_MODE in ["gemini", "anthropic"]:
+        completion = client.chat.completions.create(
+            model="gemini-1.5-pro",
+            messages=messages,  # or appropriate model name
+        )
+        # Extract JSON from response by looking for ```json blocks
+        content = completion.choices[0].message.content
+        json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
+        if json_match:
+            response = json.loads(json_match.group(1))
+        else:
+            raise ValueError("No JSON block found in model response")
+
+    return {
+        "code": response.get("code", ""),
+        "description": response.get("description", ""),
+    }
+
+    except Exception as e:
+        logging.error(f"Error generating analysis code: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 async def generate_analysis_code(
@@ -624,7 +813,7 @@ async def generate_analysis_code(
 
         try:
             # Get code from OpenAI
-            code_response = await get_python_analysis_code(request)
+            code_response = await genererate_python_analysis_code(request)
 
             # Validate the generated code
             is_valid, validation_message = CodeValidator.validate_imports(
@@ -662,3 +851,79 @@ async def generate_analysis_code(
         status_code=500,
         detail=f"Failed to generate valid code after {max_attempts} attempts",
     )
+
+
+def create_snowflake_connection(
+    warehouse: str, database: str, schema: str
+) -> snowflake.connector.SnowflakeConnection:
+    """Create a connection to Snowflake using environment variables"""
+    try:
+        return snowflake.connector.connect(
+            user=os.getenv("user"),
+            password=os.getenv("password"),
+            account=os.getenv("account"),
+            warehouse=warehouse,
+            database=database,
+            schema=schema,
+        )
+    except Exception as e:
+        logging.error(f"Failed to connect to Snowflake: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to connect to Snowflake: {str(e)}"
+        )
+
+
+def execute_snowflake_query(
+    conn: snowflake.connector.SnowflakeConnection, query: str, timeout: int = 300
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Execute a Snowflake query with timeout and metadata capture
+
+    Args:
+        conn: Snowflake connection
+        query: SQL query to execute
+        timeout: Query timeout in seconds
+
+    Returns:
+        Tuple of (results, metadata)
+    """
+    try:
+        cursor = conn.cursor(snowflake.connector.DictCursor)
+        start_time = time.time()
+
+        # Set query timeout at cursor level
+        cursor.execute(f"ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = {timeout}")
+
+        try:
+            # Execute query
+            cursor.execute(query)
+
+            # Get results
+            results = cursor.fetchall()
+
+            # Get query ID from the cursor
+            query_id = cursor.sfqid
+
+            # Calculate execution time
+            execution_time = time.time() - start_time
+
+            # Prepare metadata
+            metadata = {
+                "query_id": query_id,
+                "row_count": len(results),
+                "execution_time": execution_time,
+                "warehouse": conn.warehouse,
+                "database": conn.database,
+                "schema": conn.schema,
+            }
+
+            return results, metadata
+
+        except snowflake.connector.errors.ProgrammingError as e:
+            # Handle Snowflake-specific errors
+            raise Exception(f"Snowflake error: {str(e)}")
+
+    except Exception as e:
+        raise Exception(f"Query execution failed: {str(e)}")
+    finally:
+        if cursor:
+            cursor.close()

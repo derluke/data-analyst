@@ -20,11 +20,7 @@ import pulumi
 import pulumi_datarobot as datarobot
 
 import infra.settings_credentials as credentials
-from infra import (
-    settings_app_infra,
-    settings_chat_agent,
-    settings_main,
-)
+from infra import settings_app_infra, settings_chat_agent, settings_main
 from infra.common.feature_flags import check_feature_flags
 from infra.common.globals import GlobalRuntimeEnvironment
 from infra.common.urls import get_deployment_url

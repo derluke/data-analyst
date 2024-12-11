@@ -17,17 +17,7 @@ from rich.table import Table
 # Suppress warnings
 warnings.filterwarnings("ignore")
 
-
 # Import FastAPI functions directly
-from utils.api import (
-    chat,
-    cleanse_dataframes,
-    get_business_analysis,
-    get_dictionary,
-    run_analysis,
-    run_charts,
-    suggest_questions,
-)
 from utils.schema import (
     BusinessAnalysisRequest,
     ChatRequest,
@@ -37,18 +27,29 @@ from utils.schema import (
     RunChartsRequest,
 )
 
+from 
+    chat,
+    cleanse_dataframes,
+    get_business_analysis,
+    get_dictionary,
+    get_python_analysis_code,
+    run_analysis,
+    run_charts,
+    suggest_questions,
+)
+
 # Initialize rich console for better output formatting
 console = Console()
 
 # Available data files
 DATA_FILES = {
-    "lending_club_profile": "https://s3.amazonaws.com/datarobot_public_datasets/drx/Lending+Club+Profile.csv",
-    "lending_club_target": "https://s3.amazonaws.com/datarobot_public_datasets/drx/Lending+Club+Target.csv",
-    "lending_club_transactions": "https://s3.amazonaws.com/datarobot_public_datasets/drx/Lending+Club+Transactions.csv",
-    "diabetes": "https://s3.amazonaws.com/datarobot_public_datasets/10k_diabetes_20.csv",
-    # "cpg": r"C:\Users\BrettOlmstead\Downloads\CPG Data Sample for DataRobot_csv.csv",
-    # "gannett": r"C:\Users\BrettOlmstead\Downloads\Promotional Activity - Gannett.csv",
-    # "winter_sports": r"C:\Users\BrettOlmstead\Downloads\Elsa Winter Sports.csv"
+    "lending_club_profile": r"C:\Users\BrettOlmstead\Downloads\lending_club_SAFER\lending_club_SAFER\profile.csv",
+    "lending_club_target": r"C:\Users\BrettOlmstead\Downloads\lending_club_SAFER\lending_club_SAFER\target.csv",
+    "lending_club_transactions": r"C:\Users\BrettOlmstead\Downloads\lending_club_SAFER\lending_club_SAFER\transactions.csv",
+    "diabetes": r"C:\Users\BrettOlmstead\Downloads\AI Feature Engineer\10k_diabetes.csv",
+    "cpg": r"C:\Users\BrettOlmstead\Downloads\CPG Data Sample for DataRobot_csv.csv",
+    "gannett": r"C:\Users\BrettOlmstead\Downloads\Promotional Activity - Gannett.csv",
+    "winter_sports": r"C:\Users\BrettOlmstead\Downloads\Elsa Winter Sports.csv",
 }
 
 
@@ -153,7 +154,7 @@ async def cleanse_datasets(datasets: List[Dict[str, Any]]) -> Dict[str, Any]:
 
         elapsed_time = time.time() - start_time
         console.print(f"\n[cyan]Cleansing time: {elapsed_time:.2f} seconds[/cyan]")
-        return result.model_dump()
+        return result.dict()
 
     except Exception as e:
         console.print(f"[red]Error: {str(e)}[/red]")
@@ -625,7 +626,7 @@ async def main():
 
                     except Exception as e:
                         progress.update(task, completed=True)
-                        console.print("\n[bold red]Analysis Failed[/bold red]")
+                        console.print(f"\n[bold red]Analysis Failed[/bold red]")
 
                         # Create error details table
                         error_table = Table(
@@ -785,11 +786,12 @@ async def main():
                         result["business_analysis"] = business_analysis
 
                 except Exception as e:
-                    console.print("\n[bold red]Business Analysis Failed:[/bold red]")
+                    console.print(f"\n[bold red]Business Analysis Failed:[/bold red]")
                     console.print(f"Error: {str(e)}")
 
             # Run charts
             console.print("\n[bold]Generating Charts...[/bold]")
+            charts_start_time = time.time()
 
             with Progress(
                 SpinnerColumn(),
@@ -872,7 +874,7 @@ async def main():
                         )
 
                 except Exception as e:
-                    console.print("\n[bold red]Chart Generation Failed:[/bold red]")
+                    console.print(f"\n[bold red]Chart Generation Failed:[/bold red]")
                     console.print(f"Error: {str(e)}")
 
             # After completing the full analysis cycle, prompt for follow-up

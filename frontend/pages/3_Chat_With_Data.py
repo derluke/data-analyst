@@ -2,20 +2,33 @@ import asyncio
 import io
 import json
 import logging
+import os
 import time
 import traceback
 import warnings
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import pandas as pd
 import streamlit as st
-# Import FastAPI functions directly
-from utils.api import (BusinessAnalysisRequest, ChatRequest,
-                       RunAnalysisRequest, RunChartsRequest, chat,
-                       get_business_analysis, run_analysis, run_charts)
 
-from utils.schema
+# Import FastAPI functions directly
+from utils.schema import (
+    BusinessAnalysisRequest,
+    ChatRequest,
+    CleanseRequest,
+    DatasetInput,
+    RunAnalysisRequest,
+    RunChartsRequest,
+)
+from utils.rest_api import (
+    chat,
+    cleanse_dataframes,
+    get_business_analysis,
+    get_dictionary,
+    run_analysis,
+    run_charts,
+)
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
