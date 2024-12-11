@@ -1,6 +1,7 @@
-import base64
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime
+import io
 import json
 import logging
 from typing import Any, Callable, Dict, Optional
