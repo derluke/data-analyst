@@ -132,8 +132,17 @@ class DRCredential(pulumi.ComponentResource):
                         value=self.credential_raw.region,
                     )
                 )
+
         else:
             raise NotImplementedError("Unsupported credential type")
+
+        runtime_parameter_values.append(
+            datarobot.CustomModelRuntimeParameterValueArgs(
+                key="ENABLE_AGENTIC_FLOW",
+                type="boolean",
+                value=True,
+            )
+        )
         return runtime_parameter_values
 
     @property

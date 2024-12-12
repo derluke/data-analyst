@@ -4,6 +4,7 @@ import time
 import warnings
 from datetime import datetime
 from typing import Any, Dict, List
+import sys
 
 import inquirer
 import numpy as np
@@ -16,6 +17,7 @@ from rich.table import Table
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
+sys.path.append("..")
 
 # Import FastAPI functions directly
 from utils.schema import (
@@ -27,12 +29,11 @@ from utils.schema import (
     RunChartsRequest,
 )
 
-from 
+from utils.rest_api import (
     chat,
     cleanse_dataframes,
     get_business_analysis,
     get_dictionary,
-    get_python_analysis_code,
     run_analysis,
     run_charts,
     suggest_questions,
@@ -43,13 +44,11 @@ console = Console()
 
 # Available data files
 DATA_FILES = {
-    "lending_club_profile": r"C:\Users\BrettOlmstead\Downloads\lending_club_SAFER\lending_club_SAFER\profile.csv",
-    "lending_club_target": r"C:\Users\BrettOlmstead\Downloads\lending_club_SAFER\lending_club_SAFER\target.csv",
-    "lending_club_transactions": r"C:\Users\BrettOlmstead\Downloads\lending_club_SAFER\lending_club_SAFER\transactions.csv",
-    "diabetes": r"C:\Users\BrettOlmstead\Downloads\AI Feature Engineer\10k_diabetes.csv",
-    "cpg": r"C:\Users\BrettOlmstead\Downloads\CPG Data Sample for DataRobot_csv.csv",
-    "gannett": r"C:\Users\BrettOlmstead\Downloads\Promotional Activity - Gannett.csv",
-    "winter_sports": r"C:\Users\BrettOlmstead\Downloads\Elsa Winter Sports.csv",
+    "lending_club_profile": "https://s3.amazonaws.com/datarobot_public_datasets/drx/Lending+Club+Profile.csv",
+    "lending_club_target": "https://s3.amazonaws.com/datarobot_public_datasets/drx/Lending+Club+Target.csv",
+    "lending_club_transactions": "https://s3.amazonaws.com/datarobot_public_datasets/drx/Lending+Club+Transactions.csv",
+    "diabetes": "https://s3.amazonaws.com/datarobot_public_datasets/10k_diabetes_20.csv",
+    "mpg": "https://s3.us-east-1.amazonaws.com/datarobot_public_datasets/auto-mpg.csv",
 }
 
 
@@ -61,11 +60,7 @@ def select_files() -> List[str]:
             message="Select the files you want to process (use spacebar to select)",
             choices=list(DATA_FILES.keys()),
             # Set default selections for lending club files
-            default=[
-                "lending_club_profile",
-                "lending_club_target",
-                "lending_club_transactions",
-            ],
+            default=["mpg"],
         )
     ]
 
@@ -300,11 +295,11 @@ async def main():
         dataset_groups = {}
         # The data is in the 'dictionaries' key, not 'data_dictionary'
         for result_dict in dictionary_result.get("dictionaries", []):
-            dataset_name = result_dict["name"]
+            dataset_name = result_dict.name
             if dataset_name not in dataset_groups:
                 dataset_groups[dataset_name] = []
             # The column definitions are in the 'dictionary' key of each result
-            dataset_groups[dataset_name].extend(result_dict.get("dictionary", []))
+            dataset_groups[dataset_name].extend(result_dict.dictionary)
 
         # Display organized dictionary
         console.print("\n[bold green]Data Dictionary:[/bold green]")
@@ -393,7 +388,9 @@ async def main():
         console.print("\n[bold green]Suggested Analysis Questions:[/bold green]")
         suggested_questions = [
             q["question"] for q in questions_result.get("questions", [])
-        ][:3]  # Get just the question text from first 3 questions
+        ][
+            :3
+        ]  # Get just the question text from first 3 questions
         for i, question in enumerate(suggested_questions, 1):
             console.print(f"{i}. {question}")
 

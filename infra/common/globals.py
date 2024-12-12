@@ -87,6 +87,7 @@ class GlobalLLM(str, Enum):
     AZURE_OPENAI_GPT_4 = "azure-openai-gpt-4"
     AZURE_OPENAI_GPT_4_32K = "azure-openai-gpt-4-32k"
     AZURE_OPENAI_GPT_4_TURBO = "azure-openai-gpt-4-turbo"
+    AZURE_OPENAI_GPT_4o = "azure-openai-gpt-4-o"
     AMAZON_TITAN = "amazon-titan"
     ANTHROPIC_CLAUDE_2_1 = "anthropic-claude-2"
     ANTROPIC_CLAUDE_3_HAIKU = "anthropic-claude-3-haiku"

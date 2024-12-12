@@ -4,7 +4,8 @@ import ast
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
-from pydantic import field_validator, ConfigDict, BaseModel, validator
+import pandas as pd
+from pydantic import ConfigDict, BaseModel, field_validator
 
 if TYPE_CHECKING:
     import plotly.graph_objects as go
@@ -56,6 +57,33 @@ class DictionaryRequest(BaseModel):
         return v
 
 
+class DictionaryDataColumn(BaseModel):
+    data_type: str
+    column: str
+    description: str
+
+
+class DataDictionary(BaseModel):
+    name: str
+    dictionary: List[DictionaryDataColumn]
+    cache_hit: bool
+    batch_time: float
+
+
+class DataDictionaryMetadata(BaseModel):
+    total_datasets: int
+    processing_start: str
+    batch_times: List[float]
+    errors: List[str]
+    processing_end: str = None
+    total_time: float = None
+
+
+class DataDictionariesAndMetadata(BaseModel):
+    metadata: DataDictionaryMetaData
+    dictionaries: list[DataDictionary]
+
+
 # Add after the DictionaryRequest class
 class DictionaryResponse(BaseModel):
     """Validates LLM responses for data dictionary generation
@@ -71,16 +99,15 @@ class DictionaryResponse(BaseModel):
     columns: List[str]
     descriptions: List[str]
 
-    # TODO[pydantic]: We couldn't refactor the `validator`, please replace it by `field_validator` manually.
-    # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-validators for more information.
-    @validator("descriptions")
+    @field_validator("descriptions")
+    @classmethod
     def validate_descriptions(cls, v, values):
         # Check if columns exists in values
-        if "columns" not in values:
+        if "columns" not in values.data:
             raise ValueError("Columns must be provided before descriptions")
 
         # Check if lengths match
-        if len(v) != len(values["columns"]):
+        if len(v) != len(values.data["columns"]):
             raise ValueError(
                 f"Number of descriptions ({len(v)}) must match number of columns ({len(values['columns'])})"
             )
@@ -186,6 +213,7 @@ class RunAnalysisRequest(BaseModel):
             processed[dataset_name] = processed_descriptions
 
         return processed
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
@@ -306,6 +334,7 @@ class RunChartsRequest(BaseModel):
                 raise ValueError("All dictionary keys must be strings after conversion")
 
         return converted
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
@@ -380,6 +409,7 @@ class BusinessAnalysisRequest(BaseModel):
         if not v.strip():
             raise ValueError("Question cannot be empty")
         return v.strip()
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
@@ -500,7 +530,7 @@ class SnowflakeAnalysisRequest(BaseModel):
     failed_code: Optional[str] = None
     warehouse: str
     database: str
-    schema: str
+    db_schema: str
 
     @field_validator("data")
     @classmethod
@@ -524,3 +554,16 @@ class SnowflakeAnalysisRequest(BaseModel):
         if not v.strip():
             raise ValueError("Question cannot be empty")
         return v.strip()
+
+
+@dataclass
+class SnowflakeExecutionResult:
+    """Container for Snowflake query execution results"""
+
+    data: List[Dict[str, Any]]
+    code: str
+    description: str
+    metadata: Dict[str, Any]
+    execution_time: float
+    query_id: Optional[str] = None
+    error: Optional[str] = None

@@ -3,6 +3,7 @@ import io
 import json
 import logging
 import os
+import sys
 import time
 import traceback
 import warnings
@@ -11,6 +12,9 @@ from typing import Any, Dict, List
 
 import pandas as pd
 import streamlit as st
+
+sys.path.append("..")
+
 
 # Import FastAPI functions directly
 from utils.schema import (

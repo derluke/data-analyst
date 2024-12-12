@@ -20,5 +20,9 @@ kaleido
 openpyxl
 datarobot
 snowflake-connector-python
+instructor
+pydantic
+pydantic-settings
+eval_type_backport
 snowflake-sqlalchemy==1.5.1
 sqlalchemy==1.4.49

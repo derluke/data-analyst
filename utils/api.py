@@ -49,13 +49,16 @@ from utils.datetime_helpers import (
 )
 from utils.resources import ChatAgentDeployment
 from utils.schema import (
+    DATA_DICTIONARY_JSON_SCHEMA,
     BusinessAnalysisRequest,
     ChartGenerationResult,
     ChatRequest,
     CodeGenerationResult,
     CodeValidator,
     DatasetInput,
+    DataDictionary,
     DictionaryRequest,
+    DictionaryDataColumn,
     DictionaryResponse,
     QuestionValidationResult,
     RunAnalysisRequest,
@@ -198,7 +201,7 @@ def process_column_batch(
         return {col: "No valid description available" for col in columns}
 
 
-def process_dataset(dataset: DatasetInput) -> Dict[str, Any]:
+def process_dataset(dataset: DatasetInput) -> DataDictionary:
     """Process a single dataset with parallel column batch processing"""
     try:
         batch_start = datetime.now()
@@ -212,12 +215,12 @@ def process_dataset(dataset: DatasetInput) -> Dict[str, Any]:
         # Handle empty dataset
         if df.empty:
             logging.warning(f"Dataset {dataset.name} is empty")
-            return {
-                "name": dataset.name,
-                "dictionary": [],
-                "cache_hit": False,
-                "batch_time": 0,
-            }
+            return DataDictionary(
+                name=dataset.name,
+                dictionary=[],
+                cache_hit=False,
+                batch_time=0,
+            )
 
         # Generate cache key
         df_hash = generate_df_hash(df)
@@ -257,11 +260,11 @@ def process_dataset(dataset: DatasetInput) -> Dict[str, Any]:
 
         # Combine results
         dictionary = [
-            {
-                "data_type": str(df[col].dtype),
-                "column": col,
-                "description": batch_results.get(col, "No description available"),
-            }
+            DictionaryDataColumn(
+                data_type=str(df[col].dtype),
+                column=col,
+                description=batch_results.get(col, "No description available"),
+            )
             for col in df.columns
         ]
 
@@ -271,12 +274,12 @@ def process_dataset(dataset: DatasetInput) -> Dict[str, Any]:
 
         batch_time = (datetime.now() - batch_start).total_seconds()
 
-        return {
-            "name": dataset.name,
-            "dictionary": dictionary,
-            "cache_hit": False,
-            "batch_time": batch_time,
-        }
+        return DataDictionary(
+            name=dataset.name,
+            dictionary=dictionary,
+            cache_hit=False,
+            batch_time=batch_time,
+        )
 
     except Exception as e:
         logging.error(f"Error processing dataset {dataset.name}: {str(e)}")
@@ -685,7 +688,7 @@ async def process_chat(messages: List[Dict[str, str]]) -> Dict[str, str]:
     return response
 
 
-async def genererate_python_analysis_code(request: RunAnalysisRequest) -> Dict[str, str]:
+async def generate_python_analysis_code(request: RunAnalysisRequest) -> Dict[str, str]:
     """
     Generate Python analysis code based on JSON data and question.
 
@@ -723,9 +726,7 @@ async def genererate_python_analysis_code(request: RunAnalysisRequest) -> Dict[s
 
     for dataset_name, dataset in request.data.items():
         df = pd.DataFrame(dataset)
-        all_shapes.append(
-            f"{dataset_name}: {df.shape[0]} rows x {df.shape[1]} columns"
-        )
+        all_shapes.append(f"{dataset_name}: {df.shape[0]} rows x {df.shape[1]} columns")
         # Limit sample to 10 rows
         sample_df = df.head(10)
         all_samples.append(f"{dataset_name}:\n{sample_df.to_string()}")
@@ -788,10 +789,6 @@ async def genererate_python_analysis_code(request: RunAnalysisRequest) -> Dict[s
         "description": response.get("description", ""),
     }
 
-    except Exception as e:
-        logging.error(f"Error generating analysis code: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 async def generate_analysis_code(
     request: RunAnalysisRequest, max_attempts: int = 10
@@ -813,7 +810,7 @@ async def generate_analysis_code(
 
         try:
             # Get code from OpenAI
-            code_response = await genererate_python_analysis_code(request)
+            code_response = await generate_python_analysis_code(request)
 
             # Validate the generated code
             is_valid, validation_message = CodeValidator.validate_imports(

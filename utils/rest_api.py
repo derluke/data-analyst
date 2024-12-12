@@ -27,7 +27,7 @@ from utils.api import (
     generate_analysis_code,
     generate_question_suggestions,
     get_memory_usage,
-    genererate_python_analysis_code,
+    generate_python_analysis_code,
     process_chat,
     process_dataset,
 )
@@ -40,6 +40,9 @@ from utils.schema import (
     CleanseResponse,
     CleansingReport,
     DatasetOutput,
+    DataDictionary,
+    DataDictionaryMetadata,
+    DataDictionariesAndMetadata,
     DictionaryRequest,
     RunAnalysisRequest,
     RunChartsRequest,
@@ -331,7 +334,7 @@ async def cleanse_dataframes(
     response_description="Data dictionary with column descriptions",
     tags=["Data Dictionary"],
 )
-async def get_dictionary(request: DictionaryRequest) -> Dict[str, Any]:
+async def get_dictionary(request: DictionaryRequest) -> DataDictionariesAndMetadata:
     """
     Generate data dictionary for multiple datasets.
 
@@ -350,12 +353,12 @@ async def get_dictionary(request: DictionaryRequest) -> Dict[str, Any]:
             f"Received dictionary request with {len(request.datasets)} datasets"
         )
 
-        metadata = {
-            "total_datasets": len(request.datasets),
-            "processing_start": datetime.now().isoformat(),
-            "batch_times": [],
-            "errors": [],
-        }
+        metadata = DataDictionaryMetadata(
+            total_datasets=len(request.datasets),
+            processing_start=datetime.now().isoformat(),
+            batch_times=[],
+            errors=[],
+        )
 
         # Process datasets using ThreadPoolExecutor instead of ProcessPoolExecutor
         with ThreadPoolExecutor() as executor:
@@ -375,30 +378,31 @@ async def get_dictionary(request: DictionaryRequest) -> Dict[str, Any]:
                 try:
                     result = future.result()
                     results.append(result)
-                    metadata["batch_times"].append(result["batch_time"])
+                    metadata.batch_times.append(result["batch_time"])
                     logging.info(
                         f"Processed dataset {dataset_name} with {len(result.get('dictionary', []))} entries"
                     )
                 except Exception as e:
                     error_msg = f"Error processing dataset {dataset_name}: {str(e)}"
                     logging.error(error_msg)
-                    metadata["errors"].append(error_msg)
+                    metadata.errors.append(error_msg)
                     results.append(
-                        {
-                            "name": dataset_name,
-                            "dictionary": [],
-                            "cache_hit": False,
-                            "error": error_msg,
-                        }
+                        DataDictionary(
+                            name=dataset_name,
+                            dictionary=[],
+                            cache_hit=False,
+                            error=error_msg,
+                        )
                     )
 
-        metadata["processing_end"] = datetime.now().isoformat()
-        metadata["total_time"] = (
+        metadata.processing_end = datetime.now().isoformat()
+        metadata.total_time = (
             datetime.fromisoformat(metadata["processing_end"])
             - datetime.fromisoformat(metadata["processing_start"])
         ).total_seconds()
 
-        response = {"dictionaries": results, "metadata": metadata}
+        response = DataDictionariesAndMetadata(metadata=metadata, dictionaries=results)
+
         logging.info(f"Returning dictionary response with {len(results)} results")
         return response
 

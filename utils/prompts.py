@@ -19,6 +19,12 @@ Respond with a JSON object containing the following fields:
 1) columns: A list of all of the columns in the dataset
 2) descriptions: A list of descriptions for each column.
 
+EXAMPLE OUTPUT:
+{
+    columns: [a,taco,mpg],
+    descriptions: ["The first letter of the alphabet", "A meaty and crunchy treat", "Miles per Gallon"]
+}
+
 """
 DICTIONARY_BATCH_SIZE = 5
 SYSTEM_PROMPT_SUGGEST_A_QUESTION = """
