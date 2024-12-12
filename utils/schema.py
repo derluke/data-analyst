@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
-from pydantic import ConfigDict, BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 if TYPE_CHECKING:
     import plotly.graph_objects as go

@@ -1,10 +1,10 @@
 import json
 import os
+import sys
 import time
 import warnings
 from datetime import datetime
 from typing import Any, Dict, List
-import sys
 
 import inquirer
 import numpy as np
@@ -20,15 +20,6 @@ warnings.filterwarnings("ignore")
 sys.path.append("..")
 
 # Import FastAPI functions directly
-from utils.schema import (
-    BusinessAnalysisRequest,
-    ChatRequest,
-    CleanseRequest,
-    DatasetInput,
-    RunAnalysisRequest,
-    RunChartsRequest,
-)
-
 from utils.rest_api import (
     chat,
     cleanse_dataframes,
@@ -37,6 +28,14 @@ from utils.rest_api import (
     run_analysis,
     run_charts,
     suggest_questions,
+)
+from utils.schema import (
+    BusinessAnalysisRequest,
+    ChatRequest,
+    CleanseRequest,
+    DatasetInput,
+    RunAnalysisRequest,
+    RunChartsRequest,
 )
 
 # Initialize rich console for better output formatting
@@ -388,9 +387,7 @@ async def main():
         console.print("\n[bold green]Suggested Analysis Questions:[/bold green]")
         suggested_questions = [
             q["question"] for q in questions_result.get("questions", [])
-        ][
-            :3
-        ]  # Get just the question text from first 3 questions
+        ][:3]  # Get just the question text from first 3 questions
         for i, question in enumerate(suggested_questions, 1):
             console.print(f"{i}. {question}")
 
@@ -623,7 +620,7 @@ async def main():
 
                     except Exception as e:
                         progress.update(task, completed=True)
-                        console.print(f"\n[bold red]Analysis Failed[/bold red]")
+                        console.print("\n[bold red]Analysis Failed[/bold red]")
 
                         # Create error details table
                         error_table = Table(
@@ -783,7 +780,7 @@ async def main():
                         result["business_analysis"] = business_analysis
 
                 except Exception as e:
-                    console.print(f"\n[bold red]Business Analysis Failed:[/bold red]")
+                    console.print("\n[bold red]Business Analysis Failed:[/bold red]")
                     console.print(f"Error: {str(e)}")
 
             # Run charts
@@ -871,7 +868,7 @@ async def main():
                         )
 
                 except Exception as e:
-                    console.print(f"\n[bold red]Chart Generation Failed:[/bold red]")
+                    console.print("\n[bold red]Chart Generation Failed:[/bold red]")
                     console.print(f"Error: {str(e)}")
 
             # After completing the full analysis cycle, prompt for follow-up

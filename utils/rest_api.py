@@ -25,9 +25,9 @@ from utils.api import (
     execute_snowflake_query,
     figure_to_base64,
     generate_analysis_code,
+    generate_python_analysis_code,
     generate_question_suggestions,
     get_memory_usage,
-    generate_python_analysis_code,
     process_chat,
     process_dataset,
 )
@@ -39,15 +39,14 @@ from utils.schema import (
     CleanseRequest,
     CleanseResponse,
     CleansingReport,
-    DatasetOutput,
+    DataDictionariesAndMetadata,
     DataDictionary,
     DataDictionaryMetadata,
-    DataDictionariesAndMetadata,
+    DatasetOutput,
     DictionaryRequest,
     RunAnalysisRequest,
     RunChartsRequest,
     SnowflakeAnalysisRequest,
-    SnowflakeExecutionResult,
 )
 
 # Initialize FastAPI app

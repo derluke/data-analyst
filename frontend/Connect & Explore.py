@@ -12,16 +12,15 @@ import datarobot as dr
 import pandas as pd
 import streamlit as st
 
+from utils.rest_api import (
+    cleanse_dataframes,
+    get_dictionary,
+)
 
 # Import FastAPI functions
 from utils.schema import (
     CleanseRequest,
     DatasetInput,
-    DictionaryRequest,
-)
-from utils.rest_api import (
-    cleanse_dataframes,
-    get_dictionary,
 )
 
 # Suppress warnings

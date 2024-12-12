@@ -2,13 +2,12 @@ import asyncio
 import io
 import json
 import logging
-import os
 import sys
 import time
 import traceback
 import warnings
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import pandas as pd
 import streamlit as st
@@ -17,19 +16,17 @@ sys.path.append("..")
 
 
 # Import FastAPI functions directly
-from utils.schema import (
-    BusinessAnalysisRequest,
-    ChatRequest,
-    CleanseRequest,
-    DatasetInput,
-    RunAnalysisRequest,
-    RunChartsRequest,
-)
 from utils.rest_api import (
     chat,
     get_business_analysis,
     run_analysis,
     run_charts,
+)
+from utils.schema import (
+    BusinessAnalysisRequest,
+    ChatRequest,
+    RunAnalysisRequest,
+    RunChartsRequest,
 )
 
 # Suppress warnings

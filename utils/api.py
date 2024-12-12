@@ -7,61 +7,37 @@ import logging
 import os
 import re
 import sys
-import tempfile
 import time
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import redirect_stderr, redirect_stdout
-from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
-from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
 import datarobot as dr
-import kaleido
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import psutil
-import scipy
-import sklearn
 import snowflake.connector
-import statsmodels
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
-from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile, status
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.openapi.utils import get_openapi
-from fastapi.responses import StreamingResponse
+from fastapi import HTTPException
 from openai import OpenAI
 from plotly.subplots import make_subplots
-from pydantic import BaseModel, ValidationError, validator
-from snowflake.connector.errors import ProgrammingError
+from pydantic import ValidationError
 
 sys.path.append("..")
 
 from utils import prompts
-from utils.datetime_helpers import (
-    convert_datetime_series,
-    is_date_column,
-)
 from utils.resources import ChatAgentDeployment
 from utils.schema import (
-    BusinessAnalysisRequest,
     ChartGenerationResult,
-    ChatRequest,
     CodeGenerationResult,
     CodeValidator,
-    DatasetInput,
     DataDictionary,
-    DictionaryRequest,
+    DatasetInput,
     DictionaryDataColumn,
     DictionaryResponse,
     QuestionValidationResult,
     RunAnalysisRequest,
-    RunChartsRequest,
 )
 
 try:
@@ -234,9 +210,7 @@ def process_dataset(dataset: DatasetInput) -> DataDictionary:
         )
 
         # Process column batches using ThreadPoolExecutor
-        batch_results = (
-            {}
-        )  # Change to dictionary to maintain column-description mapping
+        batch_results = {}  # Change to dictionary to maintain column-description mapping
         with ThreadPoolExecutor() as executor:
             batch_futures = {
                 executor.submit(

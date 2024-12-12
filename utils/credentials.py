@@ -124,7 +124,9 @@ class GoogleLLMCredentials(BaseSettings):
     def test(self, model: str) -> None:
         try:
             import requests
-            from google.auth.transport.requests import Request  # type: ignore[import-untyped]
+            from google.auth.transport.requests import (
+                Request,  # type: ignore[import-untyped]
+            )
             from google.oauth2 import service_account  # type: ignore[import-untyped]
 
             credentials = service_account.Credentials.from_service_account_info(
