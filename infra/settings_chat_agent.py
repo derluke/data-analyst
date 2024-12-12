@@ -31,10 +31,7 @@ from .common.schema import (
     PlaygroundArgs,
     RegisteredModelArgs,
 )
-from .settings_main import (
-    default_prediction_server_id,
-    project_name,
-)
+from .settings_main import default_prediction_server_id, project_name
 
 custom_model_args = CustomModelArgs(
     resource_name=f"Chat Agent Custom Model [{project_name}]",

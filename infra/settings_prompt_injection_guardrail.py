@@ -15,10 +15,7 @@
 import pulumi_datarobot as datarobot
 from pydantic import BaseModel
 
-from .common.globals import (
-    GlobalGuardrailTemplateName,
-    GlobalRegisteredModelName,
-)
+from .common.globals import GlobalGuardrailTemplateName, GlobalRegisteredModelName
 from .common.schema import (
     Condition,
     CustomModelGuardConfigurationArgs,

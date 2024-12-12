@@ -17,9 +17,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, Union
 
 from pydantic import AliasChoices, AliasPath, Field
-from pydantic_settings import (
-    BaseSettings,
-)
+from pydantic_settings import BaseSettings
 
 
 class OpenAICredentials(BaseSettings):
@@ -126,8 +124,8 @@ class GoogleLLMCredentials(BaseSettings):
     def test(self, model: str) -> None:
         try:
             import requests
-            from google.auth.transport.requests import (  # type: ignore[import-untyped]
-                Request,
+            from google.auth.transport.requests import (
+                Request,  # type: ignore[import-untyped]
             )
             from google.oauth2 import service_account  # type: ignore[import-untyped]
 

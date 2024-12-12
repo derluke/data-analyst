@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import time
 import warnings
 from datetime import datetime
@@ -16,10 +17,10 @@ from rich.table import Table
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
-
+sys.path.append("..")
 
 # Import FastAPI functions directly
-from utils.api import (
+from utils.rest_api import (
     chat,
     cleanse_dataframes,
     get_business_analysis,
@@ -46,9 +47,7 @@ DATA_FILES = {
     "lending_club_target": "https://s3.amazonaws.com/datarobot_public_datasets/drx/Lending+Club+Target.csv",
     "lending_club_transactions": "https://s3.amazonaws.com/datarobot_public_datasets/drx/Lending+Club+Transactions.csv",
     "diabetes": "https://s3.amazonaws.com/datarobot_public_datasets/10k_diabetes_20.csv",
-    # "cpg": r"C:\Users\BrettOlmstead\Downloads\CPG Data Sample for DataRobot_csv.csv",
-    # "gannett": r"C:\Users\BrettOlmstead\Downloads\Promotional Activity - Gannett.csv",
-    # "winter_sports": r"C:\Users\BrettOlmstead\Downloads\Elsa Winter Sports.csv"
+    "mpg": "https://s3.us-east-1.amazonaws.com/datarobot_public_datasets/auto-mpg.csv",
 }
 
 
@@ -60,11 +59,7 @@ def select_files() -> List[str]:
             message="Select the files you want to process (use spacebar to select)",
             choices=list(DATA_FILES.keys()),
             # Set default selections for lending club files
-            default=[
-                "lending_club_profile",
-                "lending_club_target",
-                "lending_club_transactions",
-            ],
+            default=["mpg"],
         )
     ]
 
@@ -153,7 +148,7 @@ async def cleanse_datasets(datasets: List[Dict[str, Any]]) -> Dict[str, Any]:
 
         elapsed_time = time.time() - start_time
         console.print(f"\n[cyan]Cleansing time: {elapsed_time:.2f} seconds[/cyan]")
-        return result.model_dump()
+        return result.dict()
 
     except Exception as e:
         console.print(f"[red]Error: {str(e)}[/red]")
@@ -285,7 +280,7 @@ async def main():
 
         # Convert dictionary_result to dict if it's a Pydantic model
         if hasattr(dictionary_result, "dict"):
-            dictionary_result = dictionary_result.dict()
+            dictionary_result = dictionary_result.model_dump()
             console.print(
                 f"[cyan]Debug: Converted dictionary result keys: {dictionary_result.keys()}[/cyan]"
             )
@@ -303,7 +298,7 @@ async def main():
             if dataset_name not in dataset_groups:
                 dataset_groups[dataset_name] = []
             # The column definitions are in the 'dictionary' key of each result
-            dataset_groups[dataset_name].extend(result_dict.get("dictionary", []))
+            dataset_groups[dataset_name].extend(result_dict["dictionary"])
 
         # Display organized dictionary
         console.print("\n[bold green]Data Dictionary:[/bold green]")
@@ -790,6 +785,7 @@ async def main():
 
             # Run charts
             console.print("\n[bold]Generating Charts...[/bold]")
+            charts_start_time = time.time()
 
             with Progress(
                 SpinnerColumn(),

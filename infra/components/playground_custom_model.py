@@ -17,11 +17,7 @@ from typing import List, Optional
 import pulumi
 import pulumi_datarobot as datarobot
 
-from ..common.schema import (
-    CustomModelArgs,
-    LLMBlueprintArgs,
-    PlaygroundArgs,
-)
+from ..common.schema import CustomModelArgs, LLMBlueprintArgs, PlaygroundArgs
 
 
 class PlaygroundCustomModel(pulumi.ComponentResource):

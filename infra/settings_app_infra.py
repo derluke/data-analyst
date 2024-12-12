@@ -51,8 +51,11 @@ def get_app_files() -> List[Tuple[str, str]]:
             ("utils/__init__.py", "utils/__init__.py"),
             ("utils/api.py", "utils/api.py"),
             ("utils/credentials.py", "utils/credentials.py"),
+            ("utils/datetime_helpers.py", "utils/datetime_helpers.py"),
+            ("utils/errors.py", "utils/errors.py"),
             ("utils/prompts.py", "utils/prompts.py"),
             ("utils/resources.py", "utils/resources.py"),
+            ("utils/rest_api.py", "utils/rest_api.py"),
             ("utils/schema.py", "utils/schema.py"),
             (str(application_path / "metadata.yaml"), "metadata.yaml"),
         ]

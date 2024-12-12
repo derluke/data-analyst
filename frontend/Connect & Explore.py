@@ -5,19 +5,22 @@ import sys
 import warnings
 from typing import Any, Dict, List
 
+sys.path.append("..")
+
 # Add imports for DataRobot
 import datarobot as dr
 import pandas as pd
 import streamlit as st
 
-sys.path.append("..")
-
-# Import FastAPI functions
-from utils.api import (
-    CleanseRequest,
-    DatasetInput,
+from utils.rest_api import (
     cleanse_dataframes,
     get_dictionary,
+)
+
+# Import FastAPI functions
+from utils.schema import (
+    CleanseRequest,
+    DatasetInput,
 )
 
 # Suppress warnings
@@ -111,7 +114,8 @@ async def generate_dictionaries_async(
         # Create the request with the datasets
         request_data = CleanseRequest(datasets=datasets)
 
-        dictionary_response = await get_dictionary(request_data)
+        response = await get_dictionary(request_data)
+        dictionary_response = response.model_dump()
 
         if dictionary_response and isinstance(dictionary_response, dict):
             if "dictionaries" in dictionary_response:
@@ -422,6 +426,22 @@ with st.sidebar:
                 st.warning("Please select at least one dataset")
     else:
         st.warning("Unable to connect to DataRobot AI Catalog")
+
+    st.write(" ")
+    st.image("Snowflake.svg", width=100)
+
+    # Create form for Snowflake table selection
+    with st.form("snowflake_selection_form"):
+        selected_snowflake_tables = st.multiselect(
+            "Select datasets from Snowflake",
+            options=[],  # We'll populate this in the next step
+            help="You can select multiple tables",
+        )
+
+        # Form submit button
+        submit_button = st.form_submit_button(
+            "Load Selected Tables", use_container_width=False
+        )
 
     # Add clear data button
     st.button(

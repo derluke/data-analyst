@@ -28,9 +28,9 @@ from .common.stack import get_stack
 
 # Core settings are overridable by environment variables; env values take precedence
 core = CoreSettings(
-    genai_deployment_type=GenAIDeploymentType.DR,
+    genai_deployment_type=GenAIDeploymentType.DIY,
     genai_deployment_provider=GenAIBuzokDeploymentType.AZ,
-    genai_deployment_name_buzok=GlobalLLM.AZURE_OPENAI_GPT_4_TURBO,
+    genai_deployment_name_buzok=GlobalLLM.AZURE_OPENAI_GPT_4o,
 )
 
 project_name = get_stack()

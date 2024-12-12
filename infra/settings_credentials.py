@@ -20,9 +20,7 @@ from utils.credentials import (
     OpenAICredentials,
 )
 
-from .common.schema import (
-    CredentialArgs,
-)
+from .common.schema import CredentialArgs
 from .settings_main import core, project_name
 
 
