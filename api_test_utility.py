@@ -281,7 +281,7 @@ async def main():
 
         # Convert dictionary_result to dict if it's a Pydantic model
         if hasattr(dictionary_result, "dict"):
-            dictionary_result = dictionary_result.dict()
+            dictionary_result = dictionary_result.model_dump()
             console.print(
                 f"[cyan]Debug: Converted dictionary result keys: {dictionary_result.keys()}[/cyan]"
             )
@@ -295,11 +295,11 @@ async def main():
         dataset_groups = {}
         # The data is in the 'dictionaries' key, not 'data_dictionary'
         for result_dict in dictionary_result.get("dictionaries", []):
-            dataset_name = result_dict.name
+            dataset_name = result_dict["name"]
             if dataset_name not in dataset_groups:
                 dataset_groups[dataset_name] = []
             # The column definitions are in the 'dictionary' key of each result
-            dataset_groups[dataset_name].extend(result_dict.dictionary)
+            dataset_groups[dataset_name].extend(result_dict["dictionary"])
 
         # Display organized dictionary
         console.print("\n[bold green]Data Dictionary:[/bold green]")

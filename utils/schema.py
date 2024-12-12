@@ -80,7 +80,7 @@ class DataDictionaryMetadata(BaseModel):
 
 
 class DataDictionariesAndMetadata(BaseModel):
-    metadata: DataDictionaryMetaData
+    metadata: DataDictionaryMetadata
     dictionaries: list[DataDictionary]
 
 

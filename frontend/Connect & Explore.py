@@ -115,7 +115,8 @@ async def generate_dictionaries_async(
         # Create the request with the datasets
         request_data = CleanseRequest(datasets=datasets)
 
-        dictionary_response = await get_dictionary(request_data)
+        response = await get_dictionary(request_data)
+        dictionary_response = response.model_dump()
 
         if dictionary_response and isinstance(dictionary_response, dict):
             if "dictionaries" in dictionary_response:

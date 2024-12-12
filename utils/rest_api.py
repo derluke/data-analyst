@@ -378,9 +378,9 @@ async def get_dictionary(request: DictionaryRequest) -> DataDictionariesAndMetad
                 try:
                     result = future.result()
                     results.append(result)
-                    metadata.batch_times.append(result["batch_time"])
+                    metadata.batch_times.append(result.batch_time)
                     logging.info(
-                        f"Processed dataset {dataset_name} with {len(result.get('dictionary', []))} entries"
+                        f"Processed dataset {dataset_name} with {len(result.dictionary)} entries"
                     )
                 except Exception as e:
                     error_msg = f"Error processing dataset {dataset_name}: {str(e)}"
@@ -391,14 +391,14 @@ async def get_dictionary(request: DictionaryRequest) -> DataDictionariesAndMetad
                             name=dataset_name,
                             dictionary=[],
                             cache_hit=False,
-                            error=error_msg,
+                            batch_time=0,
                         )
                     )
 
         metadata.processing_end = datetime.now().isoformat()
         metadata.total_time = (
-            datetime.fromisoformat(metadata["processing_end"])
-            - datetime.fromisoformat(metadata["processing_start"])
+            datetime.fromisoformat(metadata.processing_end)
+            - datetime.fromisoformat(metadata.processing_start)
         ).total_seconds()
 
         response = DataDictionariesAndMetadata(metadata=metadata, dictionaries=results)

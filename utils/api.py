@@ -49,7 +49,6 @@ from utils.datetime_helpers import (
 )
 from utils.resources import ChatAgentDeployment
 from utils.schema import (
-    DATA_DICTIONARY_JSON_SCHEMA,
     BusinessAnalysisRequest,
     ChartGenerationResult,
     ChatRequest,
