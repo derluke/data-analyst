@@ -21,7 +21,7 @@ import time
 import traceback
 import warnings
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 import pandas as pd
 import streamlit as st
@@ -30,12 +30,7 @@ sys.path.append("..")
 
 
 # Import FastAPI functions directly
-from utils.rest_api import (
-    chat,
-    get_business_analysis,
-    run_analysis,
-    run_charts,
-)
+from utils.rest_api import chat, get_business_analysis, run_analysis, run_charts
 from utils.schema import (
     BusinessAnalysisRequest,
     ChatRequest,
@@ -183,7 +178,7 @@ Sample (first 5 rows):
 
 
 # Add logging wrapper for API calls
-def log_api_call(func):
+def log_api_call(func: Callable) -> Callable:
     async def wrapper(*args, **kwargs):
         request_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         separator = f"\n{'='*80}\n"

@@ -26,16 +26,10 @@ import datarobot as dr
 import pandas as pd
 import streamlit as st
 
-from utils.rest_api import (
-    cleanse_dataframes,
-    get_dictionary,
-)
+from utils.rest_api import cleanse_dataframes, get_dictionary
 
 # Import FastAPI functions
-from utils.schema import (
-    CleanseRequest,
-    DatasetInput,
-)
+from utils.schema import CleanseRequest, DatasetInput
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -256,7 +250,6 @@ def get_catalog_datasets(limit: int = 100) -> List[Dict]:
 def get_datasets_as_df(_dataset_ids: List[str]) -> Dict[str, pd.DataFrame]:
     """Load selected datasets as pandas DataFrames"""
     dataframes = {}
-    total = len(_dataset_ids)
     for idx, id in enumerate(_dataset_ids, 1):
         dataset = dr.Dataset.get(id)
         try:

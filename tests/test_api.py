@@ -75,3 +75,4 @@ def test_dataset_is_cleansed(dataset_cleaned):
 def data_dictionary(dataset_loaded):
     dict_request = CleanseRequest(datasets=[DatasetInput(**dataset_loaded)])
     dictionary_result = await get_dictionary(dict_request)
+    return dictionary_result.model_dump()

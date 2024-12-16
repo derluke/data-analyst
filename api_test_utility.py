@@ -14,7 +14,6 @@
 
 import json
 import os
-import sys
 import time
 import warnings
 from datetime import datetime
@@ -28,10 +27,6 @@ from inquirer import List as InquirerList
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
-
-# Suppress warnings
-warnings.filterwarnings("ignore")
-sys.path.append("..")
 
 # Import FastAPI functions directly
 from utils.rest_api import (
@@ -51,6 +46,9 @@ from utils.schema import (
     RunAnalysisRequest,
     RunChartsRequest,
 )
+
+# Suppress warnings
+warnings.filterwarnings("ignore")
 
 # Initialize rich console for better output formatting
 console = Console()
@@ -799,7 +797,6 @@ async def main():
 
             # Run charts
             console.print("\n[bold]Generating Charts...[/bold]")
-            charts_start_time = time.time()
 
             with Progress(
                 SpinnerColumn(),

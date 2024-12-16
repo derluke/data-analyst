@@ -129,7 +129,7 @@ def process_column_batch(
                         lambda x: x.isoformat() if pd.notnull(x) else None
                     )
                 categories.append({column: list(value_counts.keys())})
-            except:
+            except Exception:
                 continue
 
     # Create messages for OpenAI
@@ -210,9 +210,6 @@ def process_dataset(dataset: DatasetInput) -> DataDictionary:
                 cache_hit=False,
                 batch_time=0,
             )
-
-        # Generate cache key
-        df_hash = generate_df_hash(df)
 
         # Split columns into batches
         column_batches = [
