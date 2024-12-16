@@ -76,7 +76,7 @@ DICTIONARY_BATCH_SIZE = 5
 
 # Cache key generator for DataFrames
 def generate_df_hash(df: pd.DataFrame) -> str:
-    """Generate a hash key for DataFrame caching based on content"""
+    """Generate a hash key for DataFrame caching based on content."""
     # Get sample of data and column info for hash
     sample = df.head(100).to_json()
     cols = ",".join(df.columns)
