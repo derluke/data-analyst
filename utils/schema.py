@@ -38,6 +38,13 @@ class DatasetInput(BaseModel):
     data: List[Dict[str, Any]]
 
 
+class AiCatalogDataset(BaseModel):
+    id: str
+    name: str
+    created: str
+    size: str
+
+
 class CleanseRequest(BaseModel):
     datasets: List[DatasetInput]
 

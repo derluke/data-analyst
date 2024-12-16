@@ -29,7 +29,11 @@ import streamlit as st
 from utils.rest_api import cleanse_dataframes, get_dictionary
 
 # Import FastAPI functions
-from utils.schema import CleanseRequest, DatasetInput
+from utils.schema import (
+    AiCatalogDataset,
+    CleanseRequest,
+    DatasetInput,
+)
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -215,29 +219,37 @@ def init_datarobot():
 
 # Add function to get catalog datasets
 @st.cache_data(show_spinner=False)
-def get_catalog_datasets(limit: int = 100) -> List[Dict]:
-    """Fetch datasets from AI Catalog with specified limit"""
+def get_catalog_datasets(limit: int = 100) -> List[AiCatalogDataset]:
+    """
+    Fetch datasets from AI Catalog with specified limit
+
+    Args:
+        limit: int
+        Datasets to retrieve. Max value: 100
+    """
     with st.spinner("Listing AI Catalog datasets..."):
+        client = dr.Client()
+        url = f"datasets?limit={limit}"
+
         try:
             # Get all datasets and manually limit the results
-            datasets = dr.Dataset.list()
-            datasets = datasets[:limit]
+            datasets = client.get(url).json()["data"]
 
             return [
-                {
-                    "id": ds.id,
-                    "name": ds.name,
-                    "created": (
-                        ds.creation_date.strftime("%Y-%m-%d")
-                        if hasattr(ds, "creation_date")
+                AiCatalogDataset(
+                    id=ds["datasetId"],
+                    name=ds["name"],
+                    created=(
+                        ds["creationDate"][:10]  # %Y-%m-%d
+                        if "creationDate" in ds
                         else "N/A"
                     ),
-                    "size": (
-                        f"{ds.size / (1024*1024):.1f} MB"
-                        if hasattr(ds, "size")
+                    size=(
+                        f"{ds['datasetSize'] / (1024*1024):.1f} MB"
+                        if "datasetSize" in ds
                         else "N/A"
                     ),
-                }
+                )
                 for ds in datasets
             ]
         except Exception as e:
@@ -408,7 +420,7 @@ with st.sidebar:
     client = init_datarobot()
     if client:
         # Get datasets from catalog
-        datasets = get_catalog_datasets()
+        datasets = [i.model_dump() for i in get_catalog_datasets()]
 
         # Create form for dataset selection
         with st.form("catalog_selection_form"):
