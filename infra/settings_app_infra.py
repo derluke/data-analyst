@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 import datarobot as dr
+import pulumi
 
 from infra.common.schema import ApplicationSourceArgs
 
@@ -34,6 +35,23 @@ def ensure_app_settings(app_id: str) -> None:
         f"customApplications/{app_id}/",
         json={"allowAutoStopping": True},
     )
+
+
+def ensure_app_source_settings(source_id: str, version_id: str):
+    try:
+        dr.client.get_client().patch(
+            url=f"customApplicationSources/{source_id}/versions/{version_id}/",
+            json={
+                "resources": {
+                    "sessionAffinity": True,
+                    "resourceLabel": "cpu.xlarge",
+                    "replicas": 2,
+                }
+            },
+        )
+    except dr.errors.ClientError:
+        pulumi.warn("Patching app resource unsuccessful.")
+    return version_id
 
 
 app_resource_name: str = f"Data Analyst Application [{project_name}]"

@@ -25,7 +25,7 @@ from .common.schema import (
     ModerationAction,
     Stage,
 )
-from .settings_main import default_prediction_server_id, project_name
+from .settings_main import project_name
 
 
 class GlobalGuardrail(BaseModel):
@@ -39,11 +39,7 @@ prompt_injection_guardrail = GlobalGuardrail(
         resource_name=f"Prompt Injection Guard Deployment [{project_name}]",
         label=f"Prompt Injection Guard [{project_name}]",
         predictions_settings=(
-            None
-            if default_prediction_server_id
-            else datarobot.DeploymentPredictionsSettingsArgs(
-                min_computes=0, max_computes=1
-            )
+            datarobot.DeploymentPredictionsSettingsArgs(min_computes=0, max_computes=1)
         ),
     ),
     registered_model_name=GlobalRegisteredModelName.PROMPT_INJECTION,

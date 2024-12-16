@@ -14,8 +14,6 @@
 
 from __future__ import annotations
 
-import os
-
 from .common.globals import GlobalLLM, GlobalPredictionEnvironmentPlatforms
 from .common.schema import (
     CoreSettings,
@@ -35,11 +33,9 @@ core = CoreSettings(
 
 project_name = get_stack()
 
-default_prediction_server_id = os.getenv("DATAROBOT_PREDICTION_ENVIRONMENT_ID", None)
 prediction_environment_resource_name = (
     f"Data Analyst Prediction Environment [{project_name}]"
 )
-
 
 prediction_environment_args = PredictionEnvironmentArgs(
     resource_name=f"Data Analyst Prediction Environment [{project_name}]",

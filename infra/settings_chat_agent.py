@@ -31,7 +31,7 @@ from .common.schema import (
     PlaygroundArgs,
     RegisteredModelArgs,
 )
-from .settings_main import default_prediction_server_id, project_name
+from .settings_main import project_name
 
 custom_model_args = CustomModelArgs(
     resource_name=f"Chat Agent Custom Model [{project_name}]",
@@ -51,9 +51,7 @@ deployment_args = DeploymentArgs(
     resource_name=f"Chat Agent Deployment [{project_name}]",
     label=f"Chat Agent Deployment [{project_name}]",
     predictions_settings=(
-        None
-        if default_prediction_server_id
-        else datarobot.DeploymentPredictionsSettingsArgs(min_computes=0, max_computes=1)
+        datarobot.DeploymentPredictionsSettingsArgs(min_computes=0, max_computes=2)
     ),
     predictions_data_collection_settings=datarobot.DeploymentPredictionsDataCollectionSettingsArgs(
         enabled=True,

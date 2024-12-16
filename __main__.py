@@ -43,17 +43,10 @@ if "DATAROBOT_DEFAULT_USE_CASE" in os.environ:
 else:
     use_case = datarobot.UseCase(**settings_main.use_case_args)
 
-# Set prediction server
-if settings_main.default_prediction_server_id is not None:
-    prediction_environment = datarobot.PredictionEnvironment.get(
-        resource_name=settings_main.prediction_environment_resource_name,
-        id=settings_main.default_prediction_server_id,
-    )
-else:
-    prediction_environment = datarobot.PredictionEnvironment(
-        resource_name=settings_main.prediction_environment_resource_name,
-        platform=dr.enums.PredictionEnvironmentPlatform.DATAROBOT_SERVERLESS,
-    )
+prediction_environment = datarobot.PredictionEnvironment(
+    resource_name=settings_main.prediction_environment_resource_name,
+    platform=dr.enums.PredictionEnvironmentPlatform.DATAROBOT_SERVERLESS,
+)
 
 # Make a credential
 credential_resource_provider = settings_main.core.genai_deployment_provider.title()
@@ -134,6 +127,11 @@ app_source = datarobot.ApplicationSource(
     base_environment_id=GlobalRuntimeEnvironment.PYTHON_39_STREAMLIT.value.id,
     **settings_app_infra.app_source_args,
 )
+
+app_source_version_id = pulumi.Output.all(app_source.id, app_source.version_id).apply(
+    lambda args: settings_app_infra.ensure_app_source_settings(*args)
+)
+
 
 app = datarobot.CustomApplication(
     resource_name=settings_app_infra.app_resource_name,
