@@ -71,7 +71,7 @@ except ValidationError as e:
     ) from e
 
 MODEL_MODE = "openai"
-DICTIONARY_BATCH_SIZE = 5
+DICTIONARY_BATCH_SIZE = 10
 
 
 # Cache key generator for DataFrames

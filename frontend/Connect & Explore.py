@@ -24,13 +24,13 @@ sys.path.append("..")
 # Add imports for DataRobot
 import datarobot as dr
 import pandas as pd
+import snowflake.connector
 import streamlit as st
 
 from utils.rest_api import cleanse_dataframes, get_dictionary
 
 # Import FastAPI functions
 from utils.schema import (
-    AiCatalogDataset,
     CleanseRequest,
     DatasetInput,
 )
@@ -39,7 +39,11 @@ from utils.schema import (
 warnings.filterwarnings("ignore")
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler()],
+)
 logger = logging.getLogger(__name__)
 
 # Initialize session state variables
@@ -48,6 +52,7 @@ if "initialized" not in st.session_state:
     st.session_state.datasets = {}
     st.session_state.cleansed_data = {}
     st.session_state.data_dictionaries = {}
+    st.session_state.data_source = None
 
 
 # Modify process_data to handle coroutine reuse
@@ -93,13 +98,13 @@ async def process_data_async(datasets_dict: Dict[str, pd.DataFrame]) -> Dict[str
         return {"success": False, "error": str(e)}
 
 
-# Modify generate_dictionaries similarly
-@st.cache_resource(show_spinner=False)
+# Remove the @st.cache_resource decorator since we want this to run
+# each time with the full set of datasets
 def generate_dictionaries_cached(
     _cleansed_data: Dict[str, Dict[str, Any]],
 ) -> Dict[str, Any]:
     """
-    Wrapper function to handle async dictionary generation with caching
+    Wrapper function to handle async dictionary generation
     """
     return asyncio.run(generate_dictionaries_async(_cleansed_data))
 
@@ -126,8 +131,8 @@ async def generate_dictionaries_async(
         # Create the request with the datasets
         request_data = CleanseRequest(datasets=datasets)
 
-        response = await get_dictionary(request_data)
-        dictionary_response = response.model_dump()
+        dictionary_response = await get_dictionary(request_data)
+        dictionary_response = dictionary_response.model_dump()
 
         if dictionary_response and isinstance(dictionary_response, dict):
             if "dictionaries" in dictionary_response:
@@ -219,37 +224,25 @@ def init_datarobot():
 
 # Add function to get catalog datasets
 @st.cache_data(show_spinner=False)
-def get_catalog_datasets(limit: int = 100) -> List[AiCatalogDataset]:
-    """
-    Fetch datasets from AI Catalog with specified limit
-
-    Args:
-        limit: int
-        Datasets to retrieve. Max value: 100
-    """
+def get_catalog_datasets(limit: int = 100) -> List[Dict]:
+    """Fetch datasets from AI Catalog with specified limit"""
     with st.spinner("Listing AI Catalog datasets..."):
-        client = dr.Client()
-        url = f"datasets?limit={limit}"
-
         try:
             # Get all datasets and manually limit the results
-            datasets = client.get(url).json()["data"]
+            datasets = dr.Dataset.list()
+            datasets = datasets[:limit]
 
             return [
-                AiCatalogDataset(
-                    id=ds["datasetId"],
-                    name=ds["name"],
-                    created=(
-                        ds["creationDate"][:10]  # %Y-%m-%d
-                        if "creationDate" in ds
-                        else "N/A"
-                    ),
-                    size=(
-                        f"{ds['datasetSize'] / (1024*1024):.1f} MB"
-                        if "datasetSize" in ds
-                        else "N/A"
-                    ),
-                )
+                {
+                    "id": ds.id,
+                    "name": ds.name,
+                    "created": ds.creation_date.strftime("%Y-%m-%d")
+                    if hasattr(ds, "creation_date")
+                    else "N/A",
+                    "size": f"{ds.size / (1024*1024):.1f} MB"
+                    if hasattr(ds, "size")
+                    else "N/A",
+                }
                 for ds in datasets
             ]
         except Exception as e:
@@ -325,10 +318,286 @@ def clear_data_callback():
     st.session_state.cleansed_data = {}
     st.session_state.data_dictionaries = {}
     st.session_state.selected_catalog_datasets = []  # Also clear catalog selection
+    st.session_state.data_source = None  # Reset data source flag
 
     # Clear all Streamlit caches
     st.cache_data.clear()
     st.cache_resource.clear()
+
+
+# Add after other initialization functions
+def create_snowflake_connection() -> snowflake.connector.SnowflakeConnection:
+    """Create a Snowflake connection with private key authentication"""
+    try:
+        # Log all environment variables (excluding sensitive data)
+        logger.info("=== Starting Snowflake Connection Attempt ===")
+        logger.info("Environment variables check:")
+        logger.info(f"USER: {os.getenv('USER')}")
+        logger.info(f"ACCOUNT: {os.getenv('ACCOUNT')}")
+        logger.info(f"WAREHOUSE: {os.getenv('WAREHOUSE')}")
+        logger.info(f"DATABASE: {os.getenv('DATABASE')}")
+        logger.info(f"SCHEMA: {os.getenv('SCHEMA')}")
+        logger.info(f"ROLE: {os.getenv('ROLE')}")
+        logger.info(f"KEY_PATH: {os.getenv('SNOWFLAKE_KEY_PATH')}")
+
+        # Try private key authentication
+        key_path = os.getenv("SNOWFLAKE_KEY_PATH")
+        if key_path and os.path.exists(key_path):
+            try:
+                # Read and process private key
+                with open(key_path, "rb") as key_file:
+                    private_key_data = key_file.read()
+                    logger.info("Successfully read private key file")
+
+                # Load and convert key
+                from cryptography.hazmat.backends import default_backend
+                from cryptography.hazmat.primitives import serialization
+
+                p_key = serialization.load_pem_private_key(
+                    private_key_data, password=None, backend=default_backend()
+                )
+                logger.info("Successfully loaded PEM key")
+
+                private_key = p_key.private_bytes(
+                    encoding=serialization.Encoding.DER,
+                    format=serialization.PrivateFormat.PKCS8,
+                    encryption_algorithm=serialization.NoEncryption(),
+                )
+                logger.info("Successfully converted key to DER format")
+
+                # Create connection parameters
+                conn_params = {
+                    "user": os.getenv("USER"),
+                    "account": os.getenv("ACCOUNT"),
+                    "private_key": private_key,
+                    "warehouse": os.getenv("WAREHOUSE"),
+                    "database": os.getenv("DATABASE"),
+                    "schema": os.getenv("SCHEMA"),
+                    "role": os.getenv("ROLE"),
+                }
+
+                # Log connection attempt (excluding private key)
+                safe_params = {
+                    k: v for k, v in conn_params.items() if k != "private_key"
+                }
+                logger.info(
+                    f"Attempting Snowflake connection with parameters: {safe_params}"
+                )
+
+                # Attempt connection
+                conn = snowflake.connector.connect(**conn_params)
+                logger.info(
+                    f"Successfully connected to Snowflake using role: {conn_params['role']}"
+                )
+                return conn
+
+            except Exception as e:
+                logger.error(f"Connection failed: {str(e)}")
+                logger.error(f"Error type: {type(e)}")
+                logger.error(f"Error details: {str(e)}")
+                raise
+
+        else:
+            raise ValueError("Private key path not set or file not found")
+
+    except Exception as e:
+        logger.error("=== Snowflake Connection Failed ===")
+        logger.error(f"Final error: {str(e)}")
+        logger.error(f"Error type: {type(e)}")
+        logger.error(f"Error details: {str(e)}")
+        raise
+
+
+@st.cache_data(show_spinner=False)
+def get_snowflake_tables() -> List[str]:
+    """Fetch list of tables from Snowflake schema"""
+    try:
+        conn = create_snowflake_connection()
+        cursor = conn.cursor()
+
+        # Log current session info
+        logger.info("Checking current session settings...")
+        cursor.execute(
+            "SELECT CURRENT_DATABASE(), CURRENT_SCHEMA(), CURRENT_ROLE(), CURRENT_WAREHOUSE()"
+        )
+        current_settings = cursor.fetchone()
+        logger.info(
+            f"Current settings - Database: {current_settings[0]}, Schema: {current_settings[1]}, Role: {current_settings[2]}, Warehouse: {current_settings[3]}"
+        )
+
+        # Check if schema exists
+        cursor.execute(f"""
+            SELECT COUNT(*) 
+            FROM {os.getenv('DATABASE')}.INFORMATION_SCHEMA.SCHEMATA 
+            WHERE SCHEMA_NAME = '{os.getenv('SCHEMA')}'
+        """)
+        schema_exists = cursor.fetchone()[0]
+        logger.info(f"Schema exists check: {schema_exists > 0}")
+
+        # Get all objects (tables and views)
+        cursor.execute(f"""
+            SELECT table_name, table_type
+            FROM {os.getenv('DATABASE')}.information_schema.tables 
+            WHERE table_schema = '{os.getenv('SCHEMA')}'
+            AND table_type IN ('BASE TABLE', 'VIEW')
+            ORDER BY table_type, table_name
+        """)
+
+        results = cursor.fetchall()
+        tables = [row[0] for row in results]
+
+        # Log detailed results
+        logger.info(f"Total objects found: {len(results)}")
+        for table_name, table_type in results:
+            logger.info(f"Found {table_type}: {table_name}")
+
+        # Check schema privileges
+        cursor.execute(f"""
+            SHOW GRANTS ON SCHEMA {os.getenv('DATABASE')}.{os.getenv('SCHEMA')}
+        """)
+        privileges = cursor.fetchall()
+        logger.info("Schema privileges:")
+        for priv in privileges:
+            logger.info(f"Privilege: {priv}")
+
+        return tables
+
+    except Exception as e:
+        logger.error(f"Failed to fetch tables: {str(e)}")
+        logger.error(f"Error type: {type(e)}")
+        logger.error(f"Error details: {str(e)}")
+        return []
+
+    finally:
+        try:
+            if "cursor" in locals():
+                cursor.close()
+            if "conn" in locals():
+                conn.close()
+        except Exception:
+            pass
+
+
+@st.cache_data(show_spinner=False)
+def get_snowflake_data(
+    table_names: List[str], sample_size: int = 5000
+) -> Dict[str, pd.DataFrame]:
+    """Load selected tables from Snowflake as pandas DataFrames"""
+    dataframes = {}
+
+    try:
+        conn = create_snowflake_connection()
+        cursor = conn.cursor()
+
+        for table in table_names:
+            try:
+                qualified_table = (
+                    f"{os.getenv('DATABASE')}.{os.getenv('SCHEMA')}.{table}"
+                )
+                logger.info(f"Fetching data from table: {qualified_table}")
+
+                cursor.execute(f"""
+                    SELECT * FROM {qualified_table}
+                    SAMPLE ({sample_size} ROWS)
+                """)
+
+                columns = [desc[0] for desc in cursor.description]
+                data = cursor.fetchall()
+                df = pd.DataFrame(data, columns=columns)
+
+                # Convert date/datetime columns to string format
+                for col in df.columns:
+                    if pd.api.types.is_datetime64_any_dtype(df[col]) or isinstance(
+                        df[col].dtype, pd.DatetimeTZDtype
+                    ):
+                        df[col] = df[col].dt.strftime("%Y-%m-%d %H:%M:%S")
+                    elif df[col].dtype == "object":
+                        try:
+                            pd.to_datetime(df[col], errors="raise")
+                            df[col] = pd.to_datetime(df[col]).dt.strftime("%Y-%m-%d")
+                        except (ValueError, TypeError):
+                            continue
+
+                dataframes[table] = df
+                logger.info(
+                    f"Successfully loaded table {table}: {len(df)} rows, {len(df.columns)} columns"
+                )
+
+            except Exception as e:
+                logger.error(f"Error loading table {table}: {str(e)}")
+                logger.error(f"Error type: {type(e)}")
+                logger.error(f"Error details: {str(e)}")
+                continue
+
+        return dataframes
+
+    except Exception as e:
+        logger.error(f"Error fetching Snowflake data: {str(e)}")
+        logger.error(f"Error type: {type(e)}")
+        logger.error(f"Error details: {str(e)}")
+        return {}
+
+    finally:
+        try:
+            if "cursor" in locals():
+                cursor.close()
+            if "conn" in locals():
+                conn.close()
+        except Exception:
+            pass
+
+
+# Modify the load_snowflake_data callback
+def load_snowflake_data():
+    """Callback function for Snowflake table download"""
+    if (
+        "selected_snowflake_tables" in st.session_state
+        and st.session_state.selected_snowflake_tables
+    ):
+        with st.sidebar:
+            with st.spinner("Loading selected tables..."):
+                # Get data from Snowflake
+                dataframes = get_snowflake_data(
+                    st.session_state.selected_snowflake_tables
+                )
+
+                if not dataframes:
+                    st.error("Failed to load data from Snowflake")
+                    return
+
+                # Add downloaded dataframes to session state
+                for name, df in dataframes.items():
+                    st.session_state.datasets[name] = df
+                    st.success(f"✓ {name}: {len(df)} rows, {len(df.columns)} columns")
+
+                # Set flag to indicate data source is Snowflake
+                st.session_state.data_source = "snowflake"
+
+                # Process the new data
+                results = process_data_cached(st.session_state.datasets)
+
+                if results["success"]:
+                    st.session_state.cleansed_data = results["data"]
+                    logger.info("Data processing successful, generating dictionaries")
+
+                    # Generate data dictionaries
+                    st.session_state.data_dictionaries = generate_dictionaries_cached(
+                        st.session_state.cleansed_data
+                    )
+
+                    if st.session_state.data_dictionaries:
+                        st.success(
+                            "✅ Data processed and dictionaries generated successfully!"
+                        )
+                    else:
+                        st.warning(
+                            "⚠️ Data processed but there were issues generating some dictionaries"
+                        )
+                else:
+                    logger.error("Data processing failed")
+                    st.error(
+                        f"❌ Error processing data: {results.get('error', 'Unknown error')}"
+                    )
 
 
 # Page config
@@ -358,117 +627,135 @@ st.markdown(
 # Sidebar for data upload and processing
 with st.sidebar:
     st.title("Connect")
-    col1, col2, col3 = st.columns([1, 4, 4])
-    with col1:
-        st.image("csv_File_Logo.svg", width=25)
-    with col2:
-        st.write("**Load Data Files**")
-    uploaded_files = st.file_uploader(
-        "Select 1 or multiple files",
-        type=["csv", "xlsx", "xls"],
-        accept_multiple_files=True,
-    )
 
-    if uploaded_files:
-        with st.spinner("Loading and processing files..."):
-            # Process uploaded files
-            for file in uploaded_files:
-                dataset_results = process_uploaded_file(file)
-                if dataset_results:
-                    for dataset_name, df in dataset_results:
-                        st.session_state.datasets[dataset_name] = df
+    # Load Files expander containing file upload and AI Catalog
+    with st.expander("Load Files", expanded=True):
+        # File upload section
+        col1, col2, col3 = st.columns([1, 4, 2])
+        with col1:
+            st.image("csv_File_Logo.svg", width=25)
+        with col2:
+            st.write("**Load Data Files**")
+        uploaded_files = st.file_uploader(
+            "Select 1 or multiple files",
+            type=["csv", "xlsx", "xls"],
+            accept_multiple_files=True,
+        )
+
+        if uploaded_files:
+            with st.spinner("Loading and processing files..."):
+                # Process uploaded files
+                for file in uploaded_files:
+                    dataset_results = process_uploaded_file(file)
+                    if dataset_results:
+                        for dataset_name, df in dataset_results:
+                            st.session_state.datasets[dataset_name] = df
+                            st.success(
+                                f"✓ {dataset_name}: {len(df)} rows, {len(df.columns)} columns"
+                            )
+
+                # Process data and generate dictionaries
+                logger.info("Starting data processing")
+                results = process_data_cached(st.session_state.datasets)
+
+                if results["success"]:
+                    st.session_state.cleansed_data = results["data"]
+                    logger.info("Data processing successful, generating dictionaries")
+
+                    # Generate new dictionaries
+                    new_dictionaries = generate_dictionaries_cached(
+                        st.session_state.cleansed_data
+                    )
+
+                    # Update session state by merging existing and new dictionaries
+                    existing_dicts = st.session_state.get("data_dictionaries", {})
+                    st.session_state.data_dictionaries = {
+                        **existing_dicts,
+                        **new_dictionaries,
+                    }
+
+                    if st.session_state.data_dictionaries:
                         st.success(
-                            f"✓ {dataset_name}: {len(df)} rows, {len(df.columns)} columns"
+                            "✅ Data processed and dictionaries generated successfully!"
+                        )
+                        st.info(
+                            "View the generated data dictionaries in the [Data Dictionary](/Data_Dictionary) page"
+                        )
+                    else:
+                        st.warning(
+                            "⚠️ Data processed but there were issues generating some dictionaries"
                         )
                 else:
-                    st.error(f"Error loading {file.name}")
+                    logger.error("Data processing failed")
+                    st.error(
+                        f"❌ Error processing data: {results.get('error', 'Unknown error')}"
+                    )
 
-            # Process data and generate dictionaries
-            logger.info("Starting data processing")
-            results = process_data_cached(st.session_state.datasets)
+        # AI Catalog section
+        st.subheader("☁️   DataRobot AI Catalog")
 
-            if results["success"]:
-                st.session_state.cleansed_data = results["data"]
-                logger.info("Data processing successful, generating dictionaries")
-
-                # Generate data dictionaries
-                st.session_state.data_dictionaries = generate_dictionaries_cached(
-                    st.session_state.cleansed_data
+        # Initialize DataRobot client
+        client = init_datarobot()
+        if client:
+            # Get datasets from catalog
+            datasets = get_catalog_datasets()
+            # datasets = []
+            # Create form for dataset selection
+            with st.form("catalog_selection_form", border=False):
+                selected_catalog_datasets = st.multiselect(
+                    "Select datasets from AI Catalog",
+                    options=datasets,
+                    format_func=lambda x: f"{x['name']} ({x['size']})",
+                    help="You can select multiple datasets",
+                    key="selected_catalog_datasets",
                 )
 
-                if st.session_state.data_dictionaries:
-                    st.success(
-                        "✅ Data processed and dictionaries generated successfully!"
-                    )
-                    st.info(
-                        "View the generated data dictionaries in the [Data Dictionary](/Data_Dictionary) page"
-                    )
-                else:
-                    st.warning(
-                        "⚠️ Data processed but there were issues generating some dictionaries"
-                    )
-            else:
-                logger.error("Data processing failed")
-                st.error(
-                    f"❌ Error processing data: {results.get('error', 'Unknown error')}"
+                # Form submit button
+                submit_button = st.form_submit_button(
+                    "Load Datasets", on_click=catalog_download_callback
                 )
 
-    # Add AI Catalog section
-    st.subheader("☁️   DataRobot AI Catalog")
+                # Process form submission
+                if submit_button and len(selected_catalog_datasets) > 0:
+                    # The callback will handle the download and processing
+                    pass
+                elif submit_button:
+                    st.warning("Please select at least one dataset")
+        else:
+            st.warning("Unable to connect to DataRobot AI Catalog")
 
-    # Initialize DataRobot client
-    client = init_datarobot()
-    if client:
-        # Get datasets from catalog
-        datasets = [i.model_dump() for i in get_catalog_datasets()]
+    # Database expander containing Snowflake section
+    with st.expander("Database", expanded=False):
+        st.image("Snowflake.svg", width=100)
 
-        # Create form for dataset selection
-        with st.form("catalog_selection_form"):
-            selected_catalog_datasets = st.multiselect(
-                "Select datasets from AI Catalog",
-                options=datasets,
-                format_func=lambda x: f"{x['name']} ({x['size']})",
-                help="You can select multiple datasets",
-                key="selected_catalog_datasets",
+        # Initialize Snowflake connection
+        snowflake_tables = get_snowflake_tables()
+
+        # Create form for Snowflake table selection
+        with st.form("snowflake_selection_form", border=False):
+            selected_snowflake_tables = st.multiselect(
+                "Select datasets from Snowflake",
+                options=snowflake_tables,
+                help="You can select multiple tables",
+                key="selected_snowflake_tables",
             )
 
-            # Form submit button - Remove the disabled parameter
+            # Form submit button
             submit_button = st.form_submit_button(
-                "Load Selected Datasets", on_click=catalog_download_callback
+                "Load Selected Tables",
+                use_container_width=False,
+                on_click=load_snowflake_data,
             )
 
-            # Process form submission
-            if submit_button and len(selected_catalog_datasets) > 0:
-                # The callback will handle the download and processing
-                pass
-            elif submit_button:
-                st.warning("Please select at least one dataset")
-    else:
-        st.warning("Unable to connect to DataRobot AI Catalog")
+            if submit_button and not selected_snowflake_tables:
+                st.warning("Please select at least one table")
 
-    st.write(" ")
-    st.image("Snowflake.svg", width=100)
-
-    # Create form for Snowflake table selection
-    with st.form("snowflake_selection_form"):
-        selected_snowflake_tables = st.multiselect(
-            "Select datasets from Snowflake",
-            options=[],  # We'll populate this in the next step
-            help="You can select multiple tables",
-        )
-
-        # Form submit button
-        submit_button = st.form_submit_button(
-            "Load Selected Tables", use_container_width=False
-        )
-
-    # Add clear data button
-    st.button(
-        "Clear All Data",
-        help="Remove all loaded datasets and reset the application",
-        use_container_width=False,
-        type="secondary",
+    # Add Clear Data button after the Database expander
+    st.sidebar.button(
+        "Clear Data",
         on_click=clear_data_callback,
+        type="secondary",
+        use_container_width=False,
     )
 
 # Main content area

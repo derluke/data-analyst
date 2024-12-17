@@ -16,12 +16,13 @@ import asyncio
 import io
 import json
 import logging
+import os
 import sys
 import time
 import traceback
 import warnings
 from datetime import datetime
-from typing import Any, Callable, Dict
+from typing import Any, Dict
 
 import pandas as pd
 import streamlit as st
@@ -30,12 +31,19 @@ sys.path.append("..")
 
 
 # Import FastAPI functions directly
-from utils.rest_api import chat, get_business_analysis, run_analysis, run_charts
+from utils.rest_api import (
+    chat,
+    get_business_analysis,
+    run_analysis,
+    run_charts,
+    run_snowflake_analysis,
+)
 from utils.schema import (
     BusinessAnalysisRequest,
     ChatRequest,
     RunAnalysisRequest,
     RunChartsRequest,
+    SnowflakeAnalysisRequest,
 )
 
 # Suppress warnings
@@ -113,11 +121,9 @@ class CustomJsonFormatter(logging.Formatter):
                     for msg in record.json_data["messages"]:
                         formatted_msg = {
                             "role": msg["role"],
-                            "content": (
-                                msg["content"].replace("\n", "\\n")[:100] + "..."
-                                if len(msg["content"]) > 100
-                                else msg["content"]
-                            ),
+                            "content": msg["content"].replace("\n", "\\n")[:100] + "..."
+                            if len(msg["content"]) > 100
+                            else msg["content"],
                         }
                         formatted_messages.append(formatted_msg)
 
@@ -178,7 +184,7 @@ Sample (first 5 rows):
 
 
 # Add logging wrapper for API calls
-def log_api_call(func: Callable) -> Callable:
+def log_api_call(func):
     async def wrapper(*args, **kwargs):
         request_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         separator = f"\n{'='*80}\n"
@@ -221,12 +227,10 @@ Keyword Arguments:
                     "files": request_options.get("files"),
                     "json_data": request_options.get("json_data", {}),
                 }
-                logger.debug(
-                    f"""
+                logger.debug(f"""
 Request options:
 {json.dumps(formatted_options, indent=2, ensure_ascii=False)}
-"""
-                )
+""")
 
             output_log = f"""
 OUTPUT RESULTS [{request_id}]
@@ -325,16 +329,56 @@ async def process_chat_and_analysis(question: str, chat_messages: list) -> None:
             analysis_result = None
             with st.spinner("Running analysis..."):
                 try:
-                    analysis_request = RunAnalysisRequest(
-                        data={
-                            name: df["data"].to_dict("records")
-                            for name, df in st.session_state.cleansed_data.items()
-                        },
-                        dictionary=st.session_state.data_dictionaries,
-                        question=chat_response.get("enhanced_question", question),
-                    )
+                    if st.session_state.get("data_source") == "snowflake":
+                        # Use Snowflake analysis
+                        # Convert DataFrames to dictionary format
+                        data_dict = {}
+                        for name, df in st.session_state.datasets.items():
+                            # Convert DataFrame to records format and ensure each record is a dictionary
+                            records = df.to_dict("records")
+                            data_dict[name] = records
 
-                    analysis_result = await run_analysis(analysis_request)
+                        # Convert data dictionary to proper format
+                        dict_data = {}
+                        for (
+                            name,
+                            dict_list,
+                        ) in st.session_state.data_dictionaries.items():
+                            if isinstance(dict_list, list):
+                                dict_data[name] = {
+                                    "columns": [d.get("column") for d in dict_list],
+                                    "descriptions": [
+                                        d.get("description") for d in dict_list
+                                    ],
+                                    "data_types": [
+                                        d.get("data_type") for d in dict_list
+                                    ],
+                                }
+
+                        analysis_request = SnowflakeAnalysisRequest(
+                            data=data_dict,
+                            dictionary=dict_data,
+                            question=chat_response.get("enhanced_question", question),
+                            warehouse=os.getenv("warehouse"),
+                            database=os.getenv("database"),
+                            schema=os.getenv("schema"),
+                        )
+                        analysis_result = await run_snowflake_analysis(analysis_request)
+                    else:
+                        # Use regular analysis
+                        # Convert DataFrames to proper dictionary format
+                        formatted_data = {}
+                        for name, df in st.session_state.datasets.items():
+                            # Convert DataFrame to list of dictionaries where each row is a dictionary
+                            # with column names as keys
+                            formatted_data[name] = df.to_dict("records")
+
+                        analysis_request = RunAnalysisRequest(
+                            data=formatted_data,
+                            dictionary=st.session_state.data_dictionaries,
+                            question=chat_response.get("enhanced_question", question),
+                        )
+                        analysis_result = await run_analysis(analysis_request)
 
                     # Store analysis results in components
                     assistant_message["components"].append(
@@ -345,7 +389,14 @@ async def process_chat_and_analysis(question: str, chat_messages: list) -> None:
                     with analysis_container:
                         if "code" in analysis_result:
                             with st.expander("Analysis Code", expanded=False):
-                                st.code(analysis_result["code"], language="python")
+                                # Use SQL language highlighting for Snowflake mode
+                                language = (
+                                    "sql"
+                                    if st.session_state.get("data_source")
+                                    == "snowflake"
+                                    else "python"
+                                )
+                                st.code(analysis_result["code"], language=language)
                         if "data" in analysis_result:
                             with st.expander("Analysis Results", expanded=True):
                                 if isinstance(analysis_result["data"], list):
