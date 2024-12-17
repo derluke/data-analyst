@@ -19,6 +19,7 @@ and govern the multiple components.
   - [Architecture overview](#architecture-overview)
   - [Why build AI Apps with DataRobot app templates?](#why-build-ai-apps-with-datarobot-app-templates)
   - [Make changes](#make-changes)
+    - [Snowflake connection](#snowflake-connection)
   - [Share results](#share-results)
   - [Delete all provisioned resources](#delete-all-provisioned-resources)
   - [Setup for advanced users](#setup-for-advanced-users)
@@ -103,7 +104,9 @@ Each template provides an end-to-end AI architecture, from raw inputs to deploye
 
 ## Make changes
 
-TODO: Add directions to change here
+### Snowflake connection
+
+Snowflake will try to use the user/password to log in and if it doesn't find it, it will use the file in the `snowflake_key_path` variable in the `.env` file.
 
 ## Share results
 

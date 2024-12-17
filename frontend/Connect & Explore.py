@@ -31,6 +31,7 @@ from utils.rest_api import cleanse_dataframes, get_dictionary
 
 # Import FastAPI functions
 from utils.schema import (
+    AiCatalogDataset,
     CleanseRequest,
     DatasetInput,
 )
@@ -224,25 +225,37 @@ def init_datarobot():
 
 # Add function to get catalog datasets
 @st.cache_data(show_spinner=False)
-def get_catalog_datasets(limit: int = 100) -> List[Dict]:
-    """Fetch datasets from AI Catalog with specified limit"""
+def get_catalog_datasets(limit: int = 100) -> List[AiCatalogDataset]:
+    """
+    Fetch datasets from AI Catalog with specified limit
+
+    Args:
+        limit: int
+        Datasets to retrieve. Max value: 100
+    """
     with st.spinner("Listing AI Catalog datasets..."):
+        client = dr.Client()
+        url = f"datasets?limit={limit}"
+
         try:
             # Get all datasets and manually limit the results
-            datasets = dr.Dataset.list()
-            datasets = datasets[:limit]
+            datasets = client.get(url).json()["data"]
 
             return [
-                {
-                    "id": ds.id,
-                    "name": ds.name,
-                    "created": ds.creation_date.strftime("%Y-%m-%d")
-                    if hasattr(ds, "creation_date")
-                    else "N/A",
-                    "size": f"{ds.size / (1024*1024):.1f} MB"
-                    if hasattr(ds, "size")
-                    else "N/A",
-                }
+                AiCatalogDataset(
+                    id=ds["datasetId"],
+                    name=ds["name"],
+                    created=(
+                        ds["creationDate"][:10]  # %Y-%m-%d
+                        if "creationDate" in ds
+                        else "N/A"
+                    ),
+                    size=(
+                        f"{ds['datasetSize'] / (1024*1024):.1f} MB"
+                        if "datasetSize" in ds
+                        else "N/A"
+                    ),
+                )
                 for ds in datasets
             ]
         except Exception as e:
@@ -426,22 +439,26 @@ def get_snowflake_tables() -> List[str]:
         )
 
         # Check if schema exists
-        cursor.execute(f"""
+        cursor.execute(
+            f"""
             SELECT COUNT(*) 
             FROM {os.getenv('DATABASE')}.INFORMATION_SCHEMA.SCHEMATA 
             WHERE SCHEMA_NAME = '{os.getenv('SCHEMA')}'
-        """)
+        """
+        )
         schema_exists = cursor.fetchone()[0]
         logger.info(f"Schema exists check: {schema_exists > 0}")
 
         # Get all objects (tables and views)
-        cursor.execute(f"""
+        cursor.execute(
+            f"""
             SELECT table_name, table_type
             FROM {os.getenv('DATABASE')}.information_schema.tables 
             WHERE table_schema = '{os.getenv('SCHEMA')}'
             AND table_type IN ('BASE TABLE', 'VIEW')
             ORDER BY table_type, table_name
-        """)
+        """
+        )
 
         results = cursor.fetchall()
         tables = [row[0] for row in results]
@@ -452,9 +469,11 @@ def get_snowflake_tables() -> List[str]:
             logger.info(f"Found {table_type}: {table_name}")
 
         # Check schema privileges
-        cursor.execute(f"""
+        cursor.execute(
+            f"""
             SHOW GRANTS ON SCHEMA {os.getenv('DATABASE')}.{os.getenv('SCHEMA')}
-        """)
+        """
+        )
         privileges = cursor.fetchall()
         logger.info("Schema privileges:")
         for priv in privileges:
@@ -496,10 +515,12 @@ def get_snowflake_data(
                 )
                 logger.info(f"Fetching data from table: {qualified_table}")
 
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     SELECT * FROM {qualified_table}
                     SAMPLE ({sample_size} ROWS)
-                """)
+                """
+                )
 
                 columns = [desc[0] for desc in cursor.description]
                 data = cursor.fetchall()
@@ -698,8 +719,8 @@ with st.sidebar:
         client = init_datarobot()
         if client:
             # Get datasets from catalog
-            datasets = get_catalog_datasets()
-            # datasets = []
+            datasets = datasets = [i.model_dump() for i in get_catalog_datasets()]
+
             # Create form for dataset selection
             with st.form("catalog_selection_form", border=False):
                 selected_catalog_datasets = st.multiselect(
