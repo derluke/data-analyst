@@ -27,6 +27,7 @@ import pandas as pd
 import snowflake.connector
 import streamlit as st
 
+from utils.credentials import SnowflakeCredentials
 from utils.rest_api import cleanse_dataframes, get_dictionary
 
 # Import FastAPI functions
@@ -35,6 +36,8 @@ from utils.schema import (
     CleanseRequest,
     DatasetInput,
 )
+
+SNOWFLAKE_CREDENTIALS = SnowflakeCredentials()
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -344,28 +347,28 @@ def create_snowflake_connection() -> snowflake.connector.SnowflakeConnection:
         # Log all environment variables (excluding sensitive data)
         logger.info("=== Starting Snowflake Connection Attempt ===")
         logger.info("Environment variables check:")
-        logger.info(f"USER: {os.getenv('USER')}")
-        logger.info(f"ACCOUNT: {os.getenv('ACCOUNT')}")
-        logger.info(f"WAREHOUSE: {os.getenv('WAREHOUSE')}")
-        logger.info(f"DATABASE: {os.getenv('DATABASE')}")
-        logger.info(f"SCHEMA: {os.getenv('SCHEMA')}")
-        logger.info(f"ROLE: {os.getenv('ROLE')}")
-        logger.info(f"KEY_PATH: {os.getenv('SNOWFLAKE_KEY_PATH')}")
+        logger.info(f"USER: {SNOWFLAKE_CREDENTIALS.user}")
+        logger.info(f"ACCOUNT: {SNOWFLAKE_CREDENTIALS.account}")
+        logger.info(f"WAREHOUSE: {SNOWFLAKE_CREDENTIALS.warehouse}")
+        logger.info(f"DATABASE: {SNOWFLAKE_CREDENTIALS.database}")
+        logger.info(f"SCHEMA: {SNOWFLAKE_CREDENTIALS.db_schema}")
+        logger.info(f"ROLE: {SNOWFLAKE_CREDENTIALS.role}")
+        logger.info(f"KEY_PATH: {SNOWFLAKE_CREDENTIALS.snowflake_key_path}")
 
         # Try private key authentication
 
         # Initialize connection parameters with common values
         conn_params = {
-            "user": os.getenv("USER"),
-            "account": os.getenv("ACCOUNT"),
-            "warehouse": os.getenv("WAREHOUSE"),
-            "database": os.getenv("DATABASE"),
-            "schema": os.getenv("SCHEMA"),
-            "role": os.getenv("ROLE"),
+            "user": SNOWFLAKE_CREDENTIALS.user,
+            "account": SNOWFLAKE_CREDENTIALS.account,
+            "warehouse": SNOWFLAKE_CREDENTIALS.warehouse,
+            "database": SNOWFLAKE_CREDENTIALS.role,
+            "schema": SNOWFLAKE_CREDENTIALS.db_schema,
+            "role": SNOWFLAKE_CREDENTIALS.role,
         }
 
         # Check if private key path is set and valid
-        key_path = os.getenv("SNOWFLAKE_KEY_PATH")
+        key_path = SNOWFLAKE_CREDENTIALS.snowflake_key_path
         if key_path and os.path.exists(key_path):
             try:
                 # Read and process private key
@@ -397,13 +400,13 @@ def create_snowflake_connection() -> snowflake.connector.SnowflakeConnection:
                 logger.warning(
                     f"Failed to process private key: {str(e)}, falling back to password authentication"
                 )
-                conn_params["password"] = os.getenv("PASSWORD")
+                conn_params["password"] = SNOWFLAKE_CREDENTIALS.password
         else:
             # Use password authentication
             logger.info(
                 "No valid private key path found, using password authentication"
             )
-            conn_params["password"] = os.getenv("PASSWORD")
+            conn_params["password"] = SNOWFLAKE_CREDENTIALS.password
 
         # Log password status (safely)
         logger.info(
@@ -446,8 +449,8 @@ def get_snowflake_tables() -> List[str]:
         cursor.execute(
             f"""
             SELECT COUNT(*) 
-            FROM {os.getenv('DATABASE')}.INFORMATION_SCHEMA.SCHEMATA 
-            WHERE SCHEMA_NAME = '{os.getenv('SCHEMA')}'
+            FROM {SNOWFLAKE_CREDENTIALS.database}.INFORMATION_SCHEMA.SCHEMATA 
+            WHERE SCHEMA_NAME = '{SNOWFLAKE_CREDENTIALS.db_schema}'
         """
         )
         schema_exists = cursor.fetchone()[0]
@@ -457,8 +460,8 @@ def get_snowflake_tables() -> List[str]:
         cursor.execute(
             f"""
             SELECT table_name, table_type
-            FROM {os.getenv('DATABASE')}.information_schema.tables 
-            WHERE table_schema = '{os.getenv('SCHEMA')}'
+            FROM {SNOWFLAKE_CREDENTIALS.database}.information_schema.tables 
+            WHERE table_schema = '{SNOWFLAKE_CREDENTIALS.db_schema}'
             AND table_type IN ('BASE TABLE', 'VIEW')
             ORDER BY table_type, table_name
         """
@@ -474,7 +477,7 @@ def get_snowflake_tables() -> List[str]:
         # Check schema privileges
         cursor.execute(
             f"""
-            SHOW GRANTS ON SCHEMA {os.getenv('DATABASE')}.{os.getenv('SCHEMA')}
+            SHOW GRANTS ON SCHEMA {SNOWFLAKE_CREDENTIALS.database}.{SNOWFLAKE_CREDENTIALS.db_schema}
         """
         )
         privileges = cursor.fetchall()
@@ -513,9 +516,7 @@ def get_snowflake_data(
 
         for table in table_names:
             try:
-                qualified_table = (
-                    f"{os.getenv('DATABASE')}.{os.getenv('SCHEMA')}.{table}"
-                )
+                qualified_table = f"{SNOWFLAKE_CREDENTIALS.database}.{SNOWFLAKE_CREDENTIALS.db_schema}.{table}"
                 logger.info(f"Fetching data from table: {qualified_table}")
 
                 cursor.execute(

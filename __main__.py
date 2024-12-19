@@ -56,6 +56,12 @@ llm_credential = DRCredential(
     credential_args=credentials.llm_credential_args,
 )
 
+db_credential = DRCredential(
+    resource_name=f"Database Credentials [{settings_main.project_name}]",
+    credential=credentials.db_credential,
+    credential_args=credentials.db_credential_args,
+)
+
 
 prompt_injection_guard_deployment = datarobot.Deployment(
     registered_model_version_id=datarobot.get_global_model(
@@ -112,14 +118,13 @@ chat_agent_deployment = CustomModelDeployment(
     deployment_args=settings_chat_agent.deployment_args,
 )
 
-
 app_runtime_parameters = [
     datarobot.ApplicationSourceRuntimeParameterValueArgs(
         key=chat_agent_deployment_env_name,
         type="deployment",
         value=chat_agent_deployment.id,
-    )
-]
+    ),
+] + db_credential.app_runtime_parameter_values
 
 app_source = datarobot.ApplicationSource(
     files=settings_app_infra.get_app_files(),

@@ -1016,7 +1016,7 @@ async def run_snowflake_analysis(
         conn = create_snowflake_connection(
             warehouse=request.warehouse,
             database=request.database,
-            schema=request.schema,
+            schema=request.db_schema,
         )
 
         while attempts < max_attempts:

@@ -23,6 +23,7 @@ from utils.credentials import (
     GoogleLLMCredentials,
     LLMCredentials,
     OpenAICredentials,
+    SnowflakeCredentials,
 )
 
 from ..common.schema import CredentialArgs
@@ -37,7 +38,7 @@ class DRCredential(pulumi.ComponentResource):
     def __init__(
         self,
         resource_name: str,
-        credential: Union[LLMCredentials],
+        credential: Union[LLMCredentials, SnowflakeCredentials],
         credential_args: CredentialArgs,
         opts: Optional[pulumi.ResourceOptions] = None,
     ):
@@ -45,7 +46,10 @@ class DRCredential(pulumi.ComponentResource):
 
         self.credential_raw = credential
         self.credential: Union[
-            datarobot.ApiTokenCredential, datarobot.GoogleCloudCredential
+            datarobot.ApiTokenCredential,
+            datarobot.GoogleCloudCredential,
+            AzureOpenAICredentials,
+            SnowflakeCredentials,
         ]
         if isinstance(self.credential_raw, OpenAICredentials):
             self.credential = datarobot.ApiTokenCredential(
@@ -63,6 +67,13 @@ class DRCredential(pulumi.ComponentResource):
             self.credential = datarobot.GoogleCloudCredential(
                 **credential_args.model_dump(),
                 gcp_key=json.dumps(credential.service_account_key),  # type: ignore[union-attr]
+                opts=pulumi.ResourceOptions(parent=self),
+            )
+        elif isinstance(self.credential_raw, SnowflakeCredentials):
+            self.credential = datarobot.BasicCredential(
+                **credential_args.model_dump(),
+                user=credential.user,
+                password=credential.password,
                 opts=pulumi.ResourceOptions(parent=self),
             )
         else:
@@ -207,6 +218,28 @@ class DRCredential(pulumi.ComponentResource):
                         value=json.dumps({"payload": self.credential_raw.region}),
                     )
                 )
+        elif isinstance(self.credential_raw, SnowflakeCredentials):
+            runtime_parameter_values = [
+                datarobot.CustomModelRuntimeParameterValueArgs(
+                    key=key,
+                    type=type_,
+                    value=value,  # type: ignore[arg-type]
+                )
+                for key, type_, value in [
+                    ("USER", "credential", self.credential.user),
+                    ("PASSWORD", "credential", self.credential.password),
+                    ("ACCOUNT", "string", self.credential_raw.account),
+                    ("DATABASE", "string", self.credential_raw.database),
+                    ("SCHEMA", "string", self.credential_raw.db_schema),
+                    ("ROLE", "string", self.credential_raw.role),
+                    ("WAREHOUSE", "string", self.credential_raw.warehouse),
+                    (
+                        "SNOWFLAKE_KEY_PATH",
+                        "string",
+                        self.credential_raw.snowflake_key_path,
+                    ),
+                ]
+            ]
         else:
             raise NotImplementedError("Unsupported credential type")
         return runtime_parameter_values

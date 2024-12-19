@@ -16,7 +16,6 @@ import asyncio
 import io
 import json
 import logging
-import os
 import sys
 import time
 import traceback
@@ -31,6 +30,7 @@ sys.path.append("..")
 
 
 # Import FastAPI functions directly
+from utils.credentials import SnowflakeCredentials
 from utils.rest_api import (
     chat,
     get_business_analysis,
@@ -45,6 +45,8 @@ from utils.schema import (
     RunChartsRequest,
     SnowflakeAnalysisRequest,
 )
+
+SNOWFLAKE_CREDENTIALS = SnowflakeCredentials()
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -121,9 +123,11 @@ class CustomJsonFormatter(logging.Formatter):
                     for msg in record.json_data["messages"]:
                         formatted_msg = {
                             "role": msg["role"],
-                            "content": msg["content"].replace("\n", "\\n")[:100] + "..."
-                            if len(msg["content"]) > 100
-                            else msg["content"],
+                            "content": (
+                                msg["content"].replace("\n", "\\n")[:100] + "..."
+                                if len(msg["content"]) > 100
+                                else msg["content"]
+                            ),
                         }
                         formatted_messages.append(formatted_msg)
 
@@ -227,10 +231,12 @@ Keyword Arguments:
                     "files": request_options.get("files"),
                     "json_data": request_options.get("json_data", {}),
                 }
-                logger.debug(f"""
+                logger.debug(
+                    f"""
 Request options:
 {json.dumps(formatted_options, indent=2, ensure_ascii=False)}
-""")
+"""
+                )
 
             output_log = f"""
 OUTPUT RESULTS [{request_id}]
@@ -359,9 +365,9 @@ async def process_chat_and_analysis(question: str, chat_messages: list) -> None:
                             data=data_dict,
                             dictionary=dict_data,
                             question=chat_response.get("enhanced_question", question),
-                            warehouse=os.getenv("warehouse"),
-                            database=os.getenv("database"),
-                            schema=os.getenv("schema"),
+                            warehouse=SNOWFLAKE_CREDENTIALS.warehouse,
+                            database=SNOWFLAKE_CREDENTIALS.database,
+                            db_schema=SNOWFLAKE_CREDENTIALS.db_schema,
                         )
                         analysis_result = await run_snowflake_analysis(analysis_request)
                     else:

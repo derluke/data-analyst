@@ -151,4 +151,61 @@ class GoogleLLMCredentials(BaseSettings):
             ) from e
 
 
+class SnowflakeCredentials(BaseSettings):
+    """Snowflake Connection credentials auto-constructed using environment variables."""
+
+    account: str = Field(
+        validation_alias=AliasChoices(
+            AliasPath("MLOPS_RUNTIME_PARAM_ACCOUNT", "payload"),
+            "ACCOUNT",
+        ),
+    )
+    user: str = Field(
+        validation_alias=AliasChoices(
+            AliasPath("MLOPS_RUNTIME_PARAM_db_credential", "payload", "username"),
+            "USER",
+        )
+    )
+    password: str = Field(
+        validation_alias=AliasChoices(
+            AliasPath("MLOPS_RUNTIME_PARAM_db_credential", "payload", "password"),
+            "PASSWORD",
+        )
+    )
+    warehouse: str = Field(
+        validation_alias=AliasChoices(
+            AliasPath("MLOPS_RUNTIME_PARAM_WAREHOUSE", "payload"),
+            "WAREHOUSE",
+        )
+    )
+    database: str = Field(
+        validation_alias=AliasChoices(
+            AliasPath("MLOPS_RUNTIME_PARAM_DATABASE", "payload"),
+            "DATABASE",
+        )
+    )
+    db_schema: str = Field(
+        validation_alias=AliasChoices(
+            AliasPath("MLOPS_RUNTIME_PARAM_SCHEMA", "payload"),
+            "SCHEMA",
+        )
+    )
+    role: str = Field(
+        validation_alias=AliasChoices(
+            AliasPath("MLOPS_RUNTIME_PARAM_ROLE", "payload"),
+            "ROLE",
+        )
+    )
+    snowflake_key_path: str = Field(
+        validation_alias=AliasChoices(
+            AliasPath("MLOPS_RUNTIME_PARAM_SNOWFLAKE_KEY_PATH", "payload"),
+            "SNOWFLAKE_KEY_PATH",
+        )
+    )
+
+    # TODO add test connection
+    def test(self):
+        pass
+
+
 LLMCredentials = Union[OpenAICredentials, AzureOpenAICredentials, GoogleLLMCredentials]

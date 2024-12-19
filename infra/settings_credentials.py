@@ -18,6 +18,7 @@ from utils.credentials import (
     AzureOpenAICredentials,
     GoogleLLMCredentials,
     OpenAICredentials,
+    SnowflakeCredentials,
 )
 
 from .common.schema import CredentialArgs
@@ -50,3 +51,8 @@ else:
     raise NotImplementedError(
         "Only Azure and Google LLM credentials are currently supported."
     )
+
+db_credential = SnowflakeCredentials()
+db_credential_args = CredentialArgs(
+    resource_name=f"Data Analyst Snowflake Credential [{project_name}]",
+)
