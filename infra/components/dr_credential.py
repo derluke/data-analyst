@@ -220,14 +220,13 @@ class DRCredential(pulumi.ComponentResource):
                 )
         elif isinstance(self.credential_raw, SnowflakeCredentials):
             runtime_parameter_values = [
-                datarobot.CustomModelRuntimeParameterValueArgs(
+                datarobot.ApplicationSourceRuntimeParameterValueArgs(
                     key=key,
                     type=type_,
                     value=value,  # type: ignore[arg-type]
                 )
                 for key, type_, value in [
-                    ("USER", "credential", self.credential.user),
-                    ("PASSWORD", "credential", self.credential.password),
+                    ("db_credential", "credential", self.credential.id),
                     ("ACCOUNT", "string", self.credential_raw.account),
                     ("DATABASE", "string", self.credential_raw.database),
                     ("SCHEMA", "string", self.credential_raw.db_schema),
