@@ -43,6 +43,7 @@ class GenAIBuzokDeploymentType(str, Enum):
     AZ = "azure"
     GOOG = "google"
     AMZN = "amazon"
+    OPENAI = "openai"
 
 
 class ModerationAction(str, Enum):

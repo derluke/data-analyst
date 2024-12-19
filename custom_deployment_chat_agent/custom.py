@@ -19,38 +19,60 @@ sys.path.append("../")
 from collections.abc import Iterator
 
 import pandas as pd
-from openai import AzureOpenAI, NotFoundError
+from openai import NotFoundError
 from openai.types.chat import (
     ChatCompletion,
     ChatCompletionChunk,
     CompletionCreateParams,
 )
 
-from utils.credentials import AzureOpenAICredentials
 from utils.schema import ChatAgentDeploymentSettings
 
 
-# TODO: Custom should work with multiple model types
-def load_model(*args, **kwargs) -> tuple[AzureOpenAI, ChatAgentDeploymentSettings, str]:
-    from openai import AzureOpenAI
+def choose_llm_type(chat_agent_deployment_settings):
+    # Try Azure
+    try:
+        from openai import AzureOpenAI
 
-    credentials = AzureOpenAICredentials()
+        from utils.credentials import AzureOpenAICredentials
+
+        credentials = AzureOpenAICredentials()
+        client = AzureOpenAI(
+            api_version=credentials.api_version,
+            azure_endpoint=credentials.azure_endpoint,
+            api_key=credentials.api_key,
+            max_retries=int(chat_agent_deployment_settings.max_retries),
+            timeout=chat_agent_deployment_settings.request_timeout,
+        )
+        default_model_name = credentials.azure_deployment
+        print("running on azure model")
+    except ValueError:
+        # print(e)
+        print("azure failed, running on openai model")
+        from openai import OpenAI
+
+        from utils.credentials import OpenAICredentials
+
+        credentials = OpenAICredentials()
+        client = OpenAI(
+            api_key=credentials.api_key,
+            max_retries=int(chat_agent_deployment_settings.max_retries),
+            timeout=chat_agent_deployment_settings.request_timeout,
+        )
+        default_model_name = credentials.deployment
+
+    return client, default_model_name
+
+
+def load_model(*args, **kwargs) -> tuple[ChatAgentDeploymentSettings, str]:
     chat_agent_deployment_settings = ChatAgentDeploymentSettings()
 
-    client = AzureOpenAI(
-        api_version=credentials.api_version,
-        azure_endpoint=credentials.azure_endpoint,
-        api_key=credentials.api_key,
-        max_retries=int(chat_agent_deployment_settings.max_retries),
-        timeout=chat_agent_deployment_settings.request_timeout,
-    )
-    default_model_name = credentials.azure_deployment
+    client, default_model_name = choose_llm_type(chat_agent_deployment_settings)
+
     return client, chat_agent_deployment_settings, default_model_name
 
 
-def score(
-    data: pd.DataFrame, model: tuple[AzureOpenAI, ChatAgentDeploymentSettings], **kwargs
-) -> pd.DataFrame:
+def score(data: pd.DataFrame, model, **kwargs) -> pd.DataFrame:
     """This is the legacy score hook for
     datarobot version prior to 10.2
 
@@ -86,7 +108,7 @@ def score(
 
 def chat(
     completion_create_params: CompletionCreateParams,
-    model: tuple[AzureOpenAI, ChatAgentDeploymentSettings],
+    model,
 ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
     """Chat Hook compatibale with ChatCompletion
     OpenAI Specification
@@ -104,10 +126,13 @@ def chat(
         the completion object with generated choices.
     """
     client, default_model_name = model[0], model[2]
+    print(completion_create_params)
     try:
         return client.chat.completions.create(**completion_create_params)
-    except NotFoundError:
-        print(f"{completion_create_params['model']} not found, deferring to default")
+    except (NotFoundError, TypeError):
+        print(
+            f"{completion_create_params.get('model')} not found, deferring to default"
+        )
         completion_create_params["model"] = default_model_name
         return client.chat.completions.create(**completion_create_params)
 
@@ -118,12 +143,11 @@ if __name__ == "__main__":
     print(
         chat(
             {
-                # "model": AzureOpenAICredentials().azure_deployment,
                 "messages": [
                     {"role": "user", "content": "hello"},
                 ],
-                # "temperature": ChatAgentDeploymentSettings().temperature,
+                "model": "gpt-4o",
             },
-            model,
+            model=load_model(),
         )
     )
