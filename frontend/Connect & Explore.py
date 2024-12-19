@@ -223,7 +223,6 @@ def init_datarobot():
         return None
 
 
-# Add function to get catalog datasets
 @st.cache_data(show_spinner=False)
 def get_catalog_datasets(limit: int = 100) -> List[AiCatalogDataset]:
     """
@@ -340,7 +339,7 @@ def clear_data_callback():
 
 # Add after other initialization functions
 def create_snowflake_connection() -> snowflake.connector.SnowflakeConnection:
-    """Create a Snowflake connection with private key authentication"""
+    """Create a Snowflake connection with either private key or password authentication"""
     try:
         # Log all environment variables (excluding sensitive data)
         logger.info("=== Starting Snowflake Connection Attempt ===")
@@ -354,6 +353,18 @@ def create_snowflake_connection() -> snowflake.connector.SnowflakeConnection:
         logger.info(f"KEY_PATH: {os.getenv('SNOWFLAKE_KEY_PATH')}")
 
         # Try private key authentication
+
+        # Initialize connection parameters with common values
+        conn_params = {
+            "user": os.getenv("USER"),
+            "account": os.getenv("ACCOUNT"),
+            "warehouse": os.getenv("WAREHOUSE"),
+            "database": os.getenv("DATABASE"),
+            "schema": os.getenv("SCHEMA"),
+            "role": os.getenv("ROLE"),
+        }
+
+        # Check if private key path is set and valid
         key_path = os.getenv("SNOWFLAKE_KEY_PATH")
         if key_path and os.path.exists(key_path):
             try:
@@ -378,40 +389,33 @@ def create_snowflake_connection() -> snowflake.connector.SnowflakeConnection:
                 )
                 logger.info("Successfully converted key to DER format")
 
-                # Create connection parameters
-                conn_params = {
-                    "user": os.getenv("USER"),
-                    "account": os.getenv("ACCOUNT"),
-                    "private_key": private_key,
-                    "warehouse": os.getenv("WAREHOUSE"),
-                    "database": os.getenv("DATABASE"),
-                    "schema": os.getenv("SCHEMA"),
-                    "role": os.getenv("ROLE"),
-                }
-
-                # Log connection attempt (excluding private key)
-                safe_params = {
-                    k: v for k, v in conn_params.items() if k != "private_key"
-                }
-                logger.info(
-                    f"Attempting Snowflake connection with parameters: {safe_params}"
-                )
-
-                # Attempt connection
-                conn = snowflake.connector.connect(**conn_params)
-                logger.info(
-                    f"Successfully connected to Snowflake using role: {conn_params['role']}"
-                )
-                return conn
+                # Add private key to connection parameters
+                conn_params["private_key"] = private_key
+                logger.info("Using private key authentication")
 
             except Exception as e:
-                logger.error(f"Connection failed: {str(e)}")
-                logger.error(f"Error type: {type(e)}")
-                logger.error(f"Error details: {str(e)}")
-                raise
-
+                logger.warning(
+                    f"Failed to process private key: {str(e)}, falling back to password authentication"
+                )
+                conn_params["password"] = os.getenv("PASSWORD")
         else:
-            raise ValueError("Private key path not set or file not found")
+            # Use password authentication
+            logger.info(
+                "No valid private key path found, using password authentication"
+            )
+            conn_params["password"] = os.getenv("PASSWORD")
+
+        # Log password status (safely)
+        logger.info(
+            f"Password is {'set' if conn_params.get('password') else 'not set'}"
+        )
+
+        # Attempt connection
+        conn = snowflake.connector.connect(**conn_params)
+        logger.info(
+            f"Successfully connected to Snowflake using role: {conn_params['role']}"
+        )
+        return conn
 
     except Exception as e:
         logger.error("=== Snowflake Connection Failed ===")
@@ -459,7 +463,6 @@ def get_snowflake_tables() -> List[str]:
             ORDER BY table_type, table_name
         """
         )
-
         results = cursor.fetchall()
         tables = [row[0] for row in results]
 
@@ -719,7 +722,7 @@ with st.sidebar:
         client = init_datarobot()
         if client:
             # Get datasets from catalog
-            datasets = datasets = [i.model_dump() for i in get_catalog_datasets()]
+            datasets = [i.model_dump() for i in get_catalog_datasets()]
 
             # Create form for dataset selection
             with st.form("catalog_selection_form", border=False):

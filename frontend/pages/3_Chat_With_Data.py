@@ -121,11 +121,9 @@ class CustomJsonFormatter(logging.Formatter):
                     for msg in record.json_data["messages"]:
                         formatted_msg = {
                             "role": msg["role"],
-                            "content": (
-                                msg["content"].replace("\n", "\\n")[:100] + "..."
-                                if len(msg["content"]) > 100
-                                else msg["content"]
-                            ),
+                            "content": msg["content"].replace("\n", "\\n")[:100] + "..."
+                            if len(msg["content"]) > 100
+                            else msg["content"],
                         }
                         formatted_messages.append(formatted_msg)
 
@@ -229,12 +227,10 @@ Keyword Arguments:
                     "files": request_options.get("files"),
                     "json_data": request_options.get("json_data", {}),
                 }
-                logger.debug(
-                    f"""
+                logger.debug(f"""
 Request options:
 {json.dumps(formatted_options, indent=2, ensure_ascii=False)}
-"""
-                )
+""")
 
             output_log = f"""
 OUTPUT RESULTS [{request_id}]
