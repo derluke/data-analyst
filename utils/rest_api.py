@@ -937,7 +937,7 @@ async def get_snowflake_analysis_code(
                 "content": prompts.SYSTEM_PROMPT_SNOWFLAKE.format(
                     warehouse=request.warehouse,
                     database=request.database,
-                    schema=request.schema,
+                    schema=request.db_schema,
                 ),
             },
             {"role": "user", "content": f"Business Question: {request.question}"},

@@ -40,6 +40,7 @@ from pydantic import ValidationError
 
 sys.path.append("..")
 
+from utils.credentials import SnowflakeCredentials
 from utils import prompts
 from utils.resources import ChatAgentDeployment
 from utils.schema import (
@@ -53,6 +54,8 @@ from utils.schema import (
     QuestionValidationResult,
     RunAnalysisRequest,
 )
+
+SNOWFLAKE_CREDENTIALS = SnowflakeCredentials()
 
 try:
     chat_agent_deployment_id = ChatAgentDeployment().id
@@ -221,7 +224,9 @@ def process_dataset(dataset: DatasetInput) -> DataDictionary:
         )
 
         # Process column batches using ThreadPoolExecutor
-        batch_results = {}  # Change to dictionary to maintain column-description mapping
+        batch_results = (
+            {}
+        )  # Change to dictionary to maintain column-description mapping
         with ThreadPoolExecutor() as executor:
             batch_futures = {
                 executor.submit(
@@ -840,9 +845,9 @@ def create_snowflake_connection(
     """Create a connection to Snowflake using environment variables"""
     try:
         return snowflake.connector.connect(
-            user=os.getenv("user"),
-            password=os.getenv("password"),
-            account=os.getenv("account"),
+            user=SNOWFLAKE_CREDENTIALS.user,
+            password=SNOWFLAKE_CREDENTIALS.password,
+            account=SNOWFLAKE_CREDENTIALS.account,
             warehouse=warehouse,
             database=database,
             schema=schema,

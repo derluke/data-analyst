@@ -276,6 +276,7 @@ chat = log_api_call(chat)
 run_analysis = log_api_call(run_analysis)
 run_charts = log_api_call(run_charts)
 get_business_analysis = log_api_call(get_business_analysis)
+run_snowflake_analysis = log_api_call(run_snowflake_analysis)
 
 
 # Add enhanced error logging function
