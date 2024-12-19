@@ -227,15 +227,35 @@ class DRCredential(pulumi.ComponentResource):
                 )
                 for key, type_, value in [
                     ("db_credential", "credential", self.credential.id),
-                    ("ACCOUNT", "string", self.credential_raw.account),
-                    ("DATABASE", "string", self.credential_raw.database),
-                    ("SCHEMA", "string", self.credential_raw.db_schema),
-                    ("ROLE", "string", self.credential_raw.role),
-                    ("WAREHOUSE", "string", self.credential_raw.warehouse),
+                    (
+                        "ACCOUNT",
+                        "string",
+                        json.dumps({"payload": self.credential_raw.account}),
+                    ),
+                    (
+                        "DATABASE",
+                        "string",
+                        json.dumps({"payload": self.credential_raw.database}),
+                    ),
+                    (
+                        "SCHEMA",
+                        "string",
+                        json.dumps({"payload": self.credential_raw.db_schema}),
+                    ),
+                    (
+                        "ROLE",
+                        "string",
+                        json.dumps({"payload": self.credential_raw.role}),
+                    ),
+                    (
+                        "WAREHOUSE",
+                        "string",
+                        json.dumps({"payload": self.credential_raw.warehouse}),
+                    ),
                     (
                         "SNOWFLAKE_KEY_PATH",
                         "string",
-                        self.credential_raw.snowflake_key_path,
+                        json.dumps({"payload": self.credential_raw.snowflake_key_path}),
                     ),
                 ]
             ]

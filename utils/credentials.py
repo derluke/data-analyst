@@ -154,12 +154,6 @@ class GoogleLLMCredentials(BaseSettings):
 class SnowflakeCredentials(BaseSettings):
     """Snowflake Connection credentials auto-constructed using environment variables."""
 
-    account: str = Field(
-        validation_alias=AliasChoices(
-            AliasPath("MLOPS_RUNTIME_PARAM_ACCOUNT", "payload"),
-            "ACCOUNT",
-        ),
-    )
     user: str = Field(
         validation_alias=AliasChoices(
             AliasPath("MLOPS_RUNTIME_PARAM_db_credential", "payload", "username"),
@@ -172,16 +166,22 @@ class SnowflakeCredentials(BaseSettings):
             "PASSWORD",
         )
     )
-    warehouse: str = Field(
+    account: str = Field(
         validation_alias=AliasChoices(
-            AliasPath("MLOPS_RUNTIME_PARAM_WAREHOUSE", "payload"),
-            "WAREHOUSE",
-        )
+            AliasPath("MLOPS_RUNTIME_PARAM_ACCOUNT", "payload"),
+            "ACCOUNT",
+        ),
     )
     database: str = Field(
         validation_alias=AliasChoices(
             AliasPath("MLOPS_RUNTIME_PARAM_DATABASE", "payload"),
             "DATABASE",
+        )
+    )
+    warehouse: str = Field(
+        validation_alias=AliasChoices(
+            AliasPath("MLOPS_RUNTIME_PARAM_WAREHOUSE", "payload"),
+            "WAREHOUSE",
         )
     )
     db_schema: str = Field(
