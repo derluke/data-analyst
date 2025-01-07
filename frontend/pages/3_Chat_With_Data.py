@@ -30,14 +30,14 @@ sys.path.append("..")
 
 
 # Import FastAPI functions directly
-from utils.credentials import SnowflakeCredentials
-from utils.rest_api import (
+from utils.api import (
     chat,
     get_business_analysis,
     run_analysis,
     run_charts,
     run_snowflake_analysis,
 )
+from utils.credentials import SnowflakeCredentials
 from utils.schema import (
     BusinessAnalysisRequest,
     ChatRequest,
@@ -371,6 +371,7 @@ async def process_chat_and_analysis(question: str, chat_messages: list) -> None:
                             db_schema=SNOWFLAKE_CREDENTIALS.db_schema,
                         )
                         analysis_result = await run_snowflake_analysis(analysis_request)
+                        analysis_result = analysis_result.model_dump()
                     else:
                         # Use regular analysis
                         # Convert DataFrames to proper dictionary format
@@ -458,6 +459,7 @@ async def process_chat_and_analysis(question: str, chat_messages: list) -> None:
                         for coro in asyncio.as_completed(tasks):
                             try:
                                 result = await coro
+                                result = result.model_dump()
 
                                 # Determine which task completed by checking the result structure
                                 if isinstance(result, dict) and (

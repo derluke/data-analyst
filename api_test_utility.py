@@ -768,6 +768,7 @@ async def main():
                         business_analysis = await get_business_analysis(
                             business_request
                         )
+                        business_analysis = business_analysis.model_dump()
                         progress.update(task, completed=True)
 
                         # Display business analysis results
@@ -819,6 +820,7 @@ async def main():
 
                     # Run charts
                     charts_result = await run_charts(charts_request)
+                    charts_result = charts_result.model_dump()
                     progress.update(task, completed=True)
 
                     # Open charts in browser if available

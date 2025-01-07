@@ -21,25 +21,17 @@ from typing import Any, Dict, List
 
 sys.path.append("..")
 
-# Add imports for DataRobot
 import datarobot as dr
 import pandas as pd
 import snowflake.connector
 import streamlit as st
 
+from utils.api import cleanse_dataframes, get_catalog_datasets, get_dictionary
 from utils.credentials import SnowflakeCredentials
-from utils.rest_api import cleanse_dataframes, get_dictionary
-
-# Import FastAPI functions
-from utils.schema import (
-    AiCatalogDataset,
-    CleanseRequest,
-    DatasetInput,
-)
+from utils.schema import CleanseRequest, DatasetInput
 
 SNOWFLAKE_CREDENTIALS = SnowflakeCredentials()
 
-# Suppress warnings
 warnings.filterwarnings("ignore")
 
 # Configure logging
@@ -102,9 +94,7 @@ async def process_data_async(datasets_dict: Dict[str, pd.DataFrame]) -> Dict[str
         return {"success": False, "error": str(e)}
 
 
-# Remove the @st.cache_resource decorator since we want this to run
-# each time with the full set of datasets
-def generate_dictionaries_cached(
+def generate_dictionaries(
     _cleansed_data: Dict[str, Dict[str, Any]],
 ) -> Dict[str, Any]:
     """
@@ -226,51 +216,12 @@ def init_datarobot():
         return None
 
 
-@st.cache_data(show_spinner=False)
-def get_catalog_datasets(limit: int = 100) -> List[AiCatalogDataset]:
-    """
-    Fetch datasets from AI Catalog with specified limit
-
-    Args:
-        limit: int
-        Datasets to retrieve. Max value: 100
-    """
-    with st.spinner("Listing AI Catalog datasets..."):
-        client = dr.Client()
-        url = f"datasets?limit={limit}"
-
-        try:
-            # Get all datasets and manually limit the results
-            datasets = client.get(url).json()["data"]
-
-            return [
-                AiCatalogDataset(
-                    id=ds["datasetId"],
-                    name=ds["name"],
-                    created=(
-                        ds["creationDate"][:10]  # %Y-%m-%d
-                        if "creationDate" in ds
-                        else "N/A"
-                    ),
-                    size=(
-                        f"{ds['datasetSize'] / (1024*1024):.1f} MB"
-                        if "datasetSize" in ds
-                        else "N/A"
-                    ),
-                )
-                for ds in datasets
-            ]
-        except Exception as e:
-            logger.error(f"Failed to fetch datasets: {str(e)}")
-            return []
-
-
 # Add function to load selected datasets
 @st.cache_data(show_spinner=False)
 def get_datasets_as_df(_dataset_ids: List[str]) -> Dict[str, pd.DataFrame]:
     """Load selected datasets as pandas DataFrames"""
     dataframes = {}
-    for idx, id in enumerate(_dataset_ids, 1):
+    for _, id in enumerate(_dataset_ids, 1):
         dataset = dr.Dataset.get(id)
         try:
             dataframes[dataset.name] = dataset.get_as_dataframe()
@@ -307,7 +258,7 @@ def catalog_download_callback():
                     logger.info("Data processing successful, generating dictionaries")
 
                     # Generate data dictionaries
-                    st.session_state.data_dictionaries = generate_dictionaries_cached(
+                    st.session_state.data_dictionaries = generate_dictionaries(
                         st.session_state.cleansed_data
                     )
 
@@ -424,7 +375,6 @@ def create_snowflake_connection() -> snowflake.connector.SnowflakeConnection:
         logger.error("=== Snowflake Connection Failed ===")
         logger.error(f"Final error: {str(e)}")
         logger.error(f"Error type: {type(e)}")
-        logger.error(f"Error details: {str(e)}")
         raise
 
 
@@ -573,7 +523,7 @@ def get_snowflake_data(
 
 
 # Modify the load_snowflake_data callback
-def load_snowflake_data():
+def load_snowflake_data_callback():
     """Callback function for Snowflake table download"""
     if (
         "selected_snowflake_tables" in st.session_state
@@ -606,7 +556,7 @@ def load_snowflake_data():
                     logger.info("Data processing successful, generating dictionaries")
 
                     # Generate data dictionaries
-                    st.session_state.data_dictionaries = generate_dictionaries_cached(
+                    st.session_state.data_dictionaries = generate_dictionaries(
                         st.session_state.cleansed_data
                     )
 
@@ -688,7 +638,7 @@ with st.sidebar:
                     logger.info("Data processing successful, generating dictionaries")
 
                     # Generate new dictionaries
-                    new_dictionaries = generate_dictionaries_cached(
+                    new_dictionaries = generate_dictionaries(
                         st.session_state.cleansed_data
                     )
 
@@ -723,7 +673,8 @@ with st.sidebar:
         client = init_datarobot()
         if client:
             # Get datasets from catalog
-            datasets = [i.model_dump() for i in get_catalog_datasets()]
+            with st.spinner("Loading datasets from AI Catalog..."):
+                datasets = [i.model_dump() for i in get_catalog_datasets()]
 
             # Create form for dataset selection
             with st.form("catalog_selection_form", border=False):
@@ -769,7 +720,7 @@ with st.sidebar:
             submit_button = st.form_submit_button(
                 "Load Selected Tables",
                 use_container_width=False,
-                on_click=load_snowflake_data,
+                on_click=load_snowflake_data_callback,
             )
 
             if submit_button and not selected_snowflake_tables:

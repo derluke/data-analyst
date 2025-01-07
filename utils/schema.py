@@ -16,13 +16,18 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
+import plotly.graph_objects as go
 from pydantic import BaseModel, ConfigDict, field_validator
 
-if TYPE_CHECKING:
-    import plotly.graph_objects as go
+
+class AiCatalogDataset(BaseModel):
+    id: str
+    name: str
+    created: str
+    size: str
 
 
 class ChatAgentDeploymentSettings(BaseModel):
@@ -36,13 +41,6 @@ class ChatAgentDeploymentSettings(BaseModel):
 class DatasetInput(BaseModel):
     name: str
     data: List[Dict[str, Any]]
-
-
-class AiCatalogDataset(BaseModel):
-    id: str
-    name: str
-    created: str
-    size: str
 
 
 class CleanseRequest(BaseModel):
@@ -168,17 +166,6 @@ class DictionaryResponse(BaseModel):
         return dict(zip(self.columns, self.descriptions))
 
 
-@dataclass
-class QuestionValidationResult:
-    """Stores validation results for suggested questions"""
-
-    question: str
-    is_valid: bool
-    available_columns: List[str]
-    missing_columns: List[str]
-    validation_message: str
-
-
 class RunAnalysisRequest(BaseModel):
     """Request model for analysis endpoint
 
@@ -238,42 +225,6 @@ class RunAnalysisRequest(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-class PythonAnalysisRequest(BaseModel):
-    data: List[Dict[str, Any]]  # Changed from DataFrame to List of JSON objects
-    dictionary: List[
-        Dict[str, Any]
-    ]  # Changed from DataFrame to List of dictionary entries
-    question: str
-    error_message: Optional[str] = None
-    failed_code: Optional[str] = None
-
-    @field_validator("data")
-    @classmethod
-    def validate_data(cls, v):
-        if not isinstance(v, list):
-            raise ValueError("Input data must be a list of JSON objects")
-        if len(v) == 0:
-            raise ValueError("Data cannot be empty")
-        return v
-
-    @field_validator("dictionary")
-    @classmethod
-    def validate_dictionary(cls, v):
-        if not isinstance(v, list):
-            raise ValueError("Dictionary must be a list")
-        required_keys = {"column", "description", "data_type"}
-        if not all(required_keys.issubset(d.keys()) for d in v):
-            raise ValueError(f"Dictionary entries must contain keys: {required_keys}")
-        return v
-
-    @field_validator("question")
-    @classmethod
-    def validate_question(cls, v):
-        if not v.strip():
-            raise ValueError("Question cannot be empty")
-        return v.strip()
-
-
 class ChartRequest(BaseModel):
     """Request model for charts endpoint
 
@@ -299,19 +250,18 @@ class ChartRequest(BaseModel):
         return v
 
 
-@dataclass
-class ChartGenerationResult:
-    """Container for chart generation results"""
-
+class ChartGenerationResult(BaseModel):
     fig1: go.Figure
     fig2: go.Figure
     code: str
-    validation: Dict[str, Any]
-    metadata: Dict[str, Any]
+    validation: ChartIsValidMessage
+    metadata: ChartGenerationMetadata
     attempts: int
-    validation_errors: List[str]
-    execution_errors: List[Dict[str, Any]]
-    code_history: List[Dict[str, Any]]
+    validation_errors: List[ChartValidationError]
+    execution_errors: List[ChartExecutionError]
+    code_history: List[ChartCodeHistory]
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class RunChartsRequest(BaseModel):
@@ -357,6 +307,31 @@ class RunChartsRequest(BaseModel):
         return converted
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+class RunChartsResponse(BaseModel):
+    fig1: go.Figure
+    fig2: go.Figure
+    fig1_base_64: str | None
+    fig2_base_64: str | None
+    code: str
+    metadata: RunChartsResponseMetadata
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+class BusinessAnalysisMetadata(BaseModel):
+    timestamp: str
+    question: str
+    rows_analyzed: int
+    columns_analyzed: int
+
+
+class BusinessAnalysisResponse(BaseModel):
+    bottom_line: str
+    additional_insights: str
+    follow_up_questions: List[str]
+    metadata: BusinessAnalysisMetadata
 
 
 class BusinessAnalysisRequest(BaseModel):
@@ -529,7 +504,31 @@ class CodeGenerationResult:
     validation_errors: List[str]
 
 
-# Add after the RunAnalysisRequest class
+class QuestionSuggestionMetadata(BaseModel):
+    """Metadata for question suggestions"""
+
+    total_columns: int
+    columns_used: int
+    timestamp: str
+    questions_generated: int
+    valid_questions: int
+
+
+class QuestionValidationResult(BaseModel):
+    """Stores validation results for suggested questions"""
+
+    question: str
+    is_valid: bool
+    available_columns: List[str]
+    missing_columns: List[str]
+    validation_message: str
+
+
+class QuestionSuggestions(BaseModel):
+    questions: List[QuestionValidationResult]
+    metadata: QuestionSuggestionMetadata
+
+
 class SnowflakeAnalysisRequest(BaseModel):
     """Request model for Snowflake analysis endpoint
 
@@ -577,14 +576,104 @@ class SnowflakeAnalysisRequest(BaseModel):
         return v.strip()
 
 
-@dataclass
-class SnowflakeExecutionResult:
-    """Container for Snowflake query execution results"""
-
-    data: List[Dict[str, Any]]
+class SnowflakeAnalaysisCode(BaseModel):
     code: str
     description: str
-    metadata: Dict[str, Any]
+
+
+class MemoryUsage(BaseModel):
+    rss: float
+    vms: float
+    percent: float
+
+
+class SnowflakeAnalysisMetadata(BaseModel):
+    attempts: int
     execution_time: float
-    query_id: Optional[str] = None
-    error: Optional[str] = None
+    memory_usage: MemoryUsage
+    error_history: list[SnowflakeAnalysisError]
+    query_metadata: Optional[SnowflakeExecutionMetadata] = None
+    tables_analyzed: Optional[int] = None
+    total_sample_rows: Optional[int] = None
+
+
+class SnowflakeAnalysisResult(BaseModel):
+    status: str
+    metadata: SnowflakeAnalysisMetadata
+    data: Optional[List[Dict[str, Any]]] = None
+    code: Optional[str] = None
+    last_generated_code: Optional[str] = None
+    description: Optional[str] = None
+    suggestions: Optional[str] = None
+
+
+class SnowflakeExecutionMetadata(BaseModel):
+    query_id: str
+    row_count: int
+    execution_time: float
+    warehouse: str
+    database: str
+    db_schema: str
+
+
+class SnowflakeAnalysisError(BaseModel):
+    attempt: int
+    error: str
+    error_type: str
+    timestamp: str
+    memory_usage: MemoryUsage
+    code: Optional[str] = None
+
+
+class ChartValidationError(BaseModel):
+    attempt: int
+    error: str
+    timestamp: str
+    code: Optional[str] = None
+
+
+class ChartIsValidMessage(BaseModel):
+    is_valid: bool
+    message: str
+
+
+class ChartExecutionError(BaseModel):
+    attempt: int
+    error_type: str
+    error_message: str
+    timestamp: str
+    stdout: Optional[str] = None
+    stderr: Optional[str] = None
+    code: Optional[str] = None
+
+
+class ChartCodeHistory(BaseModel):
+    attempt: int
+    code: str
+    timestamp: str
+
+
+class ChartGenerationMetadata(BaseModel):
+    timestamp: str
+    question: str
+    stdout: str
+    stderr: str
+
+
+class ChartPerformance(BaseModel):
+    total_time: float
+    memory_usage: MemoryUsage
+
+
+class RunChartsResponseMetadata(BaseModel):
+    timestamp: str
+    question: str
+    stdout: str
+    stderr: str
+    dataframe_metadata: Dict[str, Any]
+    validation: ChartIsValidMessage
+    attempts: int
+    validation_errors: list[ChartValidationError]
+    execution_errors: list[ChartExecutionError]
+    code_history: list[ChartCodeHistory]
+    performance: ChartPerformance
