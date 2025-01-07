@@ -51,7 +51,7 @@ from utils.schema import (
     AiCatalogDataset,
     BusinessAnalysisMetadata,
     BusinessAnalysisRequest,
-    BusinessAnalysisResponse,
+    BusinessAnalysisResult,
     ChartCodeHistory,
     ChartExecutionError,
     ChartGenerationMetadata,
@@ -61,7 +61,7 @@ from utils.schema import (
     ChartValidationError,
     ChatRequest,
     CleanseRequest,
-    CleanseResponse,
+    CleanseResult,
     CleansingReport,
     CodeGenerationResult,
     CodeValidator,
@@ -72,15 +72,15 @@ from utils.schema import (
     DatasetOutput,
     DictionaryDataColumn,
     DictionaryRequest,
-    DictionaryResponse,
+    DictionaryResult,
     MemoryUsage,
     QuestionSuggestionMetadata,
     QuestionSuggestions,
     QuestionValidationResult,
     RunAnalysisRequest,
     RunChartsRequest,
-    RunChartsResponse,
-    RunChartsResponseMetadata,
+    RunChartsResult,
+    RunChartsResultMetadata,
     SnowflakeAnalaysisCode,
     SnowflakeAnalysisError,
     SnowflakeAnalysisMetadata,
@@ -242,8 +242,8 @@ def process_column_batch(
             raise ValueError("No JSON block found in model response")
 
     try:
-        # Validate response using DictionaryResponse
-        validated = DictionaryResponse(
+        # Validate response using DictionaryResult
+        validated = DictionaryResult(
             columns=response.get("columns", []),
             descriptions=response.get("descriptions", []),
         )
@@ -971,7 +971,7 @@ def execute_snowflake_query(
 async def cleanse_dataframes(
     request: CleanseRequest,
     progress_callback: Optional[Callable[[str, int], None]] = None,
-) -> CleanseResponse:
+) -> CleanseResult:
     """
     Clean and standardize multiple pandas DataFrames.
 
@@ -980,7 +980,7 @@ async def cleanse_dataframes(
     - progress_callback: Optional callback for progress reporting
 
     Returns:
-    - CleanseResponse containing cleaned datasets and metadata
+    - CleanseResult containing cleaned datasets and metadata
 
     Raises:
     - HTTPException: If cleaning fails
@@ -1144,7 +1144,7 @@ async def cleanse_dataframes(
                 logger.error(f"Error processing dataset {dataset.name}: {str(e)}")
                 raise
 
-        return CleanseResponse(
+        return CleanseResult(
             datasets=cleaned_datasets,
             metadata={
                 "total_datasets": total_datasets,
@@ -1274,7 +1274,7 @@ async def suggest_questions(request: DictionaryRequest) -> QuestionSuggestions:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def run_charts(request: RunChartsRequest) -> RunChartsResponse:
+async def run_charts(request: RunChartsRequest) -> RunChartsResult:
     """
     Generate and execute chart code with validation.
     """
@@ -1310,13 +1310,13 @@ async def run_charts(request: RunChartsRequest) -> RunChartsResponse:
                 fig1_base64 = figure_to_base64(result.fig1) if result.fig1 else None
                 fig2_base64 = figure_to_base64(result.fig2) if result.fig2 else None
 
-                return RunChartsResponse(
+                return RunChartsResult(
                     fig1=result.fig1,
                     fig2=result.fig2,
                     fig1_base_64=fig1_base64,
                     fig2_base_64=fig2_base64,
                     code=result.code,
-                    metadata=RunChartsResponseMetadata(
+                    metadata=RunChartsResultMetadata(
                         timestamp=result.metadata.timestamp,
                         question=result.metadata.question,
                         stdout=result.metadata.stdout,
@@ -1370,7 +1370,7 @@ async def run_charts(request: RunChartsRequest) -> RunChartsResponse:
 
 async def get_business_analysis(
     request: BusinessAnalysisRequest,
-) -> BusinessAnalysisResponse:
+) -> BusinessAnalysisResult:
     """
     Generate business analysis based on data and question.
 
@@ -1431,7 +1431,7 @@ async def get_business_analysis(
             rows_analyzed=len(df),
             columns_analyzed=len(df.columns),
         )
-        return BusinessAnalysisResponse(
+        return BusinessAnalysisResult(
             bottom_line=response.get("bottom_line", ""),
             additional_insights=response.get("additional_insights", ""),
             follow_up_questions=response.get("follow_up_questions", []),

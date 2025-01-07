@@ -24,8 +24,8 @@ from typing import Callable
 import datarobot as dr
 import pandas as pd
 import pytest
-from datarobot_predict.deployment import predict
 from dotenv import dotenv_values
+from openai import OpenAI
 
 from utils.resources import ChatAgentDeployment
 
@@ -142,14 +142,38 @@ def dr_client(session_env_vars):
     return dr.Client()
 
 
-def predict_with_retry(
-    deployment, data_frame, max_wait_seconds=300, retry_interval_seconds=5
+@pytest.fixture
+def chat_client():
+    chat_agent_deployment_id = ChatAgentDeployment().id
+    deployment_chat_base_url = (
+        dr.Client().endpoint + f"/deployments/{chat_agent_deployment_id}/"
+    )
+
+    return OpenAI(
+        api_key=dr.Client().token, base_url=deployment_chat_base_url
+    ).chat.completions.create
+
+
+def chat_with_retry(
+    chat_client: OpenAI,
+    deployment_name: str,
+    messages: list[dict[str, str]],
+    max_wait_seconds: int = 300,
+    retry_interval_seconds: int = 5,
+    use_json_response_format: bool = False,
 ):
     start_time = time.time()
+    chat_kwargs = {
+        "model": deployment_name,
+        "messages": messages,
+        "stream": False,
+    }
+    if use_json_response_format:
+        chat_kwargs["response_format"] = {"type": "json_object"}
     while True:
         try:
-            prediction = predict(deployment, data_frame=data_frame)
-            return prediction
+            response = chat_client.chat.completions.create(**chat_kwargs)
+            return response
         except dr.errors.ServerError as e:
             if "Inference server is starting" in str(e):
                 elapsed_time = time.time() - start_time
@@ -173,7 +197,7 @@ def make_prediction(dr_client):
         predict_df = pd.DataFrame(input_json)
         while True:
             try:
-                prediction = predict_with_retry(
+                prediction = chat_with_retry(
                     deployment, data_frame=predict_df
                 ).dataframe
                 break
@@ -190,7 +214,7 @@ def make_prediction(dr_client):
 def get_response():
     def _get_response(request, deployment):
         input_df = pd.DataFrame([request.model_dump()])
-        result_df, response_headers = predict(deployment, input_df)
+        result_df, response_headers = chat_with_retry(deployment, input_df)
         result_df.columns = result_df.columns.str.replace(
             "_(PREDICTION|OUTPUT)$", "", regex=True
         )

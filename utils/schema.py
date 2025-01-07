@@ -60,7 +60,7 @@ class DatasetOutput(BaseModel):
     cleaning_report: CleansingReport
 
 
-class CleanseResponse(BaseModel):
+class CleanseResult(BaseModel):
     datasets: List[DatasetOutput]
     metadata: Dict[str, Any]
 
@@ -104,7 +104,7 @@ class DataDictionariesAndMetadata(BaseModel):
 
 
 # Add after the DictionaryRequest class
-class DictionaryResponse(BaseModel):
+class DictionaryResult(BaseModel):
     """Validates LLM responses for data dictionary generation
 
     Attributes:
@@ -309,13 +309,13 @@ class RunChartsRequest(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-class RunChartsResponse(BaseModel):
+class RunChartsResult(BaseModel):
     fig1: go.Figure
     fig2: go.Figure
     fig1_base_64: str | None
     fig2_base_64: str | None
     code: str
-    metadata: RunChartsResponseMetadata
+    metadata: RunChartsResultMetadata
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -327,7 +327,7 @@ class BusinessAnalysisMetadata(BaseModel):
     columns_analyzed: int
 
 
-class BusinessAnalysisResponse(BaseModel):
+class BusinessAnalysisResult(BaseModel):
     bottom_line: str
     additional_insights: str
     follow_up_questions: List[str]
@@ -665,7 +665,7 @@ class ChartPerformance(BaseModel):
     memory_usage: MemoryUsage
 
 
-class RunChartsResponseMetadata(BaseModel):
+class RunChartsResultMetadata(BaseModel):
     timestamp: str
     question: str
     stdout: str

@@ -306,8 +306,6 @@ def create_snowflake_connection() -> snowflake.connector.SnowflakeConnection:
         logger.info(f"ROLE: {SNOWFLAKE_CREDENTIALS.role}")
         logger.info(f"KEY_PATH: {SNOWFLAKE_CREDENTIALS.snowflake_key_path}")
 
-        # Try private key authentication
-
         # Initialize connection parameters with common values
         conn_params = {
             "user": SNOWFLAKE_CREDENTIALS.user,

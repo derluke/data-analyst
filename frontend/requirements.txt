@@ -3,10 +3,7 @@ numpy
 openai
 streamlit
 fastapi
-pydantic
 uvicorn
-python-dotenv
-rich
 plotly
 scipy
 statsmodels

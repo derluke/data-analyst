@@ -25,6 +25,7 @@ from utils.api import (
     chat,
     cleanse_dataframes,
     get_business_analysis,
+    get_catalog_datasets,
     get_dictionary,
     run_analysis,
     run_charts,
@@ -33,16 +34,16 @@ from utils.api import (
 )
 from utils.schema import (
     BusinessAnalysisRequest,
-    BusinessAnalysisResponse,
+    BusinessAnalysisResult,
     ChatRequest,
     CleanseRequest,
-    CleanseResponse,
+    CleanseResult,
     DataDictionariesAndMetadata,
     DictionaryRequest,
     QuestionSuggestions,
     RunAnalysisRequest,
     RunChartsRequest,
-    RunChartsResponse,
+    RunChartsResult,
     SnowflakeAnalysisRequest,
     SnowflakeAnalysisResult,
 )
@@ -105,14 +106,22 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 
+@app.get(
+    "/get_catalog_datasets",
+    response_model=CleanseResult,
+)
+async def get_catalog_datasets_endpoint(limit: int = 100) -> CleanseResult:
+    return get_catalog_datasets(limit)
+
+
 @app.post(
     "/cleanse_dataframes",
-    response_model=CleanseResponse,
+    response_model=CleanseResult,
 )
 async def cleanse_dataframes_endpoint(
     request: CleanseRequest,
     progress_callback: Optional[Callable[[str, int], None]] = None,
-) -> CleanseResponse:
+) -> CleanseResult:
     return cleanse_dataframes(request, progress_callback=progress_callback)
 
 
@@ -135,17 +144,17 @@ async def suggest_questions_endpoint(request: DictionaryRequest) -> QuestionSugg
 
 
 @app.post("/run_charts")
-async def run_charts_endpoint(request: RunChartsRequest) -> RunChartsResponse:
+async def run_charts_endpoint(request: RunChartsRequest) -> RunChartsResult:
     return run_charts(request)
 
 
 @app.post(
     "/get_business_analysis",
-    response_model=BusinessAnalysisResponse,
+    response_model=BusinessAnalysisResult,
 )
 async def get_business_analysis_endpoint(
     request: BusinessAnalysisRequest,
-) -> BusinessAnalysisResponse:
+) -> BusinessAnalysisResult:
     return get_business_analysis(request)
 
 
