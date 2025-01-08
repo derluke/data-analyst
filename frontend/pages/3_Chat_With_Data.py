@@ -31,8 +31,8 @@ sys.path.append("..")
 
 # Import FastAPI functions directly
 from utils.api import (
-    chat,
     get_business_analysis,
+    process_chat,
     run_analysis,
     run_charts,
     run_snowflake_analysis,
@@ -272,7 +272,7 @@ Stack Trace:
 
 # Wrap API functions with logging
 
-chat = log_api_call(chat)
+process_chat = log_api_call(process_chat)
 run_analysis = log_api_call(run_analysis)
 run_charts = log_api_call(run_charts)
 get_business_analysis = log_api_call(get_business_analysis)
@@ -322,7 +322,7 @@ async def process_chat_and_analysis(question: str, chat_messages: list) -> None:
             # Get initial chat response
             try:
                 chat_request = ChatRequest(messages=chat_messages)
-                chat_response = await chat(chat_request)
+                chat_response = await process_chat(chat_request)
                 message_content = chat_response.get("response", "")
                 message_placeholder.markdown(message_content)
                 assistant_message["content"] = message_content
@@ -371,14 +371,9 @@ async def process_chat_and_analysis(question: str, chat_messages: list) -> None:
                             db_schema=SNOWFLAKE_CREDENTIALS.db_schema,
                         )
                         analysis_result = await run_snowflake_analysis(analysis_request)
-                        analysis_result = analysis_result.model_dump()
                     else:
-                        # Use regular analysis
-                        # Convert DataFrames to proper dictionary format
                         formatted_data = {}
                         for name, df in st.session_state.datasets.items():
-                            # Convert DataFrame to list of dictionaries where each row is a dictionary
-                            # with column names as keys
                             formatted_data[name] = df.to_dict("records")
 
                         analysis_request = RunAnalysisRequest(
@@ -388,6 +383,7 @@ async def process_chat_and_analysis(question: str, chat_messages: list) -> None:
                         )
                         analysis_result = await run_analysis(analysis_request)
 
+                    analysis_result = analysis_result.model_dump()
                     # Store analysis results in components
                     assistant_message["components"].append(
                         {"type": "analysis", "data": analysis_result}
@@ -662,7 +658,7 @@ else:
 
         valid_messages.append({"role": "user", "content": question})
         chat_request = ChatRequest(messages=valid_messages)
-        chat_response = asyncio.run(chat(chat_request))
+        chat_response = asyncio.run(process_chat(chat_request))
 
         enhanced_question = chat_response.get("enhanced_user_message", question)
         user_message = {"role": "user", "content": enhanced_question}

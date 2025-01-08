@@ -202,20 +202,6 @@ def process_uploaded_file(file):
         return []
 
 
-# Add DataRobot initialization function
-@st.cache_resource
-def init_datarobot():
-    """Initialize DataRobot client connection"""
-    try:
-        return dr.Client(
-            token=os.getenv("DATAROBOT_API_KEY"),
-            endpoint=os.getenv("DATAROBOT_API_ENDPOINT"),
-        )
-    except Exception as e:
-        st.error(f"Failed to connect to DataRobot: {str(e)}")
-        return None
-
-
 # Add function to load selected datasets
 @st.cache_data(show_spinner=False)
 def get_datasets_as_df(_dataset_ids: List[str]) -> Dict[str, pd.DataFrame]:
@@ -667,36 +653,31 @@ with st.sidebar:
         # AI Catalog section
         st.subheader("☁️   DataRobot AI Catalog")
 
-        # Initialize DataRobot client
-        client = init_datarobot()
-        if client:
-            # Get datasets from catalog
-            with st.spinner("Loading datasets from AI Catalog..."):
-                datasets = [i.model_dump() for i in get_catalog_datasets()]
+        # Get datasets from catalog
+        with st.spinner("Loading datasets from AI Catalog..."):
+            datasets = [i.model_dump() for i in get_catalog_datasets()]
 
-            # Create form for dataset selection
-            with st.form("catalog_selection_form", border=False):
-                selected_catalog_datasets = st.multiselect(
-                    "Select datasets from AI Catalog",
-                    options=datasets,
-                    format_func=lambda x: f"{x['name']} ({x['size']})",
-                    help="You can select multiple datasets",
-                    key="selected_catalog_datasets",
-                )
+        # Create form for dataset selection
+        with st.form("catalog_selection_form", border=False):
+            selected_catalog_datasets = st.multiselect(
+                "Select datasets from AI Catalog",
+                options=datasets,
+                format_func=lambda x: f"{x['name']} ({x['size']})",
+                help="You can select multiple datasets",
+                key="selected_catalog_datasets",
+            )
 
-                # Form submit button
-                submit_button = st.form_submit_button(
-                    "Load Datasets", on_click=catalog_download_callback
-                )
+            # Form submit button
+            submit_button = st.form_submit_button(
+                "Load Datasets", on_click=catalog_download_callback
+            )
 
-                # Process form submission
-                if submit_button and len(selected_catalog_datasets) > 0:
-                    # The callback will handle the download and processing
-                    pass
-                elif submit_button:
-                    st.warning("Please select at least one dataset")
-        else:
-            st.warning("Unable to connect to DataRobot AI Catalog")
+            # Process form submission
+            if submit_button and len(selected_catalog_datasets) > 0:
+                # The callback will handle the download and processing
+                pass
+            elif submit_button:
+                st.warning("Please select at least one dataset")
 
     # Database expander containing Snowflake section
     with st.expander("Database", expanded=False):

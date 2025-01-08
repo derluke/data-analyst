@@ -15,10 +15,8 @@
 from __future__ import annotations
 
 import ast
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 
-import pandas as pd
 import plotly.graph_objects as go
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -182,8 +180,8 @@ class RunAnalysisRequest(BaseModel):
         str, List[Dict[str, Union[str, Dict[str, str]]]]
     ]  # Allow dictionary values for description
     question: str
-    error_message: Optional[str] = None
-    failed_code: Optional[str] = None
+    error_message: str | None = None
+    failed_code: str | None = None
 
     @field_validator("data")
     @classmethod
@@ -225,6 +223,25 @@ class RunAnalysisRequest(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
+class RunAnanlysisResultMetadata(BaseModel):
+    timestamp: str
+    attempts: int
+    error_history: list[AnalysisError]
+    stdout: str | None = None
+    stderr: str | None = None
+    datasets_analyzed: int | None = None
+    total_rows_analyzed: int | None = None
+    total_columns_analyzed: int | None = None
+
+
+class RunAnalysisResult(BaseModel):
+    status: str
+    metadata: RunAnanlysisResultMetadata
+    code: str | None = None
+    data: list[dict[str, Any]] | None = None
+    suggestions: str | None = None
+
+
 class ChartRequest(BaseModel):
     """Request model for charts endpoint
 
@@ -237,8 +254,8 @@ class ChartRequest(BaseModel):
 
     data: List[Dict[str, Any]]
     question: str
-    error_message: Optional[str] = None
-    failed_code: Optional[str] = None
+    error_message: str | None = None
+    failed_code: str | None = None
 
     @field_validator("data")
     @classmethod
@@ -254,7 +271,7 @@ class ChartGenerationResult(BaseModel):
     fig1: go.Figure
     fig2: go.Figure
     code: str
-    validation: ChartIsValidMessage
+    validation: ValidationMessage
     metadata: ChartGenerationMetadata
     attempts: int
     validation_errors: List[ChartValidationError]
@@ -276,8 +293,8 @@ class RunChartsRequest(BaseModel):
 
     data: List[Dict[Union[str, int], Any]]  # Allow both string and integer keys
     question: str
-    error_message: Optional[str] = None
-    failed_code: Optional[str] = None
+    error_message: str | None = None
+    failed_code: str | None = None
 
     @field_validator("data")
     @classmethod
@@ -439,18 +456,6 @@ class ChatRequest(BaseModel):
         return v
 
 
-@dataclass
-class AnalysisResult:
-    """Container for analysis results"""
-
-    data: pd.DataFrame
-    stdout: str
-    stderr: str
-    code: str
-    execution_time: float
-    memory_usage: Dict[str, float]
-
-
 class CodeValidator:
     """Validates Python code for safety and correctness"""
 
@@ -482,23 +487,12 @@ class CodeValidator:
             return False, f"Validation error: {str(e)}"
 
 
-@dataclass
-class GeneratedCode:
-    """Container for generated analysis code"""
-
-    code: str
-    description: str
-    estimated_complexity: str
-    validation_result: Tuple[bool, str]
-
-
-@dataclass
-class CodeGenerationResult:
+class CodeGenerationResult(BaseModel):
     """Container for code generation results"""
 
     code: str
     description: str
-    validation: Dict[str, Any]
+    validation: ValidationMessage
     metadata: Dict[str, Any]
     attempts: int
     validation_errors: List[str]
@@ -546,8 +540,8 @@ class SnowflakeAnalysisRequest(BaseModel):
     data: Dict[str, List[Dict[str, Any]]]  # Sample data from each table
     dictionary: Dict[str, Dict[str, Any]]  # Pre-generated data dictionary
     question: str
-    error_message: Optional[str] = None
-    failed_code: Optional[str] = None
+    error_message: str | None = None
+    failed_code: str | None = None
     warehouse: str
     database: str
     db_schema: str
@@ -591,20 +585,20 @@ class SnowflakeAnalysisMetadata(BaseModel):
     attempts: int
     execution_time: float
     memory_usage: MemoryUsage
-    error_history: list[SnowflakeAnalysisError]
-    query_metadata: Optional[SnowflakeExecutionMetadata] = None
-    tables_analyzed: Optional[int] = None
-    total_sample_rows: Optional[int] = None
+    error_history: list[AnalysisError]
+    query_metadata: SnowflakeExecutionMetadata | None = None
+    tables_analyzed: int | None = None
+    total_sample_rows: int | None = None
 
 
 class SnowflakeAnalysisResult(BaseModel):
     status: str
     metadata: SnowflakeAnalysisMetadata
-    data: Optional[List[Dict[str, Any]]] = None
-    code: Optional[str] = None
-    last_generated_code: Optional[str] = None
-    description: Optional[str] = None
-    suggestions: Optional[str] = None
+    data: List[Dict[str, Any]] | None = None
+    code: str | None = None
+    last_generated_code: str | None = None
+    description: str | None = None
+    suggestions: str | None = None
 
 
 class SnowflakeExecutionMetadata(BaseModel):
@@ -616,23 +610,25 @@ class SnowflakeExecutionMetadata(BaseModel):
     db_schema: str
 
 
-class SnowflakeAnalysisError(BaseModel):
+class AnalysisError(BaseModel):
     attempt: int
     error: str
     error_type: str
     timestamp: str
     memory_usage: MemoryUsage
-    code: Optional[str] = None
+    stdout: str | None = None
+    stderr: str | None = None
+    code: str | None = None
 
 
 class ChartValidationError(BaseModel):
     attempt: int
     error: str
     timestamp: str
-    code: Optional[str] = None
+    code: str | None = None
 
 
-class ChartIsValidMessage(BaseModel):
+class ValidationMessage(BaseModel):
     is_valid: bool
     message: str
 
@@ -642,9 +638,9 @@ class ChartExecutionError(BaseModel):
     error_type: str
     error_message: str
     timestamp: str
-    stdout: Optional[str] = None
-    stderr: Optional[str] = None
-    code: Optional[str] = None
+    stdout: str | None = None
+    stderr: str | None = None
+    code: str | None = None
 
 
 class ChartCodeHistory(BaseModel):
@@ -671,7 +667,7 @@ class RunChartsResultMetadata(BaseModel):
     stdout: str
     stderr: str
     dataframe_metadata: Dict[str, Any]
-    validation: ChartIsValidMessage
+    validation: ValidationMessage
     attempts: int
     validation_errors: list[ChartValidationError]
     execution_errors: list[ChartExecutionError]

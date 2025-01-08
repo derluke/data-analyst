@@ -47,7 +47,6 @@ def choose_llm_type(chat_agent_deployment_settings):
         default_model_name = credentials.azure_deployment
         print("running on azure model")
     except ValueError:
-        # print(e)
         print("azure failed, running on openai model")
         from openai import OpenAI
 

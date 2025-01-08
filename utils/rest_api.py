@@ -22,17 +22,18 @@ from fastapi.openapi.utils import get_openapi
 sys.path.append("..")
 
 from utils.api import (
-    chat,
     cleanse_dataframes,
     get_business_analysis,
     get_catalog_datasets,
     get_dictionary,
+    process_chat,
     run_analysis,
     run_charts,
     run_snowflake_analysis,
     suggest_questions,
 )
 from utils.schema import (
+    AiCatalogDataset,
     BusinessAnalysisRequest,
     BusinessAnalysisResult,
     ChatRequest,
@@ -42,6 +43,7 @@ from utils.schema import (
     DictionaryRequest,
     QuestionSuggestions,
     RunAnalysisRequest,
+    RunAnalysisResult,
     RunChartsRequest,
     RunChartsResult,
     SnowflakeAnalysisRequest,
@@ -106,18 +108,12 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 
-@app.get(
-    "/get_catalog_datasets",
-    response_model=CleanseResult,
-)
-async def get_catalog_datasets_endpoint(limit: int = 100) -> CleanseResult:
+@app.get("/get_catalog_datasets")
+async def get_catalog_datasets_endpoint(limit: int = 100) -> list[AiCatalogDataset]:
     return get_catalog_datasets(limit)
 
 
-@app.post(
-    "/cleanse_dataframes",
-    response_model=CleanseResult,
-)
+@app.post("/cleanse_dataframes")
 async def cleanse_dataframes_endpoint(
     request: CleanseRequest,
     progress_callback: Optional[Callable[[str, int], None]] = None,
@@ -125,20 +121,14 @@ async def cleanse_dataframes_endpoint(
     return cleanse_dataframes(request, progress_callback=progress_callback)
 
 
-@app.post(
-    "/get_dictionary",
-    response_model=DataDictionariesAndMetadata,
-)
+@app.post("/get_dictionary")
 async def get_dictionary_endpoint(
     request: DictionaryRequest,
 ) -> DataDictionariesAndMetadata:
     return get_dictionary(request)
 
 
-@app.post(
-    "/suggest_questions",
-    response_model=QuestionSuggestions,
-)
+@app.post("/suggest_questions")
 async def suggest_questions_endpoint(request: DictionaryRequest) -> QuestionSuggestions:
     return suggest_questions(request)
 
@@ -148,26 +138,20 @@ async def run_charts_endpoint(request: RunChartsRequest) -> RunChartsResult:
     return run_charts(request)
 
 
-@app.post(
-    "/get_business_analysis",
-    response_model=BusinessAnalysisResult,
-)
+@app.post("/get_business_analysis")
 async def get_business_analysis_endpoint(
     request: BusinessAnalysisRequest,
 ) -> BusinessAnalysisResult:
     return get_business_analysis(request)
 
 
-@app.post(
-    "/chat",
-    response_model=Dict[str, Any],
-)
-async def chat_endpoint(request: ChatRequest) -> Dict[str, Any]:
-    return chat(request)
+@app.post("/chat")
+async def process_chat_endpoint(request: ChatRequest) -> Dict[str, Any]:
+    return process_chat(request)
 
 
 @app.post("/run_analysis")
-async def run_analysis_endpoint(request: RunAnalysisRequest) -> Dict[str, Any]:
+async def run_analysis_endpoint(request: RunAnalysisRequest) -> RunAnalysisResult:
     return run_analysis(request)
 
 

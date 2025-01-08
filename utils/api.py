@@ -27,7 +27,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 import datarobot as dr
 import numpy as np
@@ -49,6 +49,7 @@ from utils.errors import EmptyDataError
 from utils.resources import ChatAgentDeployment
 from utils.schema import (
     AiCatalogDataset,
+    AnalysisError,
     BusinessAnalysisMetadata,
     BusinessAnalysisRequest,
     BusinessAnalysisResult,
@@ -56,7 +57,6 @@ from utils.schema import (
     ChartExecutionError,
     ChartGenerationMetadata,
     ChartGenerationResult,
-    ChartIsValidMessage,
     ChartPerformance,
     ChartValidationError,
     ChatRequest,
@@ -78,15 +78,17 @@ from utils.schema import (
     QuestionSuggestions,
     QuestionValidationResult,
     RunAnalysisRequest,
+    RunAnalysisResult,
+    RunAnanlysisResultMetadata,
     RunChartsRequest,
     RunChartsResult,
     RunChartsResultMetadata,
     SnowflakeAnalaysisCode,
-    SnowflakeAnalysisError,
     SnowflakeAnalysisMetadata,
     SnowflakeAnalysisRequest,
     SnowflakeAnalysisResult,
     SnowflakeExecutionMetadata,
+    ValidationMessage,
 )
 
 logger = logging.getLogger("DataAnalystFrontend")
@@ -114,9 +116,8 @@ DICTIONARY_BATCH_SIZE = 10
 
 
 # Cache key generator for DataFrames
-def generate_df_hash(df: pd.DataFrame) -> str:
+def _generate_df_hash(df: pd.DataFrame) -> str:
     """Generate a hash key for DataFrame caching based on content."""
-    # Get sample of data and column info for hash
     sample = df.head(100).to_json()
     cols = ",".join(df.columns)
     dtypes = ",".join(df.dtypes.astype(str))
@@ -136,11 +137,10 @@ def get_catalog_datasets(limit: int = 100) -> List[AiCatalogDataset]:
         Datasets to retrieve. Max value: 100
     """
 
-    client = dr.Client()
     url = f"datasets?limit={limit}"
 
     # Get all datasets and manually limit the results
-    datasets = client.get(url).json()["data"]
+    datasets = dr.client.get_client().get(url).json()["data"]
 
     return [
         AiCatalogDataset(
@@ -159,7 +159,36 @@ def get_catalog_datasets(limit: int = 100) -> List[AiCatalogDataset]:
     ]
 
 
-def process_column_batch(
+def _chat_structured(
+    messages: list[dict[str, str]], temperature: float = 0, small_llm: bool = True
+) -> dict[str, Any]:
+    """Chat with llm and return response"""
+    if MODEL_MODE == "openai":
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini" if small_llm else "gpt-4o",
+            temperature=temperature,
+            messages=messages,
+            response_format={"type": "json_object"},
+            stream=False,
+        )
+        response = json.loads(completion.choices[0].message.content)
+    elif MODEL_MODE in ["gemini", "anthropic"]:
+        completion = client.chat.completions.create(
+            model="gemini-1.5-pro",
+            messages=messages,  # or appropriate model name
+        )
+        # Extract JSON from response by looking for ```json blocks
+        content = completion.choices[0].message.content
+        json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
+        if json_match:
+            response = json.loads(json_match.group(1))
+        else:
+            raise ValueError("No JSON block found in model response")
+
+    return response
+
+
+def _process_column_batch(
     columns: List[str], df: pd.DataFrame, batch_size: int = 5
 ) -> Dict[str, str]:
     """Process a batch of columns to get their descriptions"""
@@ -219,28 +248,7 @@ def process_column_batch(
             {"role": "user", "content": f"Categorical Values: {json.dumps(categories)}"}
         )
 
-    # Get descriptions from OpenAI
-    if MODEL_MODE == "openai":
-        completion = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages,
-            response_format={"type": "json_object"},
-            stream=False,
-        )
-        response = json.loads(completion.choices[0].message.content)
-    elif MODEL_MODE in ["gemini", "anthropic"]:
-        completion = client.chat.completions.create(
-            model="gemini-1.5-pro",
-            messages=messages,  # or appropriate model name
-        )
-        # Extract JSON from response by looking for ```json blocks
-        content = completion.choices[0].message.content
-        json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
-        if json_match:
-            response = json.loads(json_match.group(1))
-        else:
-            raise ValueError("No JSON block found in model response")
-
+    response = _chat_structured(messages, small_llm=True)
     try:
         # Validate response using DictionaryResult
         validated = DictionaryResult(
@@ -261,7 +269,7 @@ def process_column_batch(
         return {col: "No valid description available" for col in columns}
 
 
-def process_dataset(dataset: DatasetInput) -> DataDictionary:
+def _process_dataset(dataset: DatasetInput) -> DataDictionary:
     """Process a single dataset with parallel column batch processing"""
     try:
         batch_start = datetime.now()
@@ -296,7 +304,7 @@ def process_dataset(dataset: DatasetInput) -> DataDictionary:
         with ThreadPoolExecutor() as executor:
             batch_futures = {
                 executor.submit(
-                    process_column_batch, batch, df, DICTIONARY_BATCH_SIZE
+                    _process_column_batch, batch, df, DICTIONARY_BATCH_SIZE
                 ): batch
                 for batch in column_batches
             }
@@ -341,7 +349,7 @@ def process_dataset(dataset: DatasetInput) -> DataDictionary:
 
 
 # Add memory management helper
-def get_memory_usage() -> MemoryUsage:
+def _get_memory_usage() -> MemoryUsage:
     """Get current memory usage statistics"""
     process = psutil.Process()
     memory_info = process.memory_info()
@@ -352,7 +360,7 @@ def get_memory_usage() -> MemoryUsage:
     )
 
 
-def validate_question_feasibility(
+def _validate_question_feasibility(
     question: str, available_columns: List[str]
 ) -> QuestionValidationResult:
     """Validate if a question can be answered with available data
@@ -388,7 +396,7 @@ def validate_question_feasibility(
     )
 
 
-async def generate_question_suggestions(
+async def _generate_question_suggestions(
     dictionary: pd.DataFrame, max_columns: int = 40
 ) -> QuestionSuggestions:
     """Generate and validate suggested analysis questions
@@ -434,27 +442,7 @@ async def generate_question_suggestions(
         {"role": "user", "content": f"Data Dictionary:\n{json.dumps(dict_data)}"},
     ]
 
-    # Get suggestions from OpenAI
-    if MODEL_MODE == "openai":
-        completion = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages,
-            response_format={"type": "json_object"},
-            stream=False,
-        )
-        response = json.loads(completion.choices[0].message.content)
-    elif MODEL_MODE in ["gemini", "anthropic"]:
-        completion = client.chat.completions.create(
-            model="gemini-1.5-pro",
-            messages=messages,  # or appropriate model name
-        )
-        # Extract JSON from response by looking for ```json blocks
-        content = completion.choices[0].message.content
-        json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
-        if json_match:
-            response = json.loads(json_match.group(1))
-        else:
-            raise ValueError("No JSON block found in model response")
+    response = _chat_structured(messages, small_llm=True)
 
     # Validate each suggested question
     available_columns = dictionary["column"].tolist()
@@ -463,7 +451,7 @@ async def generate_question_suggestions(
     for key in ["question1", "question2", "question3"]:
         if question := response.get(key):
             validated_questions.append(
-                validate_question_feasibility(question, available_columns)
+                _validate_question_feasibility(question, available_columns)
             )
 
     # Prepare metadata
@@ -478,7 +466,7 @@ async def generate_question_suggestions(
     return QuestionSuggestions(questions=validated_questions, metadata=metadata)
 
 
-def validate_chart_code(code: str) -> Tuple[bool, str]:
+def _validate_chart_code(code: str) -> Tuple[bool, str]:
     """Validate chart generation code for safety and correctness"""
     try:
         tree = ast.parse(code)
@@ -513,7 +501,7 @@ def validate_chart_code(code: str) -> Tuple[bool, str]:
         return False, f"Validation error: {str(e)}"
 
 
-def figure_to_base64(fig: go.Figure) -> Optional[str]:
+def _figure_to_base64(fig: go.Figure) -> str | None:
     """Convert Plotly figure to base64 encoded PNG"""
     try:
         if not isinstance(fig, go.Figure):
@@ -525,12 +513,12 @@ def figure_to_base64(fig: go.Figure) -> Optional[str]:
         return None
 
 
-async def create_charts(
+async def _create_charts(
     df: pd.DataFrame,
     question: str,
     metadata: Dict[str, Any],
-    error_message: Optional[str] = None,
-    failed_code: Optional[str] = None,
+    error_message: str | None = None,
+    failed_code: str | None = None,
     max_attempts: int = 3,
 ) -> ChartGenerationResult:
     """Generate and validate chart code with retry logic"""
@@ -563,28 +551,7 @@ async def create_charts(
                     ]
                 )
 
-            # Get response based on model mode
-            if MODEL_MODE == "openai":
-                completion = client.chat.completions.create(
-                    model="gpt-4o",
-                    temperature=0,
-                    messages=messages,
-                    response_format={"type": "json_object"},
-                    stream=False,
-                )
-                response = json.loads(completion.choices[0].message.content)
-            elif MODEL_MODE in ["gemini", "anthropic"]:
-                completion = client.chat.completions.create(
-                    model="gemini-1.5-pro",  # or appropriate model name
-                    messages=messages,
-                )
-                # Extract JSON from response by looking for ```json blocks
-                content = completion.choices[0].message.content
-                json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
-                if json_match:
-                    response = json.loads(json_match.group(1))
-                else:
-                    raise ValueError("No JSON block found in model response")
+            response = _chat_structured(messages, small_llm=True)
 
             code = response.get("code")
 
@@ -598,7 +565,7 @@ async def create_charts(
             )
 
             # Validate the generated code
-            is_valid, validation_message = validate_chart_code(code)
+            is_valid, validation_message = _validate_chart_code(code)
 
             if not is_valid:
                 validation_errors.append(
@@ -632,7 +599,7 @@ async def create_charts(
                     fig1=fig1,
                     fig2=fig2,
                     code=code,
-                    validation=ChartIsValidMessage(
+                    validation=ValidationMessage(
                         is_valid=True, message=validation_message
                     ),
                     metadata=ChartGenerationMetadata(
@@ -685,7 +652,7 @@ async def create_charts(
     raise ValueError(f"Failed to generate valid charts after {max_attempts} attempts")
 
 
-async def process_chat(messages: List[Dict[str, str]]) -> Dict[str, str]:
+async def process_chat(chat_request: ChatRequest) -> Dict[str, Any]:
     """Process chat messages and return complete response
 
     Args:
@@ -698,44 +665,28 @@ async def process_chat(messages: List[Dict[str, str]]) -> Dict[str, str]:
         Exception: If OpenAI API call fails
     """
     # Convert messages to string format for prompt
-    messages_str = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages])
+    messages_str = "\n".join(
+        [f"{msg['role']}: {msg['content']}" for msg in chat_request.messages]
+    )
 
     prompt_messages = [
         {"role": "system", "content": prompts.SYSTEM_PROMPT_CHAT},
         {"role": "user", "content": f"Message History:\n{messages_str}"},
     ]
-
-    # Get response based on model mode
-    if MODEL_MODE == "openai":
-        completion = client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0,
-            messages=prompt_messages,
-            response_format={"type": "json_object"},
-        )
-        response = json.loads(completion.choices[0].message.content)
-    elif MODEL_MODE in ["gemini", "anthropic"]:
-        completion = client.chat.completions.create(
-            model="gemini-1.5-pro",  # or appropriate model name
-            messages=prompt_messages,
-        )
-        # Extract JSON from response by looking for ```json blocks
-        content = completion.choices[0].message.content
-        json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
-        if json_match:
-            response = json.loads(json_match.group(1))
-        else:
-            raise ValueError("No JSON block found in model response")
+    response = _chat_structured(prompt_messages, temperature=0, small_llm=True)
 
     return response
 
 
-async def generate_python_analysis_code(request: RunAnalysisRequest) -> Dict[str, str]:
+async def _generate_python_analysis_code(
+    request: RunAnalysisRequest, validation_error: dict[str, str] = {}
+) -> Dict[str, str]:
     """
     Generate Python analysis code based on JSON data and question.
 
     Parameters:
     - request: RunAnalysisRequest containing data and question
+    - validation_errors: Past validation errors to include in prompt
 
     Returns:
     - Dictionary containing generated code and description
@@ -789,13 +740,13 @@ async def generate_python_analysis_code(request: RunAnalysisRequest) -> Dict[str
     ]
 
     # Add error context if available
-    if request.error_message and request.failed_code:
+    if validation_error:
         messages.extend(
             [
                 {"role": "user", "content": "Previous attempt failed with error:"},
-                {"role": "user", "content": request.error_message},
+                {"role": "user", "content": validation_error["error_message"]},
                 {"role": "user", "content": "Failed code:"},
-                {"role": "user", "content": request.failed_code},
+                {"role": "user", "content": validation_error["failed_code"]},
                 {
                     "role": "user",
                     "content": "Please generate new code that avoids this error.",
@@ -803,28 +754,7 @@ async def generate_python_analysis_code(request: RunAnalysisRequest) -> Dict[str
             ]
         )
 
-    # Get response from OpenAI
-    if MODEL_MODE == "openai":
-        completion = client.chat.completions.create(
-            model="gpt-4o",
-            temperature=0.1,
-            messages=messages,
-            response_format={"type": "json_object"},
-            stream=False,
-        )
-        response = json.loads(completion.choices[0].message.content)
-    elif MODEL_MODE in ["gemini", "anthropic"]:
-        completion = client.chat.completions.create(
-            model="gemini-1.5-pro",
-            messages=messages,  # or appropriate model name
-        )
-        # Extract JSON from response by looking for ```json blocks
-        content = completion.choices[0].message.content
-        json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
-        if json_match:
-            response = json.loads(json_match.group(1))
-        else:
-            raise ValueError("No JSON block found in model response")
+    response = _chat_structured(messages, temperature=0.1, small_llm=False)
 
     return {
         "code": response.get("code", ""),
@@ -832,7 +762,7 @@ async def generate_python_analysis_code(request: RunAnalysisRequest) -> Dict[str
     }
 
 
-async def generate_analysis_code(
+async def _generate_analysis_code(
     request: RunAnalysisRequest, max_attempts: int = 10
 ) -> CodeGenerationResult:
     """Generate and validate analysis code with retry logic
@@ -846,13 +776,16 @@ async def generate_analysis_code(
     """
     attempts = 0
     validation_errors = []
+    validation_error: dict[str, str] = {}
 
     while attempts < max_attempts:
         attempts += 1
 
         try:
             # Get code from OpenAI
-            code_response = await generate_python_analysis_code(request)
+            code_response = await _generate_python_analysis_code(
+                request, validation_error
+            )
 
             # Validate the generated code
             is_valid, validation_message = CodeValidator.validate_imports(
@@ -863,7 +796,9 @@ async def generate_analysis_code(
                 return CodeGenerationResult(
                     code=code_response["code"],
                     description=code_response["description"],
-                    validation={"is_valid": True, "message": validation_message},
+                    validation=ValidationMessage(
+                        is_valid=True, message=validation_message
+                    ),
                     metadata={
                         "timestamp": datetime.now().isoformat(),
                         "question": request.question,
@@ -876,6 +811,8 @@ async def generate_analysis_code(
 
             # If validation failed, add error to history and retry
             validation_errors.append(validation_message)
+            validation_error["error_message"] = validation_message
+            validation_error["failed_code"] = code_response["code"]
 
         except Exception as e:
             validation_errors.append(str(e))
@@ -892,7 +829,7 @@ async def generate_analysis_code(
     )
 
 
-def create_snowflake_connection(
+def _create_snowflake_connection(
     warehouse: str, database: str, schema: str
 ) -> snowflake.connector.SnowflakeConnection:
     """Create a connection to Snowflake using environment variables"""
@@ -912,7 +849,7 @@ def create_snowflake_connection(
         )
 
 
-def execute_snowflake_query(
+def _execute_snowflake_query(
     conn: snowflake.connector.SnowflakeConnection, query: str, timeout: int = 300
 ) -> tuple[(list[tuple] | list[dict]), SnowflakeExecutionMetadata]:
     """Execute a Snowflake query with timeout and metadata capture
@@ -970,7 +907,7 @@ def execute_snowflake_query(
 
 async def cleanse_dataframes(
     request: CleanseRequest,
-    progress_callback: Optional[Callable[[str, int], None]] = None,
+    progress_callback: Callable[[str, int], None] | None = None,
 ) -> CleanseResult:
     """
     Clean and standardize multiple pandas DataFrames.
@@ -1188,7 +1125,7 @@ async def get_dictionary(request: DictionaryRequest) -> DataDictionariesAndMetad
         with ThreadPoolExecutor() as executor:
             # Map datasets to futures
             dataset_futures = {
-                executor.submit(process_dataset, dataset): dataset.name
+                executor.submit(_process_dataset, dataset): dataset.name
                 for dataset in request.datasets
             }
 
@@ -1266,7 +1203,7 @@ async def suggest_questions(request: DictionaryRequest) -> QuestionSuggestions:
             ]
         )
 
-        return await generate_question_suggestions(dict_df)
+        return await _generate_question_suggestions(dict_df)
 
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -1299,7 +1236,7 @@ async def run_charts(request: RunChartsRequest) -> RunChartsResult:
         while attempt < max_attempts:
             try:
                 # Generate charts with retry logic
-                result = await create_charts(
+                result = await _create_charts(
                     df=df.head(25),
                     question=request.question,
                     metadata=dataframe_metadata_clone,
@@ -1307,8 +1244,8 @@ async def run_charts(request: RunChartsRequest) -> RunChartsResult:
                     failed_code=last_failed_code,
                 )
 
-                fig1_base64 = figure_to_base64(result.fig1) if result.fig1 else None
-                fig2_base64 = figure_to_base64(result.fig2) if result.fig2 else None
+                fig1_base64 = _figure_to_base64(result.fig1) if result.fig1 else None
+                fig2_base64 = _figure_to_base64(result.fig2) if result.fig2 else None
 
                 return RunChartsResult(
                     fig1=result.fig1,
@@ -1328,7 +1265,7 @@ async def run_charts(request: RunChartsRequest) -> RunChartsResult:
                         execution_errors=result.execution_errors,
                         code_history=result.code_history,
                         performance=ChartPerformance(
-                            memory_usage=get_memory_usage(),
+                            memory_usage=_get_memory_usage(),
                             total_time=(
                                 datetime.fromisoformat(result.metadata.timestamp)
                                 - datetime.fromisoformat(
@@ -1401,28 +1338,7 @@ async def get_business_analysis(
             },
         ]
 
-        # Get response based on model mode
-        if MODEL_MODE == "openai":
-            completion = client.chat.completions.create(
-                model="gpt-4o",
-                temperature=0.1,
-                messages=messages,
-                response_format={"type": "json_object"},
-                stream=False,
-            )
-            response = json.loads(completion.choices[0].message.content)
-        elif MODEL_MODE in ["gemini", "anthropic"]:
-            completion = client.chat.completions.create(
-                model="gemini-1.5-pro",
-                messages=messages,  # or appropriate model name
-            )
-            # Extract JSON from response by looking for ```json blocks
-            content = completion.choices[0].message.content
-            json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
-            if json_match:
-                response = json.loads(json_match.group(1))
-            else:
-                raise ValueError("No JSON block found in model response")
+        response = _chat_structured(messages, temperature=0.1, small_llm=False)
 
         # Ensure all response fields are present
         metadata = BusinessAnalysisMetadata(
@@ -1443,35 +1359,15 @@ async def get_business_analysis(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def chat(request: ChatRequest) -> Dict[str, Any]:
+async def run_analysis(request: RunAnalysisRequest) -> RunAnalysisResult:
     """
-    Process chat history and return enhanced message.
+    Execute analysis workflow on datasets.
 
-    Parameters:
-    - request: ChatRequest containing chat messages
-
-    Returns:
-    - Dictionary containing enhanced message
-
-    Raises:
-    - HTTPException: If chat processing fails
+    Contains integration and retry logic
     """
-    try:
-        response = await process_chat(request.messages)
-        return response
-
-    except Exception as e:
-        logger.error(f"Error processing chat: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-async def run_analysis(request: RunAnalysisRequest) -> Dict[str, Any]:
-    """
-    Execute complete data analysis workflow with integrated generation and execution retry logic.
-    """
-    max_attempts = 5  # Single attempt counter for the generate-execute cycle
+    max_attempts = 3  # Single attempt counter for the generate-execute cycle
     attempts = 0
-    error_history = []
+    error_history: list[AnalysisError] = []
 
     try:
         # Input validation
@@ -1479,7 +1375,7 @@ async def run_analysis(request: RunAnalysisRequest) -> Dict[str, Any]:
             raise HTTPException(status_code=422, detail="Input data cannot be empty")
 
         # Convert JSON to DataFrames dictionary
-        dataframes = {}
+        dataframes: dict[str, pd.DataFrame] = {}
         for dataset_name, dataset_records in request.data.items():
             if dataset_records:
                 df = pd.DataFrame(dataset_records)
@@ -1493,22 +1389,24 @@ async def run_analysis(request: RunAnalysisRequest) -> Dict[str, Any]:
             try:
                 # Update request with error context if available
                 if error_history:
-                    request.error_message = error_history[-1]["error"]
-                    request.failed_code = error_history[-1]["code"]
+                    request.error_message = error_history[-1].error
+                    request.failed_code = error_history[-1].code
 
                 # Generate code
-                code_result = await generate_analysis_code(request)
+                code_result = await _generate_analysis_code(request, max_attempts=4)
 
                 # Validate the generated code
-                if not code_result.validation["is_valid"]:
-                    error_info = {
-                        "attempt": attempts,
-                        "error": code_result.validation["message"],
-                        "code": code_result.code,
-                        "timestamp": datetime.now().isoformat(),
-                        "type": "validation_error",
-                    }
-                    error_history.append(error_info)
+                if not code_result.validation.is_valid:
+                    error_history.append(
+                        AnalysisError(
+                            attempt=attempts,
+                            error=code_result.validation.message,
+                            error_type="validation_error",
+                            code=code_result.code,
+                            timestamp=datetime.now().isoformat(),
+                            memory_usage=_get_memory_usage(),
+                        )
+                    )
                     continue
 
                 # Create namespace for execution
@@ -1531,63 +1429,63 @@ async def run_analysis(request: RunAnalysisRequest) -> Dict[str, Any]:
 
                     if not isinstance(result, (pd.DataFrame, list, dict)):
                         result = pd.DataFrame(result)
+                    if isinstance(result, pd.DataFrame):
+                        result = result.to_dict("records")
 
                 # If we get here, execution was successful
-                return {
-                    "status": "success",
-                    "code": code_result.code,
-                    "data": (
-                        result.to_dict("records")
-                        if isinstance(result, pd.DataFrame)
-                        else result
-                    ),
-                    "metadata": {
-                        "execution_time": datetime.now().isoformat(),
-                        "attempts": attempts,
-                        "error_history": error_history,
-                        "execution_details": {
-                            "stdout": stdout.getvalue(),
-                            "stderr": stderr.getvalue(),
-                        },
-                        "datasets_analyzed": len(dataframes),
-                        "total_rows_analyzed": sum(
+                return RunAnalysisResult(
+                    status="success",
+                    code=code_result.code,
+                    data=result,
+                    metadata=RunAnanlysisResultMetadata(
+                        timestamp=datetime.now().isoformat(),
+                        attempts=attempts,
+                        error_history=error_history,
+                        stdout=stdout.getvalue(),
+                        stderr=stderr.getvalue(),
+                        datasets_analyzed=len(dataframes),
+                        total_rows_analyzed=sum(
                             len(df) for df in dataframes.values() if not df.empty
                         ),
-                        "total_columns_analyzed": sum(
+                        total_columns_analyzed=sum(
                             len(df.columns)
                             for df in dataframes.values()
                             if not df.empty
                         ),
-                    },
-                }
+                    ),
+                )
 
             except Exception as e:
-                # Classify and record the error
-                error_info = {
-                    "attempt": attempts,
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                    "code": code_result.code if "code_result" in locals() else None,
-                    "stdout": stdout.getvalue() if "stdout" in locals() else "",
-                    "stderr": stderr.getvalue() if "stderr" in locals() else "",
-                    "timestamp": datetime.now().isoformat(),
-                }
-                error_history.append(error_info)
+                error_history.append(
+                    AnalysisError(
+                        attempt=attempts,
+                        error=str(e),
+                        error_type=type(e).__name__,
+                        code=code_result.code if "code_result" in locals() else None,
+                        stdout=stdout.getvalue() if "stdout" in locals() else "",
+                        stderr=stderr.getvalue() if "stderr" in locals() else "",
+                        timestamp=datetime.now().isoformat(),
+                        memory_usage=_get_memory_usage(),
+                    )
+                )
 
                 if attempts >= max_attempts:
-                    return {
-                        "status": "failed",
-                        "error_history": error_history,
-                        "last_error": str(e),
-                        "suggestions": "Consider reformulating the question or checking data quality",
-                    }
+                    return RunAnalysisResult(
+                        status="failed",
+                        suggestions="Consider reformulating the question or checking data quality",
+                        metadata=RunAnanlysisResultMetadata(
+                            timestamp=datetime.now().isoformat(),
+                            attempts=attempts,
+                            error_history=error_history,
+                        ),
+                    )
 
     except Exception as e:
         logger.error(f"Error in run_analysis: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def get_snowflake_analysis_code(
+async def _get_snowflake_analysis_code(
     request: SnowflakeAnalysisRequest,
 ) -> SnowflakeAnalaysisCode:
     """
@@ -1662,28 +1560,7 @@ async def get_snowflake_analysis_code(
                 ]
             )
 
-        # Get response from OpenAI
-        if MODEL_MODE == "openai":
-            completion = client.chat.completions.create(
-                model="gpt-4o",
-                temperature=0.1,
-                messages=messages,
-                response_format={"type": "json_object"},
-                stream=False,
-            )
-            response = json.loads(completion.choices[0].message.content)
-        elif MODEL_MODE in ["gemini", "anthropic"]:
-            completion = client.chat.completions.create(
-                model="gemini-1.5-pro",
-                messages=messages,  # or appropriate model name
-            )
-            # Extract JSON from response by looking for ```json blocks
-            content = completion.choices[0].message.content
-            json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
-            if json_match:
-                response = json.loads(json_match.group(1))
-            else:
-                raise ValueError("No JSON block found in model response")
+        response = _chat_structured(messages, temperature=0.1, small_llm=False)
 
         return SnowflakeAnalaysisCode(
             code=response.get("code", ""),
@@ -1709,7 +1586,7 @@ async def run_snowflake_analysis(
         if not request.data:
             raise HTTPException(status_code=422, detail="Input data cannot be empty")
 
-        conn = create_snowflake_connection(
+        conn = _create_snowflake_connection(
             warehouse=request.warehouse,
             database=request.database,
             schema=request.db_schema,
@@ -1725,11 +1602,11 @@ async def run_snowflake_analysis(
                     request.failed_code = error_history[-1]["code"]
 
                 # Generate SQL code
-                code_result = await get_snowflake_analysis_code(request)
+                code_result = await _get_snowflake_analysis_code(request)
                 sql_code = code_result.code
                 last_generated_code = sql_code
 
-                results, query_metadata = execute_snowflake_query(
+                results, query_metadata = _execute_snowflake_query(
                     conn=conn, query=sql_code, timeout=timeout
                 )
 
@@ -1742,7 +1619,7 @@ async def run_snowflake_analysis(
                         attempts=attempts,
                         execution_time=time.time() - start_time,
                         error_history=error_history,
-                        memory_usage=get_memory_usage(),
+                        memory_usage=_get_memory_usage(),
                         query_metadata=query_metadata,
                         tables_analyzed=len(request.data),
                         total_sample_rows=sum(
@@ -1753,13 +1630,13 @@ async def run_snowflake_analysis(
 
             except Exception as e:
                 error_history.append(
-                    SnowflakeAnalysisError(
+                    AnalysisError(
                         attempt=attempts,
                         error=str(e),
                         error_type=type(e).__name__,
                         code=sql_code if "sql_code" in locals() else None,
                         timestamp=datetime.now().isoformat(),
-                        memory_usage=get_memory_usage(),
+                        memory_usage=_get_memory_usage(),
                     )
                 )
 
@@ -1772,7 +1649,7 @@ async def run_snowflake_analysis(
                             attempts=attempts,
                             error_history=error_history,
                             execution_time=time.time() - start_time,
-                            memory_usage=get_memory_usage(),
+                            memory_usage=_get_memory_usage(),
                         ),
                         suggestions="Consider reformulating the question or checking data access permissions",
                     )
@@ -1782,13 +1659,13 @@ async def run_snowflake_analysis(
 
     except Exception as e:
         error_history.append(
-            SnowflakeAnalysisError(
+            AnalysisError(
                 attempt=attempts,
                 error=str(e),
                 error_type=type(e).__name__,
                 code=sql_code if "sql_code" in locals() else None,
                 timestamp=datetime.now().isoformat(),
-                memory_usage=get_memory_usage(),
+                memory_usage=_get_memory_usage(),
             )
         )
         logger.error(f"Error in run_snowflake_analysis: {str(e)}")
@@ -1799,7 +1676,7 @@ async def run_snowflake_analysis(
                 attempts=attempts,
                 error_history=error_history,
                 execution_time=time.time() - start_time,
-                memory_usage=get_memory_usage(),
+                memory_usage=_get_memory_usage(),
             ),
         )
     finally:

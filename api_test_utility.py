@@ -30,10 +30,10 @@ from rich.table import Table
 
 # Import FastAPI functions directly
 from utils.rest_api import (
-    chat,
     cleanse_dataframes,
     get_business_analysis,
     get_dictionary,
+    process_chat,
     run_analysis,
     run_charts,
     suggest_questions,
@@ -471,7 +471,7 @@ async def main():
         chat_messages.append({"role": "user", "content": selected_question})
 
         chat_request = ChatRequest(messages=chat_messages)
-        chat_result = await chat(chat_request)
+        chat_result = await process_chat(chat_request)
 
         # Add new question to history
         result["question_history"].append(
@@ -534,6 +534,7 @@ async def main():
 
                     try:
                         analysis_result = await run_analysis(analysis_request)
+                        analysis_result = analysis_result.model_dump()
                         progress.update(task, completed=True)
 
                         # Display analysis execution details
@@ -566,19 +567,12 @@ async def main():
                                 f"Total Columns Analyzed: {metadata.get('total_columns_analyzed', 'N/A')}"
                             )
 
-                            if "execution_details" in metadata:
-                                if metadata["execution_details"]["stdout"]:
-                                    console.print("\n[bold]Analysis Output:[/bold]")
-                                    console.print(
-                                        metadata["execution_details"]["stdout"]
-                                    )
-                                if metadata["execution_details"]["stderr"]:
-                                    console.print(
-                                        "\n[bold red]Analysis Errors:[/bold red]"
-                                    )
-                                    console.print(
-                                        metadata["execution_details"]["stderr"]
-                                    )
+                            if "stdout" in metadata:
+                                console.print("\n[bold]Analysis Output:[/bold]")
+                                console.print(metadata["stdout"])
+                            if "stderr" in metadata:
+                                console.print("\n[bold red]Analysis Errors:[/bold red]")
+                                console.print(metadata["stderr"])
 
                         analysis_success = True  # Mark as successful
 
@@ -952,7 +946,7 @@ async def main():
                 chat_messages.append({"role": "user", "content": selected_question})
 
                 chat_request = ChatRequest(messages=chat_messages)
-                chat_result = await chat(chat_request)
+                chat_result = await process_chat(chat_request)
 
                 # Add new question to history
                 result["question_history"].append(
