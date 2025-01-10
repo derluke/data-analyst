@@ -12,253 +12,353 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import json
-from typing import List, Optional, Union
+import textwrap
+from typing import Any
 
 import pulumi
 import pulumi_datarobot as datarobot
+import pydantic
 
+from infra.common.globals import GlobalLLM, LLMConfig
 from utils.credentials import (
+    AWSBedrockCredentials,
     AzureOpenAICredentials,
-    GoogleLLMCredentials,
-    LLMCredentials,
-    OpenAICredentials,
+    DRCredentials,
+    GoogleCredentials,
     SnowflakeCredentials,
 )
 
-from ..common.schema import CredentialArgs
+from ..settings_main import project_name
+
+# from .aws_credential import AWSCredential
 
 
-class DRCredential(pulumi.ComponentResource):
-    """DR Credential for use with a custom deployment or app.
-
-    Abstracts creation of the appropriate credential type, structuring runtime parameters.
-    """
-
-    def __init__(
-        self,
-        resource_name: str,
-        credential: Union[LLMCredentials, SnowflakeCredentials],
-        credential_args: CredentialArgs,
-        opts: Optional[pulumi.ResourceOptions] = None,
-    ):
-        super().__init__("custom:datarobot:DRCredential", resource_name, None, opts)
-
-        self.credential_raw = credential
-        self.credential: Union[
-            datarobot.ApiTokenCredential,
-            datarobot.GoogleCloudCredential,
-            AzureOpenAICredentials,
-            SnowflakeCredentials,
-        ]
-        if isinstance(self.credential_raw, OpenAICredentials):
-            self.credential = datarobot.ApiTokenCredential(
-                **credential_args.model_dump(),
-                api_token=credential.api_key,  # type: ignore[union-attr]
-                opts=pulumi.ResourceOptions(parent=self),
-            )
-        elif isinstance(self.credential_raw, AzureOpenAICredentials):
-            self.credential = datarobot.ApiTokenCredential(
-                **credential_args.model_dump(),
-                api_token=credential.api_key,  # type: ignore[union-attr]
-                opts=pulumi.ResourceOptions(parent=self),
-            )
-        elif isinstance(self.credential_raw, GoogleLLMCredentials):
-            self.credential = datarobot.GoogleCloudCredential(
-                **credential_args.model_dump(),
-                gcp_key=json.dumps(credential.service_account_key),  # type: ignore[union-attr]
-                opts=pulumi.ResourceOptions(parent=self),
-            )
-        elif isinstance(self.credential_raw, SnowflakeCredentials):
-            self.credential = datarobot.BasicCredential(
-                **credential_args.model_dump(),
-                user=credential.user,
-                password=credential.password,
-                opts=pulumi.ResourceOptions(parent=self),
-            )
-        else:
-            raise ValueError("Unsupported credential type")
-
-        self.register_outputs(
+def get_credential_runtime_parameter_values(
+    credentials: DRCredentials,
+) -> list[datarobot.CustomModelRuntimeParameterValueArgs]:
+    if isinstance(credentials, AzureOpenAICredentials):
+        rtps: list[dict[str, Any]] = [
             {
-                "id": self.credential.id,
+                "key": "OPENAI_API_KEY",
+                "type": "credential",
+                "value": credentials.api_key,
+                "description": "API Token credential for Azure OpenAI",
+            },
+            {
+                "key": "OPENAI_API_BASE",
+                "type": "string",
+                "value": credentials.azure_endpoint,
+                "description": "Azure OpenAI endpoint URL",
+            },
+            {
+                "key": "OPENAI_API_DEPLOYMENT_ID",
+                "type": "string",
+                "value": credentials.azure_deployment,
+                "description": "Azure OpenAI deployment name",
+            },
+            {
+                "key": "OPENAI_API_VERSION",
+                "type": "string",
+                "value": credentials.api_version,
+                "description": "Azure OpenAI API version",
+            },
+        ]
+        credential_rtp_dicts = [rtp for rtp in rtps if rtp["value"] is not None]
+    elif isinstance(credentials, GoogleCredentials):
+        rtps = [
+            {
+                "key": "GOOGLE_SERVICE_ACCOUNT",
+                "type": "google_credential",
+                "value": {"gcpKey": json.dumps(credentials.service_account_key)},
             }
-        )
-
-    @property
-    def runtime_parameter_values(
-        self,
-    ) -> List[datarobot.CustomModelRuntimeParameterValueArgs]:
-        if isinstance(self.credential_raw, OpenAICredentials):
-            runtime_parameter_values = [
-                datarobot.CustomModelRuntimeParameterValueArgs(
-                    key=key,
-                    type=type_,
-                    value=value,  # type: ignore[arg-type]
-                )
-                for key, type_, value in [
-                    ("OPENAI_API_KEY", "credential", self.credential.id),
-                    (
-                        "OPENAI_API_DEPLOYMENT_ID",
-                        "string",
-                        self.credential_raw.deployment,
-                    ),
-                ]
-            ]
-        elif isinstance(self.credential_raw, AzureOpenAICredentials):
-            runtime_parameter_values = [
-                datarobot.CustomModelRuntimeParameterValueArgs(
-                    key=key,
-                    type=type_,
-                    value=value,  # type: ignore[arg-type]
-                )
-                for key, type_, value in [
-                    (
-                        "OPENAI_API_BASE",
-                        "string",
-                        self.credential_raw.azure_endpoint,
-                    ),
-                    ("OPENAI_API_KEY", "credential", self.credential.id),
-                    ("OPENAI_API_VERSION", "string", self.credential_raw.api_version),
-                    (
-                        "OPENAI_API_DEPLOYMENT_ID",
-                        "string",
-                        self.credential_raw.azure_deployment,
-                    ),
-                ]
-            ]
-        elif isinstance(self.credential_raw, GoogleLLMCredentials):
-            runtime_parameter_values = [
-                datarobot.CustomModelRuntimeParameterValueArgs(
-                    key="GOOGLE_SERVICE_ACCOUNT",
-                    type="credential",
-                    value=self.credential.id,
-                ),
-            ]
-            if self.credential_raw.region is not None:
-                runtime_parameter_values.append(
-                    datarobot.CustomModelRuntimeParameterValueArgs(
-                        key="GOOGLE_REGION",
-                        type="string",
-                        value=self.credential_raw.region,
-                    )
-                )
-
-        else:
-            raise NotImplementedError("Unsupported credential type")
-
-        runtime_parameter_values.append(
-            datarobot.CustomModelRuntimeParameterValueArgs(
-                key="ENABLE_AGENTIC_FLOW",
-                type="boolean",
-                value=True,
+        ]
+        if credentials.region:
+            rtps.append(
+                {"key": "GOOGLE_REGION", "type": "string", "value": credentials.region}
             )
-        )
-        return runtime_parameter_values
+        credential_rtp_dicts = [rtp for rtp in rtps if rtp["value"] is not None]
+    elif isinstance(credentials, AWSBedrockCredentials):
+        rtps = [
+            {
+                "key": "AWS_ACCOUNT",
+                "type": "aws_credential",
+                "value": {
+                    "awsAccessKeyId": credentials.aws_access_key_id,
+                    "awsSecretAccessKey": credentials.aws_secret_access_key,
+                    "awsSessionToken": credentials.aws_session_token,
+                },
+            }
+        ]
+        if credentials.region_name:
+            rtps.append(
+                {
+                    "key": "AWS_REGION",
+                    "type": "string",
+                    "value": credentials.region_name,
+                }
+            )
 
-    @property
-    def app_runtime_parameter_values(
-        self,
-    ) -> List[datarobot.ApplicationSourceRuntimeParameterValueArgs]:
-        if isinstance(self.credential_raw, OpenAICredentials):
-            runtime_parameter_values = [
-                datarobot.ApplicationSourceRuntimeParameterValueArgs(
-                    key=key,
-                    type=type_,
-                    value=value,  # type: ignore[arg-type]
+        credential_rtp_dicts = [rtp for rtp in rtps if rtp["value"] is not None]
+
+    elif isinstance(credentials, SnowflakeCredentials):
+        rtps = [
+            {
+                "key": "db_credential",
+                "type": "basic_credential",
+                "value": {
+                    "user": credentials.user,
+                    "password": credentials.password,
+                },
+            },
+            {
+                "key": "SNOWFLAKE_ACCOUNT",
+                "type": "string",
+                "value": credentials.account,
+            },
+            {
+                "key": "SNOWFLAKE_WAREHOUSE",
+                "type": "string",
+                "value": credentials.warehouse,
+            },
+            {
+                "key": "SNOWFLAKE_DATABASE",
+                "type": "string",
+                "value": credentials.database,
+            },
+            {
+                "key": "SNOWFLAKE_SCHEMA",
+                "type": "string",
+                "value": credentials.db_schema,
+            },
+            {
+                "key": "SNOWFLAKE_ROLE",
+                "type": "string",
+                "value": credentials.role,
+            },
+            {
+                "key": "SNOWFLAKE_KEY_PATH",
+                "type": "string",
+                "value": credentials.snowflake_key_path,
+            },
+        ]
+        credential_rtp_dicts = [rtp for rtp in rtps if rtp["value"] is not None]
+
+    credential_runtime_parameter_values: list[
+        datarobot.CustomModelRuntimeParameterValueArgs
+    ] = []
+
+    for rtp_dict in credential_rtp_dicts:
+        dr_credential: (
+            datarobot.ApiTokenCredential
+            | datarobot.GoogleCloudCredential
+            | datarobot.AwsCredential
+            | datarobot.BasicCredential
+        )
+        if "credential" in rtp_dict["type"]:
+            if rtp_dict["type"] == "credential":
+                dr_credential = datarobot.ApiTokenCredential(
+                    resource_name=f"Generative Analyst {rtp_dict['key']} Credential [{project_name}]",
+                    api_token=rtp_dict["value"],
                 )
-                for key, type_, value in [
-                    ("OPENAI_API_KEY", "credential", self.credential.id),
-                    (
-                        "OPENAI_API_DEPLOYMENT_ID",
-                        "string",
-                        self.credential_raw.deployment,
-                    ),
-                ]
-            ]
-        elif isinstance(self.credential_raw, AzureOpenAICredentials):
-            runtime_parameter_values = [
-                datarobot.ApplicationSourceRuntimeParameterValueArgs(
-                    key=key,
-                    type=type_,
-                    value=value,  # type: ignore[arg-type]
+            elif rtp_dict["type"] == "google_credential":
+                dr_credential = datarobot.GoogleCloudCredential(
+                    resource_name=f"Generative Analyst {rtp_dict['key']} Credential [{project_name}]",
+                    gcp_key=rtp_dict["value"].get("gcpKey"),
                 )
-                for key, type_, value in [
-                    ("OPENAI_API_KEY", "credential", self.credential.id),
-                    (
-                        "OPENAI_API_BASE",
-                        "string",
-                        json.dumps({"payload": self.credential_raw.azure_endpoint}),
-                    ),
-                    (
-                        "OPENAI_API_DEPLOYMENT_ID",
-                        "string",
-                        json.dumps({"payload": self.credential_raw.azure_deployment}),
-                    ),
-                    (
-                        "OPENAI_API_VERSION",
-                        "string",
-                        json.dumps({"payload": self.credential_raw.api_version}),
-                    ),
-                ]
-            ]
-        elif isinstance(self.credential_raw, GoogleLLMCredentials):
-            runtime_parameter_values = [
-                datarobot.ApplicationSourceRuntimeParameterValueArgs(
-                    key="GOOGLE_SERVICE_ACCOUNT",
-                    type="credential",
-                    value=self.credential.id,
+            elif rtp_dict["type"] == "aws_credential":
+                dr_credential = datarobot.AwsCredential(
+                    resource_name=f"Generative Analyst {rtp_dict['key']} Credential [{project_name}]",
+                    aws_access_key_id=rtp_dict["value"]["awsAccessKeyId"],
+                    aws_secret_access_key=rtp_dict["value"]["awsSecretAccessKey"],
+                    aws_session_token=rtp_dict["value"].get("awsSessionToken"),
+                )
+            elif rtp_dict["type"] == "basic_credential":
+                dr_credential = datarobot.BasicCredential(
+                    resource_name=f"Generative Analyst {rtp_dict['key']} Credential [{project_name}]",
+                    user=rtp_dict["value"]["user"],
+                    password=rtp_dict["value"]["password"],
+                )
+            rtp = datarobot.CustomModelRuntimeParameterValueArgs(
+                key=rtp_dict["key"],
+                type=(
+                    "credential"
+                    if "credential" in rtp_dict["type"]
+                    else rtp_dict["type"]
                 ),
-            ]
-            if self.credential_raw.region is not None:
-                runtime_parameter_values.append(
-                    datarobot.ApplicationSourceRuntimeParameterValueArgs(
-                        key="GOOGLE_REGION",
-                        type="string",
-                        value=json.dumps({"payload": self.credential_raw.region}),
-                    )
-                )
-        elif isinstance(self.credential_raw, SnowflakeCredentials):
-            runtime_parameter_values = [
-                datarobot.ApplicationSourceRuntimeParameterValueArgs(
-                    key=key,
-                    type=type_,
-                    value=value,  # type: ignore[arg-type]
-                )
-                for key, type_, value in [
-                    ("db_credential", "credential", self.credential.id),
-                    (
-                        "ACCOUNT",
-                        "string",
-                        json.dumps({"payload": self.credential_raw.account}),
-                    ),
-                    (
-                        "DATABASE",
-                        "string",
-                        json.dumps({"payload": self.credential_raw.database}),
-                    ),
-                    (
-                        "SCHEMA",
-                        "string",
-                        json.dumps({"payload": self.credential_raw.db_schema}),
-                    ),
-                    (
-                        "ROLE",
-                        "string",
-                        json.dumps({"payload": self.credential_raw.role}),
-                    ),
-                    (
-                        "WAREHOUSE",
-                        "string",
-                        json.dumps({"payload": self.credential_raw.warehouse}),
-                    ),
-                    (
-                        "SNOWFLAKE_KEY_PATH",
-                        "string",
-                        json.dumps({"payload": self.credential_raw.snowflake_key_path}),
-                    ),
-                ]
-            ]
+                value=dr_credential.id,
+            )
         else:
-            raise NotImplementedError("Unsupported credential type")
-        return runtime_parameter_values
+            rtp = datarobot.CustomModelRuntimeParameterValueArgs(
+                key=rtp_dict["key"],
+                type=rtp_dict["type"],
+                value=rtp_dict["value"],
+            )
+        credential_runtime_parameter_values.append(rtp)
+    return credential_runtime_parameter_values
+
+
+# Initialize the LLM client based on the selected LLM and its credential type
+def get_llm_credentials(llm: LLMConfig, test_credentials: bool = True) -> DRCredentials:
+    try:
+        credentials: DRCredentials
+        if llm.credential_type == "azure":
+            credentials = AzureOpenAICredentials()
+            if test_credentials:
+                try:
+                    import openai
+
+                    lookup = {
+                        GlobalLLM.AZURE_OPENAI_GPT_3_5_TURBO.name: "gpt-35-turbo",
+                        GlobalLLM.AZURE_OPENAI_GPT_3_5_TURBO_16K.name: "gpt-35-turbo-16k",
+                        GlobalLLM.AZURE_OPENAI_GPT_4.name: "gpt-4",
+                        GlobalLLM.AZURE_OPENAI_GPT_4_32K.name: "gpt-4-32k",
+                        GlobalLLM.AZURE_OPENAI_GPT_4_O.name: "gpt-4o",
+                        GlobalLLM.AZURE_OPENAI_GPT_4_TURBO.name: "gpt-4-turbo",
+                    }
+                    if (
+                        credentials.azure_deployment is not None
+                        and credentials.azure_deployment != lookup[llm.name]
+                    ):
+                        pulumi.warn(
+                            textwrap.dedent(
+                                f"""\
+                                Environment variable OPENAI_API_DEPLOYMENT_ID doesn't match the LLM Blueprint specified in settings_generative.py.
+
+                                LLM Blueprint specified in settings_generative.py: {llm.name}
+                                Expected:\tOPENAI_API_DEPLOYMENT_ID="{lookup[llm.name]}"
+                                Current:\tOPENAI_API_DEPLOYMENT_ID="{credentials.azure_deployment}"
+                                """
+                            )
+                        )
+                    openai_client = openai.AzureOpenAI(
+                        azure_endpoint=credentials.azure_endpoint,
+                        azure_deployment=credentials.azure_deployment
+                        or lookup[llm.name],
+                        api_key=credentials.api_key,
+                        api_version=credentials.api_version or "2023-05-15",
+                    )
+                    openai_client.chat.completions.create(
+                        model=llm.name,
+                        messages=[{"role": "user", "content": "Hello"}],
+                    )
+                except Exception as e:
+                    raise ValueError(
+                        textwrap.dedent(
+                            f"""\
+                            Unable to run a successful test completion against deployment '{credentials.azure_deployment or lookup[llm.name]}'
+                            on '{credentials.azure_endpoint}' with API version '{credentials.api_version or "2023-05-15"}'
+                            with provided Azure OpenAI credentials. Please validate your credentials.
+                            
+                            Please validate your credentials or check {__file__} for details.
+                            """
+                        )
+                    ) from e
+
+        elif llm.credential_type == "aws":
+            credentials = AWSBedrockCredentials()
+            if test_credentials:
+                lookup = {
+                    GlobalLLM.ANTHROPIC_CLAUDE_3_HAIKU.name: "anthropic.claude-3-haiku-20240307-v1:0",
+                    GlobalLLM.ANTHROPIC_CLAUDE_3_SONNET.name: "anthropic.claude-3-sonnet-20240229-v1:0",
+                    GlobalLLM.ANTHROPIC_CLAUDE_3_OPUS.name: "anthropic.claude-3-opus-20240229-v1:0",
+                    GlobalLLM.AMAZON_TITAN.name: "amazon.titan-text-express-v1",
+                    GlobalLLM.ANTHROPIC_CLAUDE_2.name: "anthropic.claude-v2:1",
+                }
+                if credentials.region_name is None:
+                    pulumi.warn("AWS region not set. Using default 'us-west-1'.")
+                try:
+                    import boto3
+
+                    if "anthropic" in lookup[llm.name]:
+                        request_body = {
+                            "anthropic_version": "bedrock-2023-05-31",
+                            "messages": [{"role": "user", "content": "Hello"}],
+                            "max_tokens": 100,
+                            "temperature": 0,
+                        }
+                    else:
+                        request_body = {"inputText": "Hello"}
+
+                    session = boto3.Session(
+                        aws_access_key_id=credentials.aws_access_key_id,
+                        aws_secret_access_key=credentials.aws_secret_access_key,
+                        aws_session_token=credentials.aws_session_token,
+                        region_name=credentials.region_name or "us-west-1",
+                    )
+                    bedrock_client = session.client("bedrock-runtime")
+                    bedrock_client.invoke_model(
+                        accept="application/json",
+                        contentType="application/json",
+                        modelId=lookup[llm.name],
+                        body=json.dumps(request_body),
+                    )
+
+                except Exception as e:
+                    raise ValueError(
+                        textwrap.dedent(
+                            f"""
+                            Unable to run a successful test completion against model '{lookup[llm.name]}' in region '{credentials.region_name or "us-west-1"}' 
+                            using request body '{request_body}' with provided AWS credentials.
+                            
+                            
+                            Please validate your credentials or check {__file__} for details.
+                            """
+                        )
+                    ) from e
+        elif llm.credential_type == "google":
+            credentials = GoogleCredentials()
+            if test_credentials:
+                lookup = {
+                    GlobalLLM.GOOGLE_1_5_PRO.name: "gemini-1.5-pro-001",
+                    GlobalLLM.GOOGLE_BISON.name: "chat-bison@002",
+                    GlobalLLM.GOOGLE_GEMINI_1_5_FLASH.name: "gemini-1.5-flash-001",
+                }
+                try:
+                    import openai
+                    from google.auth.transport.requests import Request
+                    from google.oauth2 import service_account
+
+                    google_credentials = (
+                        service_account.Credentials.from_service_account_info(  # type: ignore
+                            credentials.service_account_key,
+                            scopes=["https://www.googleapis.com/auth/cloud-platform"],
+                        )
+                    )
+
+                    auth_request = Request()  # type: ignore
+                    google_credentials.refresh(auth_request)
+
+                    # OpenAI Client
+                    base_url = f"https://{credentials.region}-aiplatform.googleapis.com/v1beta1/projects/{google_credentials.project_id}/locations/{credentials.region}/endpoints/openapi"
+
+                    google_client = openai.OpenAI(
+                        base_url=base_url,
+                        api_key=google_credentials.token,
+                    )
+                    google_client.chat.completions.create(
+                        model=f"google/{lookup[llm.name]}",
+                        messages=[{"role": "user", "content": "Why is the sky blue?"}],
+                    )
+
+                except Exception as e:
+                    raise ValueError(
+                        textwrap.dedent(
+                            f"""
+                            Unable to run a successful test completion against model '{lookup[llm.name]}' in region '{credentials.region}'
+                            using base url '{base_url}'
+                            with provided Google Cloud credentials.
+
+                            Please validate your credentials or check {__file__} for details.
+                            """
+                        )
+                    ) from e
+
+    except pydantic.ValidationError as exc:
+        msg = "Validation errors, please check that .env is correct. Remember to run `source set_env.sh` (or set_env.bat/Set-Env.ps1 on windows):\n\n"
+        for error in exc.errors():
+            msg += f"- Field '{error['loc'][0]}': {error['msg']}" + "\n"
+        raise TypeError("Could not Validate LLM Credentials" + "\n" + msg) from exc
+    return credentials

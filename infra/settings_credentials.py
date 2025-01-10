@@ -12,45 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from pydantic import BaseModel, ValidationError
 
 from utils.credentials import (
-    AzureOpenAICredentials,
-    GoogleLLMCredentials,
-    OpenAICredentials,
     SnowflakeCredentials,
 )
 
 from .common.schema import CredentialArgs
-from .settings_main import core, project_name
-
-
-def set_credential(credential_type: BaseModel) -> BaseModel:
-    try:
-        credential = credential_type()
-        credential.test()
-    except ValidationError as e:
-        raise ValueError(
-            "Unable to load credentials. "
-            "Verify you have setup your environment variables as described in README.md."
-        ) from e
-    return credential
-
-
-llm_credential_args = CredentialArgs(
-    resource_name=f"Data Analyst LLM Credential [{project_name}]",
-)
-
-if core.genai_deployment_provider == "azure":
-    llm_credential = set_credential(AzureOpenAICredentials)
-elif core.genai_deployment_provider == "google":
-    llm_credential = set_credential(GoogleLLMCredentials)
-elif core.genai_deployment_provider == "openai":
-    llm_credential = set_credential(OpenAICredentials)
-else:
-    raise NotImplementedError(
-        "Only Azure and Google LLM credentials are currently supported."
-    )
+from .settings_main import project_name
 
 db_credential = SnowflakeCredentials()
 db_credential_args = CredentialArgs(

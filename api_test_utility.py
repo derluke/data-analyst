@@ -33,7 +33,7 @@ from utils.rest_api import (
     cleanse_dataframes,
     get_business_analysis,
     get_dictionary,
-    process_chat,
+    rephrase_message,
     run_analysis,
     run_charts,
     suggest_questions,
@@ -471,7 +471,7 @@ async def main():
         chat_messages.append({"role": "user", "content": selected_question})
 
         chat_request = ChatRequest(messages=chat_messages)
-        chat_result = await process_chat(chat_request)
+        chat_result = await rephrase_message(chat_request)
 
         # Add new question to history
         result["question_history"].append(
@@ -946,7 +946,7 @@ async def main():
                 chat_messages.append({"role": "user", "content": selected_question})
 
                 chat_request = ChatRequest(messages=chat_messages)
-                chat_result = await process_chat(chat_request)
+                chat_result = await rephrase_message(chat_request)
 
                 # Add new question to history
                 result["question_history"].append(

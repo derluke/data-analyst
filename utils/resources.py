@@ -98,3 +98,14 @@ class ChatAgentDeployment(DynamicSettings):
 app_settings_env_name: str = "ANALYST_APP_SETTINGS"
 
 app_env_name: str = "DATAROBOT_APPLICATION_ID"
+
+llm_deployment_env_name: str = "LLM_DEPLOYMENT_ID"
+
+
+class LLMDeployment(DynamicSettings):
+    id: str = Field(
+        validation_alias=AliasChoices(
+            "MLOPS_RUNTIME_PARAM_" + llm_deployment_env_name,
+            llm_deployment_env_name,
+        )
+    )

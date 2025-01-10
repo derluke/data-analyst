@@ -144,6 +144,18 @@ class Stage(str, Enum):
     RESPONSE = "response"
 
 
+class ResourceBundleSize(str, Enum):
+    XXS = "cpu.nano"
+    XS = "cpu.micro"
+    S = "cpu.small"
+    M = "cpu.medium"
+    L = "cpu.large"
+    XL = "cpu.xlarge"
+    XXL = "cpu.2xlarge"
+    XXXL = "cpu.3xlarge"
+    XXXXL = "cpu.4xlarge"
+
+
 class CustomModelArgs(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     resource_name: str
@@ -163,6 +175,7 @@ class CustomModelArgs(BaseModel):
     negative_class_label: str | None = None
     positive_class_label: str | None = None
     folder_path: str | None = None
+    resource_bundle_id: str | None = None
 
 
 class RegisteredModelArgs(BaseModel):
@@ -236,10 +249,16 @@ class LLMSettings(BaseModel):
 
 
 class LLMBlueprintArgs(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
     resource_name: str
+    description: str | None = None
+    llm_id: str
+    llm_settings: datarobot.LlmBlueprintLlmSettingsArgs | None = None
     name: str | None = None
-    llm_settings: LLMSettings
-    llm_id: GlobalLLM
+    prompt_type: str | None = None
+    vector_database_settings: (
+        datarobot.LlmBlueprintVectorDatabaseSettingsArgs | None
+    ) = None
 
 
 class ChunkingParameters(BaseModel):
@@ -260,3 +279,13 @@ class DatasetArgs(BaseModel):
     resource_name: str
     name: str | None = None
     file_path: str
+
+
+class VectorDatabaseSettings(BaseModel):
+    max_documents_retrieved_per_prompt: Optional[int] = None
+    max_tokens: Optional[int] = None
+
+
+class QaApplicationArgs(BaseModel):
+    resource_name: str
+    name: str

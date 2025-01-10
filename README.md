@@ -74,8 +74,7 @@ and `pulumi` invocation see [here](#setup-for-advanced-users).
 TODO: Diagram here
 
 
-App templates contain three families of complementary logic. For Guarded RAG you can [opt-in](#make-changes) to fully 
-custom RAG logic and a fully custom frontend or utilize DR's off the shelf offerings:
+App templates contain three families of complementary logic:
 
 - **AI logic**: Necessary to service AI requests and produce predictions and completions.
   ```

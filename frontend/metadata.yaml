@@ -1,19 +1,19 @@
 name: runtime-params
 
 runtimeParameterDefinitions:
-- fieldName: CHAT_AGENT_DEPLOYMENT_ID
+- fieldName: LLM_DEPLOYMENT_ID
   type: deployment
 - fieldName: db_credential
   type: credential
-- fieldName: ACCOUNT
+- fieldName: SNOWFLAKE_ACCOUNT
   type: string
-- fieldName: WAREHOUSE
+- fieldName: SNOWFLAKE_WAREHOUSE
   type: string
-- fieldName: DATABASE
+- fieldName: SNOWFLAKE_DATABASE
   type: string
-- fieldName: SCHEMA
+- fieldName: SNOWFLAKE_SCHEMA
   type: string
-- fieldName: ROLE
+- fieldName: SNOWFLAKE_ROLE
   type: string
 - fieldName: SNOWFLAKE_KEY_PATH
   type: string

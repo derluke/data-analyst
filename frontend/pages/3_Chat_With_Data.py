@@ -32,7 +32,7 @@ sys.path.append("..")
 # Import FastAPI functions directly
 from utils.api import (
     get_business_analysis,
-    process_chat,
+    rephrase_message,
     run_analysis,
     run_charts,
     run_snowflake_analysis,
@@ -272,7 +272,7 @@ Stack Trace:
 
 # Wrap API functions with logging
 
-process_chat = log_api_call(process_chat)
+rephrase_message = log_api_call(rephrase_message)
 run_analysis = log_api_call(run_analysis)
 run_charts = log_api_call(run_charts)
 get_business_analysis = log_api_call(get_business_analysis)
@@ -300,8 +300,8 @@ def log_error_details(error: Exception, context: Dict[str, Any]) -> None:
     )
 
 
-# Update process_chat_and_analysis with enhanced error handling
-async def process_chat_and_analysis(question: str, chat_messages: list) -> None:
+# Update rephrase_message_and_analysis with enhanced error handling
+async def rephrase_message_and_analysis(question: str, chat_messages: list) -> None:
     error_context = {"question": question, "chat_history_length": len(chat_messages)}
 
     try:
@@ -322,7 +322,7 @@ async def process_chat_and_analysis(question: str, chat_messages: list) -> None:
             # Get initial chat response
             try:
                 chat_request = ChatRequest(messages=chat_messages)
-                chat_response = await process_chat(chat_request)
+                chat_response = await rephrase_message(chat_request)
                 message_content = chat_response.get("response", "")
                 message_placeholder.markdown(message_content)
                 assistant_message["content"] = message_content
@@ -658,7 +658,7 @@ else:
 
         valid_messages.append({"role": "user", "content": question})
         chat_request = ChatRequest(messages=valid_messages)
-        chat_response = asyncio.run(process_chat(chat_request))
+        chat_response = asyncio.run(rephrase_message(chat_request))
 
         enhanced_question = chat_response.get("enhanced_user_message", question)
         user_message = {"role": "user", "content": enhanced_question}
@@ -669,4 +669,4 @@ else:
             st.markdown(enhanced_question)
 
         # Process chat and display assistant response
-        asyncio.run(process_chat_and_analysis(enhanced_question, valid_messages))
+        asyncio.run(rephrase_message_and_analysis(enhanced_question, valid_messages))

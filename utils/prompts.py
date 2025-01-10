@@ -62,7 +62,7 @@ Format your response as a JSON object with the following fields:
 NECESSARY CONSIDERATIONS:
 Do not refer to specific column names or tables in the data. Just use common language when suggesting a question. Let the next analyst figure out which columns and tables they'll need to use.
 """
-SYSTEM_PROMPT_CHAT = """
+SYSTEM_PROMPT_REPHRASE_MESSAGE = """
 ROLE:
 Your job is to review a chat history between an AI assistant and a user, and possibly rephrase the user's most recent message so that it captures their complete thought in a single message. 
 We will then send this message to an analytics engine for processing. 
@@ -110,9 +110,7 @@ user: Perform an analysis of the P&L by store
 Your response: Perform an analysis of the P&L by store
 
 YOUR RESPONSE:
-Respond with JSON where there are 2 fields:
-1) original_user_message: the most recent message from the user, unchanged
-2) enhanced_user_message: make the changes the user's message based on the guidelines provided
+enhanced_user_message: rephrased user message based on the guidelines provided
 
 CONSIDERATIONS:
 You may not need to make any changes to the user's most recent message if it is their only message or if it contains a complete independent request that requires no context.

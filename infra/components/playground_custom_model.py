@@ -28,8 +28,10 @@ class PlaygroundCustomModel(pulumi.ComponentResource):
         playground_args: PlaygroundArgs,
         llm_blueprint_args: LLMBlueprintArgs,
         runtime_parameter_values: List[datarobot.CustomModelRuntimeParameterValueArgs],
-        guard_configurations: List[datarobot.CustomModelGuardConfigurationArgs],
         custom_model_args: CustomModelArgs,
+        guard_configurations: (
+            List[datarobot.CustomModelGuardConfigurationArgs] | None
+        ) = None,
         opts: Optional[pulumi.ResourceOptions] = None,
     ):
         super().__init__(
@@ -44,7 +46,7 @@ class PlaygroundCustomModel(pulumi.ComponentResource):
 
         self.llm_blueprint = datarobot.LlmBlueprint(
             playground_id=self.playground.id,
-            **llm_blueprint_args.model_dump(mode="json"),
+            **llm_blueprint_args.model_dump(),
             opts=pulumi.ResourceOptions(parent=self),
         )
 

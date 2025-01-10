@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -81,21 +82,56 @@ class GlobalRuntimeEnvironment(Enum):
     )
 
 
-class GlobalLLM(str, Enum):
-    AZURE_OPENAI_GPT_3_5_TURBO = "azure-openai-gpt-3.5-turbo"
-    AZURE_OPENAI_GPT_3_5_TURBO_16K = "azure-openai-gpt-3.5-turbo-16k"
-    AZURE_OPENAI_GPT_4 = "azure-openai-gpt-4"
-    AZURE_OPENAI_GPT_4_32K = "azure-openai-gpt-4-32k"
-    AZURE_OPENAI_GPT_4_TURBO = "azure-openai-gpt-4-turbo"
-    AZURE_OPENAI_GPT_4o = "azure-openai-gpt-4-o"
-    AMAZON_TITAN = "amazon-titan"
-    ANTHROPIC_CLAUDE_2_1 = "anthropic-claude-2"
-    ANTROPIC_CLAUDE_3_HAIKU = "anthropic-claude-3-haiku"
-    ANTROPIC_CLAUDE_3_SONNET = "anthropic-claude-3-sonnet"
-    GOOGLE_BISON = "google-bison"
-    GOOGLE_GEMINI_1_5_FLASH = "google-gemini-1.5-flash"
-    GOOGLE_1_5_PRO = "google-gemini-1.5-pro"
-    DEPLOYED_LLM = "custom-model"
+CredentialType = Literal["azure", "aws", "google", "api"]
+
+
+class LLMConfig(BaseModel):
+    name: str
+    credential_type: CredentialType
+
+
+class GlobalLLM:
+    """Available LLM configurations"""
+
+    # Azure Models
+    AZURE_OPENAI_GPT_3_5_TURBO = LLMConfig(
+        name="azure-openai-gpt-3.5-turbo",
+        credential_type="azure",
+    )
+    AZURE_OPENAI_GPT_3_5_TURBO_16K = LLMConfig(
+        name="azure-openai-gpt-3.5-turbo-16k", credential_type="azure"
+    )
+    AZURE_OPENAI_GPT_4 = LLMConfig(name="azure-openai-gpt-4", credential_type="azure")
+    AZURE_OPENAI_GPT_4_32K = LLMConfig(
+        name="azure-openai-gpt-4-32k", credential_type="azure"
+    )
+    AZURE_OPENAI_GPT_4_TURBO = LLMConfig(
+        name="azure-openai-gpt-4-turbo", credential_type="azure"
+    )
+    AZURE_OPENAI_GPT_4_O = LLMConfig(
+        name="azure-openai-gpt-4-o", credential_type="azure"
+    )
+    # AWS Models
+    AMAZON_TITAN = LLMConfig(name="amazon-titan", credential_type="aws")
+    ANTHROPIC_CLAUDE_2 = LLMConfig(name="anthropic-claude-2", credential_type="aws")
+    ANTHROPIC_CLAUDE_3_HAIKU = LLMConfig(
+        name="anthropic-claude-3-haiku", credential_type="aws"
+    )
+    ANTHROPIC_CLAUDE_3_SONNET = LLMConfig(
+        name="anthropic-claude-3-sonnet", credential_type="aws"
+    )
+    ANTHROPIC_CLAUDE_3_OPUS = LLMConfig(
+        name="anthropic-claude-3-opus", credential_type="aws"
+    )
+    # Google Models
+    GOOGLE_BISON = LLMConfig(name="google-bison", credential_type="google")
+    GOOGLE_GEMINI_1_5_FLASH = LLMConfig(
+        name="google-gemini-1.5-flash", credential_type="google"
+    )
+    GOOGLE_1_5_PRO = LLMConfig(name="google-gemini-1.5-pro", credential_type="google")
+
+    # API Models
+    DEPLOYED_LLM = LLMConfig(name="deployed-llm", credential_type="api")
 
 
 # ('aws', 'gcp', 'azure', 'onPremise', 'datarobot', 'datarobotServerless', 'openShift', 'other', 'snowflake', 'sapAiCore')

@@ -12,58 +12,50 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+import os
 import sys
+from typing import Any
 
 sys.path.append("../")
 
 from collections.abc import Iterator
 
 import pandas as pd
-from openai import NotFoundError
+from openai import NotFoundError, OpenAI
 from openai.types.chat import (
     ChatCompletion,
     ChatCompletionChunk,
     CompletionCreateParams,
 )
 
+from utils.resources import LLMDeployment
 from utils.schema import ChatAgentDeploymentSettings
 
 
-def choose_llm_type(chat_agent_deployment_settings):
-    # Try Azure
+# TODO: Change to any LLM for custom deployment
+def choose_llm_type(chat_agent_deployment_settings: Any) -> tuple[OpenAI, str]:
     try:
-        from openai import AzureOpenAI
+        deployment_id = json.loads(LLMDeployment().id)["payload"]
+        DATAROBOT_ENDPOINT = os.environ.get("DATAROBOT_ENDPOINT")
+        DATAROBOT_API_TOKEN = os.environ.get("DATAROBOT_API_TOKEN")
 
-        from utils.credentials import AzureOpenAICredentials
-
-        credentials = AzureOpenAICredentials()
-        client = AzureOpenAI(
-            api_version=credentials.api_version,
-            azure_endpoint=credentials.azure_endpoint,
-            api_key=credentials.api_key,
-            max_retries=int(chat_agent_deployment_settings.max_retries),
-            timeout=chat_agent_deployment_settings.request_timeout,
-        )
-        default_model_name = credentials.azure_deployment
-        print("running on azure model")
-    except ValueError:
-        print("azure failed, running on openai model")
-        from openai import OpenAI
-
-        from utils.credentials import OpenAICredentials
-
-        credentials = OpenAICredentials()
         client = OpenAI(
-            api_key=credentials.api_key,
-            max_retries=int(chat_agent_deployment_settings.max_retries),
-            timeout=chat_agent_deployment_settings.request_timeout,
+            api_key=DATAROBOT_API_TOKEN,
+            base_url=f"{DATAROBOT_ENDPOINT}/deployments/{deployment_id}",
         )
-        default_model_name = credentials.deployment
-
+        default_model_name = "llm-blueprint"
+        print("running on azure model")
+    except Exception as e:
+        raise ValueError(
+            f"Failed to generate deployment with base_url {DATAROBOT_ENDPOINT}/deployments/{deployment_id}: {e}"
+        ) from e
     return client, default_model_name
 
 
-def load_model(*args, **kwargs) -> tuple[ChatAgentDeploymentSettings, str]:
+def load_model(
+    *args: Any, **kwargs: Any
+) -> tuple[OpenAI, ChatAgentDeploymentSettings, str]:
     chat_agent_deployment_settings = ChatAgentDeploymentSettings()
 
     client, default_model_name = choose_llm_type(chat_agent_deployment_settings)
@@ -71,7 +63,11 @@ def load_model(*args, **kwargs) -> tuple[ChatAgentDeploymentSettings, str]:
     return client, chat_agent_deployment_settings, default_model_name
 
 
-def score(data: pd.DataFrame, model, **kwargs) -> pd.DataFrame:
+def score(
+    data: pd.DataFrame,
+    model: tuple[OpenAI, ChatAgentDeploymentSettings, str],
+    **kwargs: Any,
+) -> pd.DataFrame:
     """This is the legacy score hook for
     datarobot version prior to 10.2
 
@@ -107,7 +103,7 @@ def score(data: pd.DataFrame, model, **kwargs) -> pd.DataFrame:
 
 def chat(
     completion_create_params: CompletionCreateParams,
-    model,
+    model: str,
 ) -> ChatCompletion | Iterator[ChatCompletionChunk]:
     """Chat Hook compatibale with ChatCompletion
     OpenAI Specification
@@ -134,19 +130,3 @@ def chat(
         )
         completion_create_params["model"] = default_model_name
         return client.chat.completions.create(**completion_create_params)
-
-
-if __name__ == "__main__":
-    model = load_model()
-    print(score(pd.DataFrame({"promptText": ["hello"]}), model))
-    print(
-        chat(
-            {
-                "messages": [
-                    {"role": "user", "content": "hello"},
-                ],
-                "model": "gpt-4o",
-            },
-            model=load_model(),
-        )
-    )

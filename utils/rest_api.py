@@ -26,7 +26,7 @@ from utils.api import (
     get_business_analysis,
     get_catalog_datasets,
     get_dictionary,
-    process_chat,
+    rephrase_message,
     run_analysis,
     run_charts,
     run_snowflake_analysis,
@@ -146,8 +146,8 @@ async def get_business_analysis_endpoint(
 
 
 @app.post("/chat")
-async def process_chat_endpoint(request: ChatRequest) -> Dict[str, Any]:
-    return process_chat(request)
+async def rephrase_message_endpoint(request: ChatRequest) -> Dict[str, Any]:
+    return rephrase_message(request)
 
 
 @app.post("/run_analysis")

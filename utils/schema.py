@@ -21,6 +21,11 @@ import plotly.graph_objects as go
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
+class LLMDeploymentSettings(BaseModel):
+    target_feature_name: str = "resultText"
+    prompt_feature_name: str = "promptText"
+
+
 class AiCatalogDataset(BaseModel):
     id: str
     name: str
@@ -344,10 +349,13 @@ class BusinessAnalysisMetadata(BaseModel):
     columns_analyzed: int
 
 
-class BusinessAnalysisResult(BaseModel):
+class BusinessAnalysisGeneration(BaseModel):
     bottom_line: str
     additional_insights: str
     follow_up_questions: List[str]
+
+
+class BusinessAnalysisResult(BusinessAnalysisGeneration):
     metadata: BusinessAnalysisMetadata
 
 
@@ -498,6 +506,12 @@ class CodeGenerationResult(BaseModel):
     validation_errors: List[str]
 
 
+class QuestionList(BaseModel):
+    """Container for list of questions"""
+
+    questions: List[str]
+
+
 class QuestionSuggestionMetadata(BaseModel):
     """Metadata for question suggestions"""
 
@@ -570,7 +584,7 @@ class SnowflakeAnalysisRequest(BaseModel):
         return v.strip()
 
 
-class SnowflakeAnalaysisCode(BaseModel):
+class SnowflakeAnalysisCode(BaseModel):
     code: str
     description: str
 
@@ -673,3 +687,12 @@ class RunChartsResultMetadata(BaseModel):
     execution_errors: list[ChartExecutionError]
     code_history: list[ChartCodeHistory]
     performance: ChartPerformance
+
+
+class EnhancedUserMessageForChat(BaseModel):
+    enhanced_user_message: str
+
+
+class Code(BaseModel):
+    code: str
+    description: str

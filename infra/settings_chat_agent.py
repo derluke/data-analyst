@@ -19,16 +19,12 @@ import datarobot as dr
 import pulumi_datarobot as datarobot
 from jinja2 import BaseLoader, Environment
 
-from infra.settings_main import core
 from utils.schema import ChatAgentDeploymentSettings
 
 from .common.globals import GlobalRuntimeEnvironment
 from .common.schema import (
     CustomModelArgs,
     DeploymentArgs,
-    LLMBlueprintArgs,
-    LLMSettings,
-    PlaygroundArgs,
     RegisteredModelArgs,
 )
 from .settings_main import project_name
@@ -59,64 +55,44 @@ deployment_args = DeploymentArgs(
 )
 
 
-if core.genai_deployment_type == "dr":
-    # if providing DIY RAG logic, these settings are N/A
-    playground_args = PlaygroundArgs(
-        resource_name=f"Data Analyst Playground [{project_name}]",
-    )
+chat_agent_deployment_path = pathlib.Path("custom_deployment_chat_agent/")
 
-    llm_blueprint_args = LLMBlueprintArgs(
-        resource_name=f"Data Analyst LLM Blueprint [{project_name}]",
-        llm_id=core.genai_deployment_name_buzok,
-        llm_settings=LLMSettings(
-            max_completion_length=512,
-            system_prompt=textwrap.dedent(
-                """\
-                Use the following pieces of context to answer the user's question.
-                If you don't know the answer, just say that you don't know, don't try to make up an answer.
-                ----------------
-                {context}"""
-            ),
-        ),
-    )
 
-elif core.genai_deployment_type == "diy":
-    chat_agent_deployment_path = pathlib.Path("custom_deployment_chat_agent/")
-
-    def get_files(
-        runtime_parameter_values: list[datarobot.CustomModelRuntimeParameterValueArgs],
-    ) -> list[tuple[str, str]]:
-        llm_runtime_parameter_specs = "\n".join(
-            [
-                textwrap.dedent(
-                    f"""\
-                - fieldName: {param.key}
-                  type: {param.type}"""
-                )
-                for param in runtime_parameter_values
-            ]
-        )
-
-        with open(chat_agent_deployment_path / "model-metadata.yaml.jinja") as f:
-            template = Environment(loader=BaseLoader()).from_string(f.read())
-        with open(chat_agent_deployment_path / "model-metadata.yaml", "w") as f:
-            runtime_parameters = template.render(
-                custom_model_name=custom_model_args.name,
-                target_type=custom_model_args.target_type,
-                runtime_parameters=llm_runtime_parameter_specs,
+def get_files(
+    runtime_parameter_values: list[datarobot.CustomModelRuntimeParameterValueArgs],
+) -> list[tuple[str, str]]:
+    llm_runtime_parameter_specs = "\n".join(
+        [
+            textwrap.dedent(
+                f"""\
+            - fieldName: {param.key}
+              type: {param.type}"""
             )
-            f.write(runtime_parameters)
-
-        files = [
-            (str(f), str(f.relative_to(chat_agent_deployment_path)))
-            for f in chat_agent_deployment_path.glob("**/*")
-            if f.is_file() and f.name not in ("README.md", "model-metadata.yaml.jinja")
-        ] + [
-            (
-                "utils/__init__.py",
-                "utils/__init__.py",
-            ),
-            ("utils/schema.py", "utils/schema.py"),
-            ("utils/credentials.py", "utils/credentials.py"),
+            for param in runtime_parameter_values
         ]
-        return files
+    )
+
+    with open(chat_agent_deployment_path / "model-metadata.yaml.jinja") as f:
+        template = Environment(loader=BaseLoader()).from_string(f.read())
+    with open(chat_agent_deployment_path / "model-metadata.yaml", "w") as f:
+        runtime_parameters = template.render(
+            custom_model_name=custom_model_args.name,
+            target_type=custom_model_args.target_type,
+            runtime_parameters=llm_runtime_parameter_specs,
+        )
+        f.write(runtime_parameters)
+
+    files = [
+        (str(f), str(f.relative_to(chat_agent_deployment_path)))
+        for f in chat_agent_deployment_path.glob("**/*")
+        if f.is_file() and f.name not in ("README.md", "model-metadata.yaml.jinja")
+    ] + [
+        (
+            "utils/__init__.py",
+            "utils/__init__.py",
+        ),
+        ("utils/schema.py", "utils/schema.py"),
+        ("utils/credentials.py", "utils/credentials.py"),
+        ("utils/resources.py", "utils/resources.py"),
+    ]
+    return files

@@ -30,6 +30,7 @@ from datetime import datetime
 from typing import Any, Callable, Dict, List, Tuple
 
 import datarobot as dr
+import instructor
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -46,10 +47,11 @@ from utils import prompts
 from utils.credentials import SnowflakeCredentials
 from utils.datetime_helpers import convert_datetime_series, is_date_column
 from utils.errors import EmptyDataError
-from utils.resources import ChatAgentDeployment
+from utils.resources import LLMDeployment
 from utils.schema import (
     AiCatalogDataset,
     AnalysisError,
+    BusinessAnalysisGeneration,
     BusinessAnalysisMetadata,
     BusinessAnalysisRequest,
     BusinessAnalysisResult,
@@ -63,6 +65,7 @@ from utils.schema import (
     CleanseRequest,
     CleanseResult,
     CleansingReport,
+    Code,
     CodeGenerationResult,
     CodeValidator,
     DataDictionariesAndMetadata,
@@ -73,7 +76,9 @@ from utils.schema import (
     DictionaryDataColumn,
     DictionaryRequest,
     DictionaryResult,
+    EnhancedUserMessageForChat,
     MemoryUsage,
+    QuestionList,
     QuestionSuggestionMetadata,
     QuestionSuggestions,
     QuestionValidationResult,
@@ -83,7 +88,7 @@ from utils.schema import (
     RunChartsRequest,
     RunChartsResult,
     RunChartsResultMetadata,
-    SnowflakeAnalaysisCode,
+    SnowflakeAnalysisCode,
     SnowflakeAnalysisMetadata,
     SnowflakeAnalysisRequest,
     SnowflakeAnalysisResult,
@@ -96,12 +101,15 @@ logger = logging.getLogger("DataAnalystFrontend")
 SNOWFLAKE_CREDENTIALS = SnowflakeCredentials()
 
 try:
-    chat_agent_deployment_id = ChatAgentDeployment().id
+    dr_client = dr.Client()  # type: ignore[attr-defined]
+    chat_agent_deployment_id = LLMDeployment().id
     deployment_chat_base_url = (
-        dr.Client().endpoint + f"/deployments/{chat_agent_deployment_id}/"
+        dr_client.endpoint + f"/deployments/{chat_agent_deployment_id}/"
     )
 
-    client = OpenAI(api_key=dr.Client().token, base_url=deployment_chat_base_url)
+    openai_client = OpenAI(api_key=dr_client.token, base_url=deployment_chat_base_url)
+    client = instructor.from_openai(openai_client, mode=instructor.Mode.MD_JSON)
+
 
 except ValidationError as e:
     raise ValueError(
@@ -157,35 +165,6 @@ def get_catalog_datasets(limit: int = 100) -> List[AiCatalogDataset]:
         )
         for ds in datasets
     ]
-
-
-def _chat_structured(
-    messages: list[dict[str, str]], temperature: float = 0, small_llm: bool = True
-) -> dict[str, Any]:
-    """Chat with llm and return response"""
-    if MODEL_MODE == "openai":
-        completion = client.chat.completions.create(
-            model="gpt-4o-mini" if small_llm else "gpt-4o",
-            temperature=temperature,
-            messages=messages,
-            response_format={"type": "json_object"},
-            stream=False,
-        )
-        response = json.loads(completion.choices[0].message.content)
-    elif MODEL_MODE in ["gemini", "anthropic"]:
-        completion = client.chat.completions.create(
-            model="gemini-1.5-pro",
-            messages=messages,  # or appropriate model name
-        )
-        # Extract JSON from response by looking for ```json blocks
-        content = completion.choices[0].message.content
-        json_match = re.search(r"```json\s*(.*?)\s*```", content, re.DOTALL)
-        if json_match:
-            response = json.loads(json_match.group(1))
-        else:
-            raise ValueError("No JSON block found in model response")
-
-    return response
 
 
 def _process_column_batch(
@@ -248,16 +227,17 @@ def _process_column_batch(
             {"role": "user", "content": f"Categorical Values: {json.dumps(categories)}"}
         )
 
-    response = _chat_structured(messages, small_llm=True)
-    try:
-        # Validate response using DictionaryResult
-        validated = DictionaryResult(
-            columns=response.get("columns", []),
-            descriptions=response.get("descriptions", []),
-        )
+    # Get descriptions from OpenAI
+    completion = client.chat.completions.create(
+        response_model=DictionaryResult,
+        model="gpt-4o-mini",
+        messages=messages,
+    )
+    # response = json.loads(completion.choices[0].message.content)
 
+    try:
         # Convert to dictionary format
-        descriptions = validated.to_dict()
+        descriptions = completion.to_dict()
 
         # Only return descriptions for requested columns
         return {
@@ -442,19 +422,20 @@ async def _generate_question_suggestions(
         {"role": "user", "content": f"Data Dictionary:\n{json.dumps(dict_data)}"},
     ]
 
-    response = _chat_structured(messages, small_llm=True)
+    completion = client.chat.completions.create(
+        response_model=QuestionList,
+        model="gpt-4o-mini",
+        messages=messages,
+    )
 
-    # Validate each suggested question
     available_columns = dictionary["column"].tolist()
     validated_questions: list[QuestionValidationResult] = []
 
-    for key in ["question1", "question2", "question3"]:
-        if question := response.get(key):
-            validated_questions.append(
-                _validate_question_feasibility(question, available_columns)
-            )
+    for question in completion.questions:
+        validated_questions.append(
+            _validate_question_feasibility(question, available_columns)
+        )
 
-    # Prepare metadata
     metadata = QuestionSuggestionMetadata(
         total_columns=total_columns,
         columns_used=len(dictionary),
@@ -551,9 +532,15 @@ async def _create_charts(
                     ]
                 )
 
-            response = _chat_structured(messages, small_llm=True)
+            # Get response based on model mode
+            response = client.chat.completions.create(
+                response_model=Code,
+                model="gpt-4o",
+                temperature=0,
+                messages=messages,
+            )
 
-            code = response.get("code")
+            code = response.code
 
             # Track code history
             code_history.append(
@@ -652,35 +639,9 @@ async def _create_charts(
     raise ValueError(f"Failed to generate valid charts after {max_attempts} attempts")
 
 
-async def process_chat(chat_request: ChatRequest) -> Dict[str, Any]:
-    """Process chat messages and return complete response
-
-    Args:
-        messages: List of message dictionaries with 'role' and 'content' fields
-
-    Returns:
-        Dict[str, str]: Dictionary containing response content
-
-    Raises:
-        Exception: If OpenAI API call fails
-    """
-    # Convert messages to string format for prompt
-    messages_str = "\n".join(
-        [f"{msg['role']}: {msg['content']}" for msg in chat_request.messages]
-    )
-
-    prompt_messages = [
-        {"role": "system", "content": prompts.SYSTEM_PROMPT_CHAT},
-        {"role": "user", "content": f"Message History:\n{messages_str}"},
-    ]
-    response = _chat_structured(prompt_messages, temperature=0, small_llm=True)
-
-    return response
-
-
 async def _generate_python_analysis_code(
     request: RunAnalysisRequest, validation_error: dict[str, str] = {}
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """
     Generate Python analysis code based on JSON data and question.
 
@@ -754,12 +715,14 @@ async def _generate_python_analysis_code(
             ]
         )
 
-    response = _chat_structured(messages, temperature=0.1, small_llm=False)
+    completion = client.chat.completions.create(
+        response_model=Code,
+        model="gpt-4o",
+        temperature=0.1,
+        messages=messages,
+    )
 
-    return {
-        "code": response.get("code", ""),
-        "description": response.get("description", ""),
-    }
+    return completion.model_dump()
 
 
 async def _generate_analysis_code(
@@ -1211,6 +1174,34 @@ async def suggest_questions(request: DictionaryRequest) -> QuestionSuggestions:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+async def rephrase_message(messages: ChatRequest) -> dict[str, Any]:
+    """Process chat messages history and return a new question
+
+    Args:
+        messages: List of message dictionaries with 'role' and 'content' fields
+
+    Returns:
+        Dict[str, str]: Dictionary containing response content
+    """
+    # Convert messages to string format for prompt
+    messages_str = "\n".join(
+        [f"{msg['role']}: {msg['content']}" for msg in messages.messages]
+    )
+
+    prompt_messages = [
+        {"role": "system", "content": prompts.SYSTEM_PROMPT_REPHRASE_MESSAGE},
+        {"role": "user", "content": f"Message History:\n{messages_str}"},
+    ]
+
+    completion = client.chat.completions.create(
+        response_model=EnhancedUserMessageForChat,
+        model="dr_llm",
+        messages=prompt_messages,
+    )
+
+    return completion.model_dump()
+
+
 async def run_charts(request: RunChartsRequest) -> RunChartsResult:
     """
     Generate and execute chart code with validation.
@@ -1338,7 +1329,12 @@ async def get_business_analysis(
             },
         ]
 
-        response = _chat_structured(messages, temperature=0.1, small_llm=False)
+        completion = client.chat.completions.create(
+            response_model=BusinessAnalysisGeneration,
+            model="gpt-4o",
+            temperature=0.1,
+            messages=messages,
+        )
 
         # Ensure all response fields are present
         metadata = BusinessAnalysisMetadata(
@@ -1348,9 +1344,7 @@ async def get_business_analysis(
             columns_analyzed=len(df.columns),
         )
         return BusinessAnalysisResult(
-            bottom_line=response.get("bottom_line", ""),
-            additional_insights=response.get("additional_insights", ""),
-            follow_up_questions=response.get("follow_up_questions", []),
+            **completion.model_dump(),
             metadata=metadata,
         )
 
@@ -1487,7 +1481,7 @@ async def run_analysis(request: RunAnalysisRequest) -> RunAnalysisResult:
 
 async def _get_snowflake_analysis_code(
     request: SnowflakeAnalysisRequest,
-) -> SnowflakeAnalaysisCode:
+) -> SnowflakeAnalysisCode:
     """
     Generate Snowflake SQL analysis code based on data samples and question.
 
@@ -1560,12 +1554,15 @@ async def _get_snowflake_analysis_code(
                 ]
             )
 
-        response = _chat_structured(messages, temperature=0.1, small_llm=False)
-
-        return SnowflakeAnalaysisCode(
-            code=response.get("code", ""),
-            description=response.get("description", ""),
+        # Get response from OpenAI
+        completion = client.chat.completions.create(
+            response_model=SnowflakeAnalysisCode,
+            model="gpt-4o",
+            temperature=0.1,
+            messages=messages,
         )
+
+        return completion
 
     except Exception as e:
         logger.error(f"Error generating Snowflake analysis code: {str(e)}")
