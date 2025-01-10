@@ -366,9 +366,6 @@ async def rephrase_message_and_analysis(question: str, chat_messages: list) -> N
                             data=data_dict,
                             dictionary=dict_data,
                             question=chat_response.get("enhanced_question", question),
-                            warehouse=SNOWFLAKE_CREDENTIALS.warehouse,
-                            database=SNOWFLAKE_CREDENTIALS.database,
-                            db_schema=SNOWFLAKE_CREDENTIALS.db_schema,
                         )
                         analysis_result = await run_snowflake_analysis(analysis_request)
                     else:

@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import sys
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,9 +25,10 @@ sys.path.append("..")
 
 from utils.api import (
     cleanse_dataframes,
+    download_catalog_datasets,
     get_business_analysis,
-    get_catalog_datasets,
     get_dictionary,
+    list_catalog_datasets,
     rephrase_message,
     run_analysis,
     run_charts,
@@ -49,6 +52,7 @@ from utils.schema import (
     SnowflakeAnalysisRequest,
     SnowflakeAnalysisResult,
 )
+from utils.snowflake_helpers import get_snowflake_data, get_snowflake_tables
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -108,9 +112,28 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 
-@app.get("/get_catalog_datasets")
-async def get_catalog_datasets_endpoint(limit: int = 100) -> list[AiCatalogDataset]:
-    return get_catalog_datasets(limit)
+@app.get("/list_catalog_datasets")
+async def list_catalog_datasets_endpoint(limit: int = 100) -> list[AiCatalogDataset]:
+    return list_catalog_datasets(limit)
+
+
+@app.get("/download_catalog_datasets")
+async def download_catalog_datasets_endpoint(
+    dataset_ids: list[str],
+) -> dict[str, dict[str, Any]]:
+    return download_catalog_datasets(*dataset_ids)
+
+
+@app.get("/get_snowflake_tables")
+async def get_snowflake_tables_endpoint() -> list[str]:
+    return get_snowflake_tables()
+
+
+@app.get("/get_snowflake_data")
+async def get_snowflake_data_endpoint(
+    table_names: list[str], sample_size: int = 5000
+) -> dict[str, list[dict[str, Any]]]:
+    return get_snowflake_data(*table_names, sample_size=sample_size)
 
 
 @app.post("/cleanse_dataframes")
@@ -146,7 +169,7 @@ async def get_business_analysis_endpoint(
 
 
 @app.post("/chat")
-async def rephrase_message_endpoint(request: ChatRequest) -> Dict[str, Any]:
+async def rephrase_message_endpoint(request: ChatRequest) -> dict[str, Any]:
     return rephrase_message(request)
 
 

@@ -79,7 +79,7 @@ class DictionaryRequest(BaseModel):
         return v
 
 
-class DictionaryDataColumn(BaseModel):
+class DataDictionaryColumn(BaseModel):
     data_type: str
     column: str
     description: str
@@ -87,7 +87,7 @@ class DictionaryDataColumn(BaseModel):
 
 class DataDictionary(BaseModel):
     name: str
-    dictionary: List[DictionaryDataColumn]
+    dictionary: List[DataDictionaryColumn]
     cache_hit: bool
     batch_time: float
 
@@ -546,9 +546,6 @@ class SnowflakeAnalysisRequest(BaseModel):
         question: Business question to analyze
         error_message: Optional error from previous attempt
         failed_code: Optional code that failed in previous attempt
-        warehouse: Snowflake warehouse to use
-        database: Snowflake database to use
-        schema: Snowflake schema to use
     """
 
     data: Dict[str, List[Dict[str, Any]]]  # Sample data from each table
@@ -556,9 +553,6 @@ class SnowflakeAnalysisRequest(BaseModel):
     question: str
     error_message: str | None = None
     failed_code: str | None = None
-    warehouse: str
-    database: str
-    db_schema: str
 
     @field_validator("data")
     @classmethod

@@ -17,7 +17,7 @@ import os
 import time
 import warnings
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any
 
 import inquirer
 import numpy as np
@@ -63,7 +63,7 @@ DATA_FILES = {
 }
 
 
-def select_files() -> List[str]:
+def select_files() -> list[str]:
     """Allow user to select multiple files from the available options"""
     questions = [
         inquirer.Checkbox(
@@ -79,7 +79,7 @@ def select_files() -> List[str]:
     return [DATA_FILES[file] for file in answers["files"]]
 
 
-def load_dataframes(files: List[str]) -> List[Dict[str, Any]]:
+def load_dataframes(files: list[str]) -> list[dict[str, Any]]:
     """Load selected files into dataframes and prepare them for API"""
     datasets = []
     start_time = time.time()
@@ -136,7 +136,7 @@ def load_dataframes(files: List[str]) -> List[Dict[str, Any]]:
     return datasets
 
 
-async def cleanse_datasets(datasets: List[Dict[str, Any]]) -> Dict[str, Any]:
+async def cleanse_datasets(datasets: list[dict[str, Any]]) -> dict[str, Any]:
     """Use API function directly to cleanse datasets"""
     try:
         start_time = time.time()

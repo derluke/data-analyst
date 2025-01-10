@@ -35,7 +35,6 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import psutil
-import snowflake.connector
 from fastapi import HTTPException
 from openai import OpenAI
 from plotly.subplots import make_subplots
@@ -70,10 +69,10 @@ from utils.schema import (
     CodeValidator,
     DataDictionariesAndMetadata,
     DataDictionary,
+    DataDictionaryColumn,
     DataDictionaryMetadata,
     DatasetInput,
     DatasetOutput,
-    DictionaryDataColumn,
     DictionaryRequest,
     DictionaryResult,
     EnhancedUserMessageForChat,
@@ -92,9 +91,9 @@ from utils.schema import (
     SnowflakeAnalysisMetadata,
     SnowflakeAnalysisRequest,
     SnowflakeAnalysisResult,
-    SnowflakeExecutionMetadata,
     ValidationMessage,
 )
+from utils.snowflake_helpers import create_snowflake_connection, execute_snowflake_query
 
 logger = logging.getLogger("DataAnalystFrontend")
 
@@ -136,7 +135,7 @@ def _generate_df_hash(df: pd.DataFrame) -> str:
 
 
 @functools.lru_cache(maxsize=2)
-def get_catalog_datasets(limit: int = 100) -> List[AiCatalogDataset]:
+def list_catalog_datasets(limit: int = 100) -> List[AiCatalogDataset]:
     """
     Fetch datasets from AI Catalog with specified limit
 
@@ -165,6 +164,31 @@ def get_catalog_datasets(limit: int = 100) -> List[AiCatalogDataset]:
         )
         for ds in datasets
     ]
+
+
+@functools.lru_cache(maxsize=8)
+def download_catalog_datasets(*args) -> dict[str, list[dict[str, Any]]]:
+    """Load selected datasets as pandas DataFrames
+
+    Args:
+        *args: list of dataset IDs to download
+
+    Returns:
+        dict[str, list[dict[str, Any]]]: Dictionary of dataset names and data
+    """
+    dataframes = {}
+    dataset_ids = list(args)
+    for id in dataset_ids:
+        dataset = dr.Dataset.get(id)
+        try:
+            dataframes[dataset.name] = dataset.get_as_dataframe().to_dict(
+                orient="records"
+            )
+            logger.info(f"Successfully downloaded {dataset.name}")
+        except Exception as e:
+            logger.error(f"Failed to read dataset {dataset.name}: {str(e)}")
+            continue
+    return dataframes
 
 
 def _process_column_batch(
@@ -303,7 +327,7 @@ def _process_dataset(dataset: DatasetInput) -> DataDictionary:
 
         # Combine results
         dictionary = [
-            DictionaryDataColumn(
+            DataDictionaryColumn(
                 data_type=str(df[col].dtype),
                 column=col,
                 description=batch_results.get(col, "No description available"),
@@ -790,82 +814,6 @@ async def _generate_analysis_code(
         status_code=500,
         detail=f"Failed to generate valid code after {max_attempts} attempts",
     )
-
-
-def _create_snowflake_connection(
-    warehouse: str, database: str, schema: str
-) -> snowflake.connector.SnowflakeConnection:
-    """Create a connection to Snowflake using environment variables"""
-    try:
-        return snowflake.connector.connect(
-            user=SNOWFLAKE_CREDENTIALS.user,
-            password=SNOWFLAKE_CREDENTIALS.password,
-            account=SNOWFLAKE_CREDENTIALS.account,
-            warehouse=warehouse,
-            database=database,
-            schema=schema,
-        )
-    except Exception as e:
-        logger.error(f"Failed to connect to Snowflake: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to connect to Snowflake: {str(e)}"
-        )
-
-
-def _execute_snowflake_query(
-    conn: snowflake.connector.SnowflakeConnection, query: str, timeout: int = 300
-) -> tuple[(list[tuple] | list[dict]), SnowflakeExecutionMetadata]:
-    """Execute a Snowflake query with timeout and metadata capture
-
-    Args:
-        conn: Snowflake connection
-        query: SQL query to execute
-        timeout: Query timeout in seconds
-
-    Returns:
-        Tuple of (results, metadata)
-    """
-    try:
-        cursor = conn.cursor(snowflake.connector.DictCursor)
-        start_time = time.time()
-
-        # Set query timeout at cursor level
-        cursor.execute(f"ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = {timeout}")
-
-        try:
-            # Execute query
-            cursor.execute(query)
-
-            # Get results
-            results = cursor.fetchall()
-
-            # Get query ID from the cursor
-            query_id = cursor.sfqid
-
-            # Calculate execution time
-            execution_time = time.time() - start_time
-
-            # Prepare metadata
-            metadata = SnowflakeExecutionMetadata(
-                query_id=query_id,
-                row_count=len(results),
-                execution_time=execution_time,
-                warehouse=conn.warehouse,
-                database=conn.database,
-                db_schema=conn.schema,
-            )
-
-            return results, metadata
-
-        except snowflake.connector.errors.ProgrammingError as e:
-            # Handle Snowflake-specific errors
-            raise Exception(f"Snowflake error: {str(e)}")
-
-    except Exception as e:
-        raise Exception(f"Query execution failed: {str(e)}")
-    finally:
-        if cursor:
-            cursor.close()
 
 
 async def cleanse_dataframes(
@@ -1526,9 +1474,9 @@ async def _get_snowflake_analysis_code(
             {
                 "role": "system",
                 "content": prompts.SYSTEM_PROMPT_SNOWFLAKE.format(
-                    warehouse=request.warehouse,
-                    database=request.database,
-                    schema=request.db_schema,
+                    warehouse=SNOWFLAKE_CREDENTIALS.warehouse,
+                    database=SNOWFLAKE_CREDENTIALS.database,
+                    schema=SNOWFLAKE_CREDENTIALS.db_schema,
                 ),
             },
             {"role": "user", "content": f"Business Question: {request.question}"},
@@ -1583,11 +1531,7 @@ async def run_snowflake_analysis(
         if not request.data:
             raise HTTPException(status_code=422, detail="Input data cannot be empty")
 
-        conn = _create_snowflake_connection(
-            warehouse=request.warehouse,
-            database=request.database,
-            schema=request.db_schema,
-        )
+        conn = create_snowflake_connection()
 
         while attempts < max_attempts:
             attempts += 1
@@ -1603,7 +1547,7 @@ async def run_snowflake_analysis(
                 sql_code = code_result.code
                 last_generated_code = sql_code
 
-                results, query_metadata = _execute_snowflake_query(
+                results, query_metadata = execute_snowflake_query(
                     conn=conn, query=sql_code, timeout=timeout
                 )
 

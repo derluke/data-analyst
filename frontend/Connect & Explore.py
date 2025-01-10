@@ -17,18 +17,22 @@ import logging
 import os
 import sys
 import warnings
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 sys.path.append("..")
 
-import datarobot as dr
 import pandas as pd
-import snowflake.connector
 import streamlit as st
 
-from utils.api import cleanse_dataframes, get_catalog_datasets, get_dictionary
+from utils.api import (
+    cleanse_dataframes,
+    download_catalog_datasets,
+    get_dictionary,
+    list_catalog_datasets,
+)
 from utils.credentials import SnowflakeCredentials
 from utils.schema import CleanseRequest, DatasetInput
+from utils.snowflake_helpers import get_snowflake_data, get_snowflake_tables
 
 SNOWFLAKE_CREDENTIALS = SnowflakeCredentials()
 
@@ -154,7 +158,7 @@ async def generate_dictionaries_async(
 
 
 @st.cache_data(show_spinner=False)
-def process_uploaded_file(file):
+def process_uploaded_file(file) -> list[tuple[str, pd.DataFrame]]:
     """Process a single uploaded file and return a list of (dataset_name, dataframe) tuples
 
     Args:
@@ -202,22 +206,6 @@ def process_uploaded_file(file):
         return []
 
 
-# Add function to load selected datasets
-@st.cache_data(show_spinner=False)
-def get_datasets_as_df(_dataset_ids: List[str]) -> Dict[str, pd.DataFrame]:
-    """Load selected datasets as pandas DataFrames"""
-    dataframes = {}
-    for _, id in enumerate(_dataset_ids, 1):
-        dataset = dr.Dataset.get(id)
-        try:
-            dataframes[dataset.name] = dataset.get_as_dataframe()
-            logger.info(f"Successfully downloaded {dataset.name}")
-        except Exception as e:
-            logger.error(f"Failed to read dataset {dataset.name}: {str(e)}")
-            continue
-    return dataframes
-
-
 # Add callback for AI Catalog dataset selection
 def catalog_download_callback():
     """Callback function for AI Catalog dataset download"""
@@ -230,11 +218,11 @@ def catalog_download_callback():
                 selected_ids = [
                     ds["id"] for ds in st.session_state.selected_catalog_datasets
                 ]
-                dataframes = get_datasets_as_df(selected_ids)
+                dataframes = download_catalog_datasets(*selected_ids)
 
                 # Add downloaded dataframes to session state
                 for name, df in dataframes.items():
-                    st.session_state.datasets[name] = df
+                    st.session_state.datasets[name] = pd.DataFrame(df)
 
                 # Process the new data
                 results = process_data_cached(st.session_state.datasets)
@@ -277,235 +265,6 @@ def clear_data_callback():
     st.cache_resource.clear()
 
 
-# Add after other initialization functions
-def create_snowflake_connection() -> snowflake.connector.SnowflakeConnection:
-    """Create a Snowflake connection with either private key or password authentication"""
-    try:
-        # Log all environment variables (excluding sensitive data)
-        logger.info("=== Starting Snowflake Connection Attempt ===")
-        logger.info("Environment variables check:")
-        logger.info(f"USER: {SNOWFLAKE_CREDENTIALS.user}")
-        logger.info(f"ACCOUNT: {SNOWFLAKE_CREDENTIALS.account}")
-        logger.info(f"WAREHOUSE: {SNOWFLAKE_CREDENTIALS.warehouse}")
-        logger.info(f"DATABASE: {SNOWFLAKE_CREDENTIALS.database}")
-        logger.info(f"SCHEMA: {SNOWFLAKE_CREDENTIALS.db_schema}")
-        logger.info(f"ROLE: {SNOWFLAKE_CREDENTIALS.role}")
-        logger.info(f"KEY_PATH: {SNOWFLAKE_CREDENTIALS.snowflake_key_path}")
-
-        # Initialize connection parameters with common values
-        conn_params = {
-            "user": SNOWFLAKE_CREDENTIALS.user,
-            "account": SNOWFLAKE_CREDENTIALS.account,
-            "warehouse": SNOWFLAKE_CREDENTIALS.warehouse,
-            "database": SNOWFLAKE_CREDENTIALS.role,
-            "schema": SNOWFLAKE_CREDENTIALS.db_schema,
-            "role": SNOWFLAKE_CREDENTIALS.role,
-        }
-
-        # Check if private key path is set and valid
-        key_path = SNOWFLAKE_CREDENTIALS.snowflake_key_path
-        if key_path and os.path.exists(key_path):
-            try:
-                # Read and process private key
-                with open(key_path, "rb") as key_file:
-                    private_key_data = key_file.read()
-                    logger.info("Successfully read private key file")
-
-                # Load and convert key
-                from cryptography.hazmat.backends import default_backend
-                from cryptography.hazmat.primitives import serialization
-
-                p_key = serialization.load_pem_private_key(
-                    private_key_data, password=None, backend=default_backend()
-                )
-                logger.info("Successfully loaded PEM key")
-
-                private_key = p_key.private_bytes(
-                    encoding=serialization.Encoding.DER,
-                    format=serialization.PrivateFormat.PKCS8,
-                    encryption_algorithm=serialization.NoEncryption(),
-                )
-                logger.info("Successfully converted key to DER format")
-
-                # Add private key to connection parameters
-                conn_params["private_key"] = private_key
-                logger.info("Using private key authentication")
-
-            except Exception as e:
-                logger.warning(
-                    f"Failed to process private key: {str(e)}, falling back to password authentication"
-                )
-                conn_params["password"] = SNOWFLAKE_CREDENTIALS.password
-        else:
-            # Use password authentication
-            logger.info(
-                "No valid private key path found, using password authentication"
-            )
-            conn_params["password"] = SNOWFLAKE_CREDENTIALS.password
-
-        # Log password status (safely)
-        logger.info(
-            f"Password is {'set' if conn_params.get('password') else 'not set'}"
-        )
-
-        # Attempt connection
-        conn = snowflake.connector.connect(**conn_params)
-        logger.info(
-            f"Successfully connected to Snowflake using role: {conn_params['role']}"
-        )
-        return conn
-
-    except Exception as e:
-        logger.error("=== Snowflake Connection Failed ===")
-        logger.error(f"Final error: {str(e)}")
-        logger.error(f"Error type: {type(e)}")
-        raise
-
-
-@st.cache_data(show_spinner=False)
-def get_snowflake_tables() -> List[str]:
-    """Fetch list of tables from Snowflake schema"""
-    try:
-        conn = create_snowflake_connection()
-        cursor = conn.cursor()
-
-        # Log current session info
-        logger.info("Checking current session settings...")
-        cursor.execute(
-            "SELECT CURRENT_DATABASE(), CURRENT_SCHEMA(), CURRENT_ROLE(), CURRENT_WAREHOUSE()"
-        )
-        current_settings = cursor.fetchone()
-        logger.info(
-            f"Current settings - Database: {current_settings[0]}, Schema: {current_settings[1]}, Role: {current_settings[2]}, Warehouse: {current_settings[3]}"
-        )
-
-        # Check if schema exists
-        cursor.execute(
-            f"""
-            SELECT COUNT(*) 
-            FROM {SNOWFLAKE_CREDENTIALS.database}.INFORMATION_SCHEMA.SCHEMATA 
-            WHERE SCHEMA_NAME = '{SNOWFLAKE_CREDENTIALS.db_schema}'
-        """
-        )
-        schema_exists = cursor.fetchone()[0]
-        logger.info(f"Schema exists check: {schema_exists > 0}")
-
-        # Get all objects (tables and views)
-        cursor.execute(
-            f"""
-            SELECT table_name, table_type
-            FROM {SNOWFLAKE_CREDENTIALS.database}.information_schema.tables 
-            WHERE table_schema = '{SNOWFLAKE_CREDENTIALS.db_schema}'
-            AND table_type IN ('BASE TABLE', 'VIEW')
-            ORDER BY table_type, table_name
-        """
-        )
-        results = cursor.fetchall()
-        tables = [row[0] for row in results]
-
-        # Log detailed results
-        logger.info(f"Total objects found: {len(results)}")
-        for table_name, table_type in results:
-            logger.info(f"Found {table_type}: {table_name}")
-
-        # Check schema privileges
-        cursor.execute(
-            f"""
-            SHOW GRANTS ON SCHEMA {SNOWFLAKE_CREDENTIALS.database}.{SNOWFLAKE_CREDENTIALS.db_schema}
-        """
-        )
-        privileges = cursor.fetchall()
-        logger.info("Schema privileges:")
-        for priv in privileges:
-            logger.info(f"Privilege: {priv}")
-
-        return tables
-
-    except Exception as e:
-        logger.error(f"Failed to fetch tables: {str(e)}")
-        logger.error(f"Error type: {type(e)}")
-        logger.error(f"Error details: {str(e)}")
-        return []
-
-    finally:
-        try:
-            if "cursor" in locals():
-                cursor.close()
-            if "conn" in locals():
-                conn.close()
-        except Exception:
-            pass
-
-
-@st.cache_data(show_spinner=False)
-def get_snowflake_data(
-    table_names: List[str], sample_size: int = 5000
-) -> Dict[str, pd.DataFrame]:
-    """Load selected tables from Snowflake as pandas DataFrames"""
-    dataframes = {}
-
-    try:
-        conn = create_snowflake_connection()
-        cursor = conn.cursor()
-
-        for table in table_names:
-            try:
-                qualified_table = f"{SNOWFLAKE_CREDENTIALS.database}.{SNOWFLAKE_CREDENTIALS.db_schema}.{table}"
-                logger.info(f"Fetching data from table: {qualified_table}")
-
-                cursor.execute(
-                    f"""
-                    SELECT * FROM {qualified_table}
-                    SAMPLE ({sample_size} ROWS)
-                """
-                )
-
-                columns = [desc[0] for desc in cursor.description]
-                data = cursor.fetchall()
-                df = pd.DataFrame(data, columns=columns)
-
-                # Convert date/datetime columns to string format
-                for col in df.columns:
-                    if pd.api.types.is_datetime64_any_dtype(df[col]) or isinstance(
-                        df[col].dtype, pd.DatetimeTZDtype
-                    ):
-                        df[col] = df[col].dt.strftime("%Y-%m-%d %H:%M:%S")
-                    elif df[col].dtype == "object":
-                        try:
-                            pd.to_datetime(df[col], errors="raise")
-                            df[col] = pd.to_datetime(df[col]).dt.strftime("%Y-%m-%d")
-                        except (ValueError, TypeError):
-                            continue
-
-                dataframes[table] = df
-                logger.info(
-                    f"Successfully loaded table {table}: {len(df)} rows, {len(df.columns)} columns"
-                )
-
-            except Exception as e:
-                logger.error(f"Error loading table {table}: {str(e)}")
-                logger.error(f"Error type: {type(e)}")
-                logger.error(f"Error details: {str(e)}")
-                continue
-
-        return dataframes
-
-    except Exception as e:
-        logger.error(f"Error fetching Snowflake data: {str(e)}")
-        logger.error(f"Error type: {type(e)}")
-        logger.error(f"Error details: {str(e)}")
-        return {}
-
-    finally:
-        try:
-            if "cursor" in locals():
-                cursor.close()
-            if "conn" in locals():
-                conn.close()
-        except Exception:
-            pass
-
-
 # Modify the load_snowflake_data callback
 def load_snowflake_data_callback():
     """Callback function for Snowflake table download"""
@@ -517,7 +276,7 @@ def load_snowflake_data_callback():
             with st.spinner("Loading selected tables..."):
                 # Get data from Snowflake
                 dataframes = get_snowflake_data(
-                    st.session_state.selected_snowflake_tables
+                    *st.session_state.selected_snowflake_tables
                 )
 
                 if not dataframes:
@@ -526,8 +285,8 @@ def load_snowflake_data_callback():
 
                 # Add downloaded dataframes to session state
                 for name, df in dataframes.items():
-                    st.session_state.datasets[name] = df
-                    st.success(f"✓ {name}: {len(df)} rows, {len(df.columns)} columns")
+                    st.session_state.datasets[name] = pd.DataFrame(df)
+                    st.success(f"✓ {name}: {len(df)} rows, {len(df[0].keys())} columns")
 
                 # Set flag to indicate data source is Snowflake
                 st.session_state.data_source = "snowflake"
@@ -566,22 +325,9 @@ st.set_page_config(
 
 
 # Custom CSS
-st.markdown(
-    """
-    <style>
-    .main {
-        padding: 0rem 1rem;
-    }
-    .stProgress > div > div > div > div {
-        background-color: #1c83e1;
-    }
-    .stDownloadButton button {
-        width: 100%;
-    }
-    </style>
-""",
-    unsafe_allow_html=True,
-)
+with open("./style.css") as f:
+    css = f.read()
+    st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
 # Sidebar for data upload and processing
 with st.sidebar:
@@ -655,7 +401,7 @@ with st.sidebar:
 
         # Get datasets from catalog
         with st.spinner("Loading datasets from AI Catalog..."):
-            datasets = [i.model_dump() for i in get_catalog_datasets()]
+            datasets = [i.model_dump() for i in list_catalog_datasets()]
 
         # Create form for dataset selection
         with st.form("catalog_selection_form", border=False):
@@ -683,7 +429,6 @@ with st.sidebar:
     with st.expander("Database", expanded=False):
         st.image("Snowflake.svg", width=100)
 
-        # Initialize Snowflake connection
         snowflake_tables = get_snowflake_tables()
 
         # Create form for Snowflake table selection
