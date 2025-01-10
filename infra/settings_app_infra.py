@@ -59,22 +59,24 @@ app_resource_name: str = f"Data Analyst Application [{project_name}]"
 
 def get_app_files() -> List[Tuple[str, str]]:
     source_files = [
-        (str(f), str(f.relative_to(application_path)))
+        (rf"{str(f)}", str(f.relative_to(application_path)).replace("\\", "/"))
         for f in application_path.glob("**/*")
         if f.is_file() and not f.name.endswith(".yaml")
     ]
 
     source_files.extend(
         [
-            ("utils/__init__.py", "utils/__init__.py"),
-            ("utils/api.py", "utils/api.py"),
-            ("utils/credentials.py", "utils/credentials.py"),
-            ("utils/datetime_helpers.py", "utils/datetime_helpers.py"),
-            ("utils/errors.py", "utils/errors.py"),
-            ("utils/prompts.py", "utils/prompts.py"),
-            ("utils/resources.py", "utils/resources.py"),
-            ("utils/rest_api.py", "utils/rest_api.py"),
-            ("utils/schema.py", "utils/schema.py"),
+            (r"utils/__init__.py", r"utils/__init__.py"),
+            (r"utils/api.py", r"utils/api.py"),
+            (r"utils/credentials.py", r"utils/credentials.py"),
+            (r"utils/datetime_helpers.py", r"utils/datetime_helpers.py"),
+            (r"utils/errors.py", r"utils/errors.py"),
+            (r"utils/prompts.py", r"utils/prompts.py"),
+            (r"utils/resources.py", r"utils/resources.py"),
+            (r"utils/rest_api.py", r"utils/rest_api.py"),
+            (r"utils/schema.py", r"utils/schema.py"),
+            (r"utils/logging.py", r"utils/logging.py"),
+            (r"utils/snowflake_helpers.py", r"utils/snowflake_helpers.py"),
             (str(application_path / "metadata.yaml"), "metadata.yaml"),
         ]
     )
