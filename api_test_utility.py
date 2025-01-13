@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# type: ignore
 import json
 import os
 import time
@@ -29,7 +30,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 # Import FastAPI functions directly
-from utils.rest_api import (
+from utils.rest_api import (  # type: ignore[attr-defined]
     cleanse_dataframes,
     get_business_analysis,
     get_dictionary,
@@ -41,7 +42,6 @@ from utils.rest_api import (
 from utils.schema import (
     BusinessAnalysisRequest,
     ChatRequest,
-    CleanseRequest,
     DatasetInput,
     RunAnalysisRequest,
     RunChartsRequest,
@@ -136,15 +136,10 @@ def load_dataframes(files: list[str]) -> list[dict[str, Any]]:
     return datasets
 
 
-async def cleanse_datasets(datasets: list[dict[str, Any]]) -> dict[str, Any]:
+async def cleanse_datasets(datasets: list[DatasetInput]) -> dict[str, Any] | None:
     """Use API function directly to cleanse datasets"""
     try:
         start_time = time.time()
-
-        # Create CleanseRequest object
-        request = CleanseRequest(
-            datasets=[DatasetInput(**dataset) for dataset in datasets]
-        )
 
         with Progress(
             SpinnerColumn(),
@@ -154,20 +149,20 @@ async def cleanse_datasets(datasets: list[dict[str, Any]]) -> dict[str, Any]:
             task = progress.add_task("Cleansing datasets...", total=None)
 
             # Call the API function directly
-            result = await cleanse_dataframes(request)
+            result = await cleanse_dataframes(datasets)
 
             progress.update(task, completed=True)
 
         elapsed_time = time.time() - start_time
         console.print(f"\n[cyan]Cleansing time: {elapsed_time:.2f} seconds[/cyan]")
-        return result.dict()
+        return result.model_dump()
 
     except Exception as e:
         console.print(f"[red]Error: {str(e)}[/red]")
         return None
 
 
-async def main():
+async def main() -> None:
     start_time = time.time()
     console.print("[bold blue]Data Analyst API Test Utility[/bold blue]")
     console.print("Select files to process and test with the API\n")
@@ -180,7 +175,8 @@ async def main():
 
     # Load dataframes
     console.print("\n[bold]Loading selected files...[/bold]")
-    datasets = load_dataframes(selected_files)
+    datasets = [DatasetInput(**df) for df in load_dataframes(selected_files)]
+
     if not datasets:
         console.print("[red]No datasets were successfully loaded. Exiting...[/red]")
         return
@@ -264,20 +260,18 @@ async def main():
             transient=True,
         ) as progress:
             task = progress.add_task("Creating data dictionary...", total=None)
-            dict_request = CleanseRequest(
-                datasets=[DatasetInput(**dataset) for dataset in result["datasets"]]
-            )
+            datasets = [DatasetInput(**dataset) for dataset in result["datasets"]]
 
             # Add more debug logging
             console.print(
-                f"\n[cyan]Debug: Dictionary request contains {len(dict_request.datasets)} datasets[/cyan]"
+                f"\n[cyan]Debug: Dictionary request contains {len(datasets)} datasets[/cyan]"
             )
-            for dataset in dict_request.datasets:
+            for dataset in datasets:
                 console.print(
                     f"[cyan]Debug: Request dataset '{dataset.name}' has {len(dataset.data)} records[/cyan]"
                 )
 
-            dictionary_result = await get_dictionary(dict_request)
+            dictionary_result = await get_dictionary(datasets)
             progress.update(task, completed=True)
 
         dict_elapsed_time = time.time() - dict_start_time
@@ -386,7 +380,7 @@ async def main():
             transient=True,
         ) as progress:
             task = progress.add_task("Generating questions...", total=None)
-            questions_result = await suggest_questions(dict_request)
+            questions_result = await suggest_questions(datasets)
             progress.update(task, completed=True)
 
         question_elapsed_time = time.time() - question_start_time
@@ -719,6 +713,7 @@ async def main():
 
         # Only proceed with business analysis and charts if analysis was successful
         if analysis_success:
+            analysis_start_time = time.time()
             analysis_elapsed_time = time.time() - analysis_start_time
             console.print(
                 f"\n[cyan]Analysis time: {analysis_elapsed_time:.2f} seconds[/cyan]"
@@ -726,7 +721,7 @@ async def main():
 
             # Run business analysis
             console.print("\n[bold]Running Business Analysis...[/bold]")
-            analysis_start_time = time.time()
+            # analysis_start_time = time.time()
 
             with Progress(
                 SpinnerColumn(),

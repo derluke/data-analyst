@@ -17,7 +17,6 @@ from __future__ import annotations
 import ast
 import base64
 import functools
-import hashlib
 import io
 import json
 import logging
@@ -27,7 +26,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Tuple
+from types import FunctionType
+from typing import Any, Awaitable, Callable, Dict, List, Tuple
 
 import datarobot as dr
 import instructor
@@ -37,6 +37,13 @@ import plotly.graph_objects as go
 import psutil
 from fastapi import HTTPException
 from openai import OpenAI
+from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
+from openai.types.chat.chat_completion_system_message_param import (
+    ChatCompletionSystemMessageParam,
+)
+from openai.types.chat.chat_completion_user_message_param import (
+    ChatCompletionUserMessageParam,
+)
 from plotly.subplots import make_subplots
 from pydantic import ValidationError
 
@@ -61,7 +68,6 @@ from utils.schema import (
     ChartPerformance,
     ChartValidationError,
     ChatRequest,
-    CleanseRequest,
     CleanseResult,
     CleansingReport,
     Code,
@@ -73,7 +79,6 @@ from utils.schema import (
     DataDictionaryMetadata,
     DatasetInput,
     DatasetOutput,
-    DictionaryRequest,
     DictionaryResult,
     EnhancedUserMessageForChat,
     MemoryUsage,
@@ -122,18 +127,6 @@ MODEL_MODE = "openai"
 DICTIONARY_BATCH_SIZE = 10
 
 
-# Cache key generator for DataFrames
-def _generate_df_hash(df: pd.DataFrame) -> str:
-    """Generate a hash key for DataFrame caching based on content."""
-    sample = df.head(100).to_json()
-    cols = ",".join(df.columns)
-    dtypes = ",".join(df.dtypes.astype(str))
-
-    # Create hash
-    hash_input = f"{sample}{cols}{dtypes}".encode()
-    return hashlib.md5(hash_input).hexdigest()
-
-
 @functools.lru_cache(maxsize=2)
 def list_catalog_datasets(limit: int = 100) -> List[AiCatalogDataset]:
     """
@@ -167,7 +160,7 @@ def list_catalog_datasets(limit: int = 100) -> List[AiCatalogDataset]:
 
 
 @functools.lru_cache(maxsize=8)
-def download_catalog_datasets(*args) -> dict[str, list[dict[str, Any]]]:
+def download_catalog_datasets(*args: Any) -> dict[str, list[dict[str, Any]]]:
     """Load selected datasets as pandas DataFrames
 
     Args:
@@ -176,14 +169,17 @@ def download_catalog_datasets(*args) -> dict[str, list[dict[str, Any]]]:
     Returns:
         dict[str, list[dict[str, Any]]]: Dictionary of dataset names and data
     """
-    dataframes = {}
+    dataframes: dict[str, list[dict[str, Any]]] = {}
     dataset_ids = list(args)
     for id in dataset_ids:
-        dataset = dr.Dataset.get(id)
+        dataset = dr.Dataset.get(id)  # type: ignore[attr-defined]
         try:
-            dataframes[dataset.name] = dataset.get_as_dataframe().to_dict(
-                orient="records"
-            )
+            df_records = dataset.get_as_dataframe().to_dict(orient="records")
+
+            df_records_converted = [
+                {str(k): v for k, v in record.items()} for record in df_records
+            ]
+            dataframes[dataset.name] = df_records_converted
             logger.info(f"Successfully downloaded {dataset.name}")
         except Exception as e:
             logger.error(f"Failed to read dataset {dataset.name}: {str(e)}")
@@ -237,22 +233,27 @@ def _process_column_batch(
                 continue
 
     # Create messages for OpenAI
-    messages = [
-        {"role": "system", "content": prompts.SYSTEM_PROMPT_GET_DICTIONARY},
-        {"role": "user", "content": f"Data: {json.dumps(sample_data)}"},
-        {
-            "role": "user",
-            "content": f"Statistical Summary: {json.dumps(numeric_summary)}",
-        },
+    messages: list[ChatCompletionMessageParam] = [
+        ChatCompletionSystemMessageParam(
+            role="system", content=prompts.SYSTEM_PROMPT_GET_DICTIONARY
+        ),
+        ChatCompletionUserMessageParam(
+            role="user", content=f"Data: {json.dumps(sample_data)}"
+        ),
+        ChatCompletionUserMessageParam(
+            role="user", content=f"Statistical Summary: {json.dumps(numeric_summary)}"
+        ),
     ]
 
     if categories:
         messages.append(
-            {"role": "user", "content": f"Categorical Values: {json.dumps(categories)}"}
+            ChatCompletionUserMessageParam(
+                role="user", content=f"Categorical Values: {json.dumps(categories)}"
+            )
         )
 
     # Get descriptions from OpenAI
-    completion = client.chat.completions.create(
+    completion: DictionaryResult = client.chat.completions.create(
         response_model=DictionaryResult,
         model="gpt-4o-mini",
         messages=messages,
@@ -441,12 +442,16 @@ async def _generate_question_suggestions(
     }
 
     # Create OpenAI messages
-    messages = [
-        {"role": "system", "content": prompts.SYSTEM_PROMPT_SUGGEST_A_QUESTION},
-        {"role": "user", "content": f"Data Dictionary:\n{json.dumps(dict_data)}"},
+    messages: list[ChatCompletionMessageParam] = [
+        ChatCompletionSystemMessageParam(
+            role="system", content=prompts.SYSTEM_PROMPT_SUGGEST_A_QUESTION
+        ),
+        ChatCompletionUserMessageParam(
+            role="user", content=f"Data Dictionary:\n{json.dumps(dict_data)}"
+        ),
     ]
 
-    completion = client.chat.completions.create(
+    completion: QuestionList = client.chat.completions.create(
         response_model=QuestionList,
         model="gpt-4o-mini",
         messages=messages,
@@ -471,18 +476,19 @@ async def _generate_question_suggestions(
     return QuestionSuggestions(questions=validated_questions, metadata=metadata)
 
 
+# TODO: duplicated in schema
 def _validate_chart_code(code: str) -> Tuple[bool, str]:
     """Validate chart generation code for safety and correctness"""
     try:
         tree = ast.parse(code)
-        imports = []
+        imports: list[str] = []
 
         # Check imports
         for node in ast.walk(tree):
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 if isinstance(node, ast.Import):
                     imports.extend(n.name.split(".")[0] for n in node.names)
-                else:
+                elif node.module is not None:
                     imports.append(node.module.split(".")[0])
 
         allowed_modules = {"pandas", "numpy", "plotly", "scipy"}
@@ -537,14 +543,20 @@ async def _create_charts(
 
         try:
             # Create messages for OpenAI
-            messages = [
-                {"role": "system", "content": prompts.SYSTEM_PROMPT_PLOTLY_CHART},
-                {"role": "user", "content": f"Question: {question}"},
-                {"role": "user", "content": f"Data Metadata:\n{json.dumps(metadata)}"},
-                {
-                    "role": "user",
-                    "content": f"Data top 25 rows:\n{df.head(25).to_string()}",
-                },
+            messages: list[ChatCompletionMessageParam] = [
+                ChatCompletionSystemMessageParam(
+                    role="system",
+                    content=prompts.SYSTEM_PROMPT_PLOTLY_CHART,
+                ),
+                ChatCompletionUserMessageParam(
+                    role="user", content=f"Question: {question}"
+                ),
+                ChatCompletionUserMessageParam(
+                    role="user", content=f"Data Metadata:\n{json.dumps(metadata)}"
+                ),
+                ChatCompletionUserMessageParam(
+                    role="user", content=f"Data top 25 rows:\n{df.head(25).to_string()}"
+                ),
             ]
 
             # Add error context if available
@@ -557,7 +569,7 @@ async def _create_charts(
                 )
 
             # Get response based on model mode
-            response = client.chat.completions.create(
+            response: Code = client.chat.completions.create(
                 response_model=Code,
                 model="gpt-4o",
                 temperature=0,
@@ -713,33 +725,45 @@ async def _generate_python_analysis_code(
     sample_data = "\n\n".join(all_samples)
 
     # Create messages for OpenAI
-    messages = [
-        {"role": "system", "content": prompts.SYSTEM_PROMPT_PYTHON_ANALYST},
-        {"role": "user", "content": f"Business Question: {request.question}"},
-        {"role": "user", "content": f"Data Shapes:\n{shape_info}"},
-        {"role": "user", "content": f"Sample Data:\n{sample_data}"},
-        {
-            "role": "user",
-            "content": f"Data Dictionary:\n{json.dumps(dictionary_data)}",
-        },
+    messages: list[ChatCompletionMessageParam] = [
+        ChatCompletionSystemMessageParam(
+            role="system", content=prompts.SYSTEM_PROMPT_PYTHON_ANALYST
+        ),
+        ChatCompletionUserMessageParam(
+            role="user", content=f"Business Question: {request.question}"
+        ),
+        ChatCompletionUserMessageParam(
+            role="user", content=f"Data Shapes:\n{shape_info}"
+        ),
+        ChatCompletionUserMessageParam(
+            role="user", content=f"Sample Data:\n{sample_data}"
+        ),
+        ChatCompletionUserMessageParam(
+            role="user",
+            content=f"Data Dictionary:\n{json.dumps(dictionary_data)}",
+        ),
     ]
 
     # Add error context if available
     if validation_error:
         messages.extend(
             [
-                {"role": "user", "content": "Previous attempt failed with error:"},
-                {"role": "user", "content": validation_error["error_message"]},
-                {"role": "user", "content": "Failed code:"},
-                {"role": "user", "content": validation_error["failed_code"]},
-                {
-                    "role": "user",
-                    "content": "Please generate new code that avoids this error.",
-                },
+                ChatCompletionUserMessageParam(
+                    role="user",
+                    content=f"Previous attempt failed with error: {validation_error['error_message']}",
+                ),
+                ChatCompletionUserMessageParam(
+                    role="user",
+                    content=f"Failed code: {validation_error['failed_code']}",
+                ),
+                ChatCompletionUserMessageParam(
+                    role="user",
+                    content="Please generate new code that avoids this error.",
+                ),
             ]
         )
 
-    completion = client.chat.completions.create(
+    completion: Code = client.chat.completions.create(
         response_model=Code,
         model="gpt-4o",
         temperature=0.1,
@@ -762,7 +786,7 @@ async def _generate_analysis_code(
         CodeGenerationResult containing generated code and metadata
     """
     attempts = 0
-    validation_errors = []
+    validation_errors: list[str] = []
     validation_error: dict[str, str] = {}
 
     while attempts < max_attempts:
@@ -817,14 +841,14 @@ async def _generate_analysis_code(
 
 
 async def cleanse_dataframes(
-    request: CleanseRequest,
-    progress_callback: Callable[[str, int], None] | None = None,
+    datasets: list[DatasetInput],
+    progress_callback: Callable[[str, int], Awaitable[None]] | None = None,
 ) -> CleanseResult:
     """
     Clean and standardize multiple pandas DataFrames.
 
     Parameters:
-    - request: CleanseRequest containing datasets to clean
+    - datasets: list[DatasetInput] containing datasets to clean
     - progress_callback: Optional callback for progress reporting
 
     Returns:
@@ -836,9 +860,9 @@ async def cleanse_dataframes(
     try:
         logger.info("Starting cleanse_dataframes")
         cleaned_datasets = []
-        total_datasets = len(request.datasets)
+        total_datasets = len(datasets)
 
-        for idx, dataset in enumerate(request.datasets):
+        for idx, dataset in enumerate(datasets):
             try:
                 logger.info(f"Processing dataset: {dataset.name}")
 
@@ -856,7 +880,9 @@ async def cleanse_dataframes(
 
                 # Clean column names - only remove leading/trailing whitespace and consecutive spaces
                 original_columns = df.columns.tolist()
-                df.columns = [re.sub(r"\s+", " ", col.strip()) for col in df.columns]
+                df.columns = pd.Index(
+                    [re.sub(r"\s+", " ", col.strip()) for col in df.columns], dtype=str
+                )
                 cleaned_columns = df.columns.tolist()
 
                 # Track column name changes
@@ -1006,12 +1032,12 @@ async def cleanse_dataframes(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def get_dictionary(request: DictionaryRequest) -> DataDictionariesAndMetadata:
+async def get_dictionary(datasets: list[DatasetInput]) -> DataDictionariesAndMetadata:
     """
     Generate data dictionary for multiple datasets.
 
     Parameters:
-    - request: DictionaryRequest containing datasets
+    - datasets: list[DatasetInput] containing datasets
 
     Returns:
     - Dictionary containing column descriptions and metadata
@@ -1021,12 +1047,10 @@ async def get_dictionary(request: DictionaryRequest) -> DataDictionariesAndMetad
     """
     try:
         # Add debug logging
-        logger.info(
-            f"Received dictionary request with {len(request.datasets)} datasets"
-        )
+        logger.info(f"Received dictionary request with {len(datasets)} datasets")
 
         metadata = DataDictionaryMetadata(
-            total_datasets=len(request.datasets),
+            total_datasets=len(datasets),
             processing_start=datetime.now().isoformat(),
             batch_times=[],
             errors=[],
@@ -1037,7 +1061,7 @@ async def get_dictionary(request: DictionaryRequest) -> DataDictionariesAndMetad
             # Map datasets to futures
             dataset_futures = {
                 executor.submit(_process_dataset, dataset): dataset.name
-                for dataset in request.datasets
+                for dataset in datasets
             }
 
             # Add debug logging
@@ -1083,12 +1107,12 @@ async def get_dictionary(request: DictionaryRequest) -> DataDictionariesAndMetad
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def suggest_questions(request: DictionaryRequest) -> QuestionSuggestions:
+async def suggest_questions(datasets: list[DatasetInput]) -> QuestionSuggestions:
     """
     Generate and validate suggested analysis questions.
 
     Parameters:
-    - request: DictionaryRequest containing dataset information
+    - datasets: list[DatasetInput] containing dataset information
 
     Returns:
     - Dictionary containing suggested questions and metadata
@@ -1098,7 +1122,7 @@ async def suggest_questions(request: DictionaryRequest) -> QuestionSuggestions:
     """
     try:
         # Input validation
-        if not request.datasets:
+        if not datasets:
             raise ValueError("Dictionary cannot be empty")
 
         # Convert dictionary list to DataFrame
@@ -1109,7 +1133,7 @@ async def suggest_questions(request: DictionaryRequest) -> QuestionSuggestions:
                     "description": f"Column {col} from dataset {dataset.name}",
                     "data_type": str(pd.DataFrame(dataset.data)[col].dtype),
                 }
-                for dataset in request.datasets
+                for dataset in datasets
                 for col in pd.DataFrame(dataset.data).columns
             ]
         )
@@ -1136,12 +1160,18 @@ async def rephrase_message(messages: ChatRequest) -> dict[str, Any]:
         [f"{msg['role']}: {msg['content']}" for msg in messages.messages]
     )
 
-    prompt_messages = [
-        {"role": "system", "content": prompts.SYSTEM_PROMPT_REPHRASE_MESSAGE},
-        {"role": "user", "content": f"Message History:\n{messages_str}"},
+    prompt_messages: list[ChatCompletionMessageParam] = [
+        ChatCompletionSystemMessageParam(
+            content=prompts.SYSTEM_PROMPT_REPHRASE_MESSAGE,
+            role="system",
+        ),
+        ChatCompletionUserMessageParam(
+            content=f"Message History:\n{messages_str}",
+            role="user",
+        ),
     ]
 
-    completion = client.chat.completions.create(
+    completion: EnhancedUserMessageForChat = client.chat.completions.create(
         response_model=EnhancedUserMessageForChat,
         model="dr_llm",
         messages=prompt_messages,
@@ -1166,13 +1196,12 @@ async def run_charts(request: RunChartsRequest) -> RunChartsResult:
             "metadata_dtypes": json.loads(df.dtypes.astype(str).to_json()),
         }
         dataframe_metadata_clone = dataframe_metadata.copy()
-
         max_attempts = 3
         attempt = 0
         last_error = None
         last_failed_code = None
 
-        while attempt < max_attempts:
+        while True:  # Changed to while True with explicit breaks
             try:
                 # Generate charts with retry logic
                 result = await _create_charts(
@@ -1182,10 +1211,10 @@ async def run_charts(request: RunChartsRequest) -> RunChartsResult:
                     error_message=last_error,
                     failed_code=last_failed_code,
                 )
-
                 fig1_base64 = _figure_to_base64(result.fig1) if result.fig1 else None
                 fig2_base64 = _figure_to_base64(result.fig2) if result.fig2 else None
 
+                # Explicit return here
                 return RunChartsResult(
                     fig1=result.fig1,
                     fig2=result.fig2,
@@ -1214,6 +1243,7 @@ async def run_charts(request: RunChartsRequest) -> RunChartsResult:
                         ),
                     ),
                 )
+
             except Exception as e:
                 attempt += 1
                 last_error = str(e)
@@ -1223,15 +1253,15 @@ async def run_charts(request: RunChartsRequest) -> RunChartsResult:
                     error_context = {
                         "error_type": type(e).__name__,
                         "error_message": str(e),
-                        "validation_errors": (
-                            result.validation_errors if "result" in locals() else []
-                        ),
-                        "execution_errors": (
-                            result.execution_errors if "result" in locals() else []
-                        ),
-                        "code_history": (
-                            result.code_history if "result" in locals() else []
-                        ),
+                        "validation_errors": result.validation_errors
+                        if "result" in locals()
+                        else [],
+                        "execution_errors": result.execution_errors
+                        if "result" in locals()
+                        else [],
+                        "code_history": result.code_history
+                        if "result" in locals()
+                        else [],
                         "attempts": attempt,
                         "timestamp": datetime.now().isoformat(),
                     }
@@ -1239,6 +1269,9 @@ async def run_charts(request: RunChartsRequest) -> RunChartsResult:
                         status_code=500,
                         detail={"error": str(e), "context": error_context},
                     )
+
+                # Always raise the exception
+                raise e
 
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -1267,17 +1300,24 @@ async def get_business_analysis(
         df_csv = df.head(750).to_csv(index=False, quoting=1)
 
         # Create messages for OpenAI
-        messages = [
-            {"role": "system", "content": prompts.SYSTEM_PROMPT_BUSINESS_ANALYSIS},
-            {"role": "user", "content": f"Business Question: {request.question}"},
-            {"role": "user", "content": f"Analyzed Data:\n{df_csv}"},
-            {
-                "role": "user",
-                "content": f"Data Dictionary:\n{json.dumps(request.dictionary)}",
-            },
+        messages: list[ChatCompletionMessageParam] = [
+            ChatCompletionSystemMessageParam(
+                role="system", content=prompts.SYSTEM_PROMPT_BUSINESS_ANALYSIS
+            ),
+            ChatCompletionUserMessageParam(
+                role="user",
+                content=f"Business Question: {request.question}",
+            ),
+            ChatCompletionUserMessageParam(
+                role="user", content=f"Analyzed Data:\n{df_csv}"
+            ),
+            ChatCompletionUserMessageParam(
+                role="user",
+                content=f"Data Dictionary:\n{json.dumps(request.dictionary)}",
+            ),
         ]
 
-        completion = client.chat.completions.create(
+        completion: BusinessAnalysisGeneration = client.chat.completions.create(
             response_model=BusinessAnalysisGeneration,
             model="gpt-4o",
             temperature=0.1,
@@ -1307,15 +1347,15 @@ async def run_analysis(request: RunAnalysisRequest) -> RunAnalysisResult:
 
     Contains integration and retry logic
     """
-    max_attempts = 3  # Single attempt counter for the generate-execute cycle
+    max_attempts = 3
     attempts = 0
     error_history: list[AnalysisError] = []
 
-    try:
-        # Input validation
-        if not request.data:
-            raise HTTPException(status_code=422, detail="Input data cannot be empty")
+    # Input validation
+    if not request.data:
+        raise HTTPException(status_code=422, detail="Input data cannot be empty")
 
+    try:
         # Convert JSON to DataFrames dictionary
         dataframes: dict[str, pd.DataFrame] = {}
         for dataset_name, dataset_records in request.data.items():
@@ -1325,7 +1365,7 @@ async def run_analysis(request: RunAnalysisRequest) -> RunAnalysisResult:
             else:
                 dataframes[dataset_name] = pd.DataFrame()
 
-        while attempts < max_attempts:
+        while True:  # Changed from while attempts < max_attempts
             attempts += 1
 
             try:
@@ -1367,6 +1407,9 @@ async def run_analysis(request: RunAnalysisRequest) -> RunAnalysisResult:
                             "Generated code did not define analyze_data function"
                         )
 
+                    if not isinstance(namespace["analyze_data"], FunctionType):
+                        raise ValueError("analyze_data is not a function")
+
                     result = namespace["analyze_data"](dataframes)
 
                     if not isinstance(result, (pd.DataFrame, list, dict)):
@@ -1374,7 +1417,7 @@ async def run_analysis(request: RunAnalysisRequest) -> RunAnalysisResult:
                     if isinstance(result, pd.DataFrame):
                         result = result.to_dict("records")
 
-                # If we get here, execution was successful
+                # If we get here, execution was successful - explicit return
                 return RunAnalysisResult(
                     status="success",
                     code=code_result.code,
@@ -1412,6 +1455,7 @@ async def run_analysis(request: RunAnalysisRequest) -> RunAnalysisResult:
                 )
 
                 if attempts >= max_attempts:
+                    # Explicit return for failure case
                     return RunAnalysisResult(
                         status="failed",
                         suggestions="Consider reformulating the question or checking data quality",
@@ -1421,6 +1465,8 @@ async def run_analysis(request: RunAnalysisRequest) -> RunAnalysisResult:
                             error_history=error_history,
                         ),
                     )
+                # If not max attempts, continue the loop
+                continue
 
     except Exception as e:
         logger.error(f"Error in run_analysis: {str(e)}")
@@ -1470,21 +1516,25 @@ async def _get_snowflake_analysis_code(
             all_samples.append(sample_str)
 
         # Create messages for OpenAI
-        messages = [
-            {
-                "role": "system",
-                "content": prompts.SYSTEM_PROMPT_SNOWFLAKE.format(
+        messages: list[ChatCompletionMessageParam] = [
+            ChatCompletionSystemMessageParam(
+                role="system",
+                content=prompts.SYSTEM_PROMPT_SNOWFLAKE.format(
                     warehouse=SNOWFLAKE_CREDENTIALS.warehouse,
                     database=SNOWFLAKE_CREDENTIALS.database,
                     schema=SNOWFLAKE_CREDENTIALS.db_schema,
                 ),
-            },
-            {"role": "user", "content": f"Business Question: {request.question}"},
-            {"role": "user", "content": f"Sample Data:\n{chr(10).join(all_samples)}"},
-            {
-                "role": "user",
-                "content": f"Data Dictionary:\n{json.dumps(all_tables_info)}",
-            },
+            ),
+            ChatCompletionUserMessageParam(
+                content=f"Business Question: {request.question}",
+                role="user",
+            ),
+            ChatCompletionUserMessageParam(
+                content=f"Sample Data:\n{chr(10).join(all_samples)}", role="user"
+            ),
+            ChatCompletionUserMessageParam(
+                content=f"Data Dictionary:\n{json.dumps(all_tables_info)}", role="user"
+            ),
         ]
 
         # Add error context if available
@@ -1522,7 +1572,7 @@ async def run_snowflake_analysis(
 ) -> SnowflakeAnalysisResult:
     """Execute Snowflake analysis with retry logic and error handling"""
     attempts = 0
-    error_history = []
+    error_history: list[AnalysisError] = []
     conn = None
     last_generated_code = None
     start_time = time.time()
@@ -1533,14 +1583,14 @@ async def run_snowflake_analysis(
 
         conn = create_snowflake_connection()
 
-        while attempts < max_attempts:
+        while True:  # Changed from while attempts < max_attempts
             attempts += 1
 
             try:
                 # Update request with error context if available
                 if error_history:
-                    request.error_message = error_history[-1]["error"]
-                    request.failed_code = error_history[-1]["code"]
+                    request.error_message = error_history[-1].error
+                    request.failed_code = error_history[-1].code
 
                 # Generate SQL code
                 code_result = await _get_snowflake_analysis_code(request)
@@ -1581,8 +1631,8 @@ async def run_snowflake_analysis(
                     )
                 )
 
-                # On last attempt, return detailed error response
                 if attempts >= max_attempts:
+                    # Explicit return for max attempts reached
                     return SnowflakeAnalysisResult(
                         status="failed",
                         last_generated_code=last_generated_code,
@@ -1597,6 +1647,7 @@ async def run_snowflake_analysis(
 
                 # Exponential backoff between attempts
                 time.sleep(min(2**attempts, 10))
+                continue  # Explicit continue
 
     except Exception as e:
         error_history.append(

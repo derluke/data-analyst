@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import ast
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Type, Union
 
 import plotly.graph_objects as go
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -43,40 +43,25 @@ class ChatAgentDeploymentSettings(BaseModel):
 
 class DatasetInput(BaseModel):
     name: str
-    data: List[Dict[str, Any]]
-
-
-class CleanseRequest(BaseModel):
-    datasets: List[DatasetInput]
+    data: list[dict[str, Any]]
 
 
 class CleansingReport(BaseModel):
-    columns_cleaned: List[str]
-    value_counts: Dict[str, int]
-    errors: List[str]
-    warnings: List[str]
+    columns_cleaned: list[str]
+    value_counts: dict[str, Any]
+    errors: list[str]
+    warnings: list[str]
 
 
 class DatasetOutput(BaseModel):
     name: str
-    data: List[Dict[str, Any]]
+    data: list[dict[str, Any]]
     cleaning_report: CleansingReport
 
 
 class CleanseResult(BaseModel):
-    datasets: List[DatasetOutput]
-    metadata: Dict[str, Any]
-
-
-class DictionaryRequest(BaseModel):
-    data: List[Dict[str, Any]]
-
-    @field_validator("data")
-    @classmethod
-    def validate_data(cls, v):
-        if not isinstance(v, list):
-            raise ValueError("Input data must be a list of dictionaries")
-        return v
+    datasets: list[DatasetOutput]
+    metadata: dict[str, Any]
 
 
 class DataDictionaryColumn(BaseModel):
@@ -87,7 +72,7 @@ class DataDictionaryColumn(BaseModel):
 
 class DataDictionary(BaseModel):
     name: str
-    dictionary: List[DataDictionaryColumn]
+    dictionary: list[DataDictionaryColumn]
     cache_hit: bool
     batch_time: float
 
@@ -95,10 +80,10 @@ class DataDictionary(BaseModel):
 class DataDictionaryMetadata(BaseModel):
     total_datasets: int
     processing_start: str
-    batch_times: List[float]
-    errors: List[str]
-    processing_end: str = None
-    total_time: float = None
+    batch_times: list[float]
+    errors: list[str]
+    processing_end: str | None = None
+    total_time: float | None = None
 
 
 class DataDictionariesAndMetadata(BaseModel):
@@ -106,7 +91,6 @@ class DataDictionariesAndMetadata(BaseModel):
     dictionaries: list[DataDictionary]
 
 
-# Add after the DictionaryRequest class
 class DictionaryResult(BaseModel):
     """Validates LLM responses for data dictionary generation
 
@@ -118,12 +102,14 @@ class DictionaryResult(BaseModel):
         ValueError: If validation fails
     """
 
-    columns: List[str]
-    descriptions: List[str]
+    columns: list[str]
+    descriptions: list[str]
 
     @field_validator("descriptions")
     @classmethod
-    def validate_descriptions(cls, v, values):
+    def validate_descriptions(
+        cls: Type["DictionaryResult"], v: Any, values: Any
+    ) -> Any:
         # Check if columns exists in values
         if "columns" not in values.data:
             raise ValueError("Columns must be provided before descriptions")
@@ -145,7 +131,7 @@ class DictionaryResult(BaseModel):
 
     @field_validator("columns")
     @classmethod
-    def validate_columns(cls, v):
+    def validate_columns(cls: Type["DictionaryResult"], v: Any) -> Any:
         if not v:
             raise ValueError("Columns list cannot be empty")
 
@@ -160,7 +146,7 @@ class DictionaryResult(BaseModel):
 
         return v
 
-    def to_dict(self) -> Dict[str, str]:
+    def to_dict(self) -> dict[str, str]:
         """Convert columns and descriptions to dictionary format
 
         Returns:
@@ -180,9 +166,9 @@ class RunAnalysisRequest(BaseModel):
         failed_code: Optional code that failed in previous attempt
     """
 
-    data: Dict[str, List[Dict[str, Any]]]
-    dictionary: Dict[
-        str, List[Dict[str, Union[str, Dict[str, str]]]]
+    data: dict[str, list[dict[str, Any]]]
+    dictionary: dict[
+        str, list[dict[str, Union[str, dict[str, str]]]]
     ]  # Allow dictionary values for description
     question: str
     error_message: str | None = None
@@ -190,7 +176,8 @@ class RunAnalysisRequest(BaseModel):
 
     @field_validator("data")
     @classmethod
-    def validate_data(cls, v):
+    def validate_data(cls: Type["RunAnalysisRequest"], v: Any) -> Any:
+        """Validate that the input data is a dictionary of datasets"""
         if not isinstance(v, dict):
             raise ValueError("Input data must be a dictionary of datasets")
         if not all(isinstance(dataset, list) for dataset in v.values()):
@@ -199,9 +186,10 @@ class RunAnalysisRequest(BaseModel):
 
     @field_validator("dictionary")
     @classmethod
-    def validate_dictionary(cls, v):
+    def validate_dictionary(cls: Type["RunAnalysisRequest"], v: Any) -> Any:
+        """Validate that the input dictionary is a dictionary of dataset descriptions"""
         if not isinstance(v, dict):
-            raise ValueError("Dictionary must be a dictionary of dataset descriptions")
+            raise ValueError("dictionary must be a dictionary of dataset descriptions")
 
         # Process dictionary values to ensure descriptions are strings
         processed = {}
@@ -241,9 +229,9 @@ class RunAnanlysisResultMetadata(BaseModel):
 
 class RunAnalysisResult(BaseModel):
     status: str
-    metadata: RunAnanlysisResultMetadata
-    code: str | None = None
+    metadata: SnowflakeAnalysisMetadata | RunAnanlysisResultMetadata
     data: list[dict[str, Any]] | None = None
+    code: str | None = None
     suggestions: str | None = None
 
 
@@ -251,20 +239,21 @@ class ChartRequest(BaseModel):
     """Request model for charts endpoint
 
     Attributes:
-        data: List of dictionaries representing a single dataset
+        data: list of dictionaries representing a single dataset
         question: Business question to visualize
         error_message: Optional error from previous attempt
         failed_code: Optional code that failed in previous attempt
     """
 
-    data: List[Dict[str, Any]]
+    data: list[dict[str, Any]]
     question: str
     error_message: str | None = None
     failed_code: str | None = None
 
     @field_validator("data")
     @classmethod
-    def validate_data(cls, v):
+    def validate_data(cls: Type["ChartRequest"], v: Any) -> Any:
+        """Validate that the data is a list of dictionaries"""
         if not isinstance(v, list):
             raise ValueError("Input data must be a list of dictionaries")
         if not all(isinstance(record, dict) for record in v):
@@ -279,9 +268,9 @@ class ChartGenerationResult(BaseModel):
     validation: ValidationMessage
     metadata: ChartGenerationMetadata
     attempts: int
-    validation_errors: List[ChartValidationError]
-    execution_errors: List[ChartExecutionError]
-    code_history: List[ChartCodeHistory]
+    validation_errors: list[ChartValidationError]
+    execution_errors: list[ChartExecutionError]
+    code_history: list[ChartCodeHistory]
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -290,27 +279,29 @@ class RunChartsRequest(BaseModel):
     """Request model for charts endpoint
 
     Attributes:
-        data: List of dictionaries representing a single dataset
+        data: list of dictionaries representing a single dataset
         question: Business question to visualize
         error_message: Optional error from previous attempt
         failed_code: Optional code that failed in previous attempt
     """
 
-    data: List[Dict[Union[str, int], Any]]  # Allow both string and integer keys
+    data: list[dict[Union[str, int], Any]]  # Allow both string and integer keys
     question: str
     error_message: str | None = None
     failed_code: str | None = None
 
     @field_validator("data")
     @classmethod
-    def validate_data(cls, v):
+    def validate_data(cls: Type["RunChartsRequest"], v: Any) -> list[dict[str, Any]]:
+        """Validate that the input data is a list of dictionaries and convert numeric keys to strings."""
         if not isinstance(v, list):
             raise ValueError("Input data must be a list of dictionaries")
         if not all(isinstance(record, dict) for record in v):
             raise ValueError("Each record must be a dictionary")
 
         # Convert numeric keys to strings in nested dictionaries
-        def convert_numeric_keys(d):
+        def convert_numeric_keys(d: Any) -> Any:
+            """Recursively convert numeric keys to strings."""
             if not isinstance(d, dict):
                 return d
             return {
@@ -352,7 +343,7 @@ class BusinessAnalysisMetadata(BaseModel):
 class BusinessAnalysisGeneration(BaseModel):
     bottom_line: str
     additional_insights: str
-    follow_up_questions: List[str]
+    follow_up_questions: list[str]
 
 
 class BusinessAnalysisResult(BusinessAnalysisGeneration):
@@ -363,25 +354,27 @@ class BusinessAnalysisRequest(BaseModel):
     """Request model for business analysis endpoint
 
     Attributes:
-        data: List of dictionaries representing a single dataset
-        dictionary: List of dictionary entries describing columns
+        data: list of dictionaries representing a single dataset
+        dictionary: list of dictionary entries describing columns
         question: Business question to analyze
     """
 
-    data: List[Dict[Union[str, int], Any]]  # Allow both string and integer keys
-    dictionary: List[Dict[Union[str, int], Any]]  # Allow both string and integer keys
+    data: list[dict[Union[str, int], Any]]  # Allow both string and integer keys
+    dictionary: list[dict[Union[str, int], Any]]  # Allow both string and integer keys
     question: str
 
     @field_validator("data")
     @classmethod
-    def validate_data(cls, v):
+    def validate_data(cls: Type["BusinessAnalysisRequest"], v: Any) -> Any:
+        """Validate that the data is a list of JSON objects and not empty"""
         if not isinstance(v, list):
             raise ValueError("Input data must be a list of JSON objects")
         if len(v) == 0:
             raise ValueError("Data cannot be empty")
 
         # Convert numeric keys to strings in nested dictionaries
-        def convert_numeric_keys(d):
+        def convert_numeric_keys(d: Any) -> Any:
+            """Recursively convert numeric keys to strings"""
             if not isinstance(d, dict):
                 return d
             return {
@@ -401,12 +394,13 @@ class BusinessAnalysisRequest(BaseModel):
 
     @field_validator("dictionary")
     @classmethod
-    def validate_dictionary(cls, v):
+    def validate_dictionary(cls: Type["BusinessAnalysisRequest"], v: Any) -> Any:
+        """Validate that the dictionary field is a list of dictionaries with string keys."""
         if not isinstance(v, list):
             raise ValueError("Dictionary must be a list")
 
         # Convert numeric keys to strings in dictionary entries
-        def convert_numeric_keys(d):
+        def convert_numeric_keys(d: Any) -> Any:
             if not isinstance(d, dict):
                 return d
             return {
@@ -420,13 +414,13 @@ class BusinessAnalysisRequest(BaseModel):
         # Validate required keys exist after conversion
         required_keys = {"column", "description", "data_type"}
         if not all(required_keys.issubset(d.keys()) for d in converted):
-            raise ValueError(f"Dictionary entries must contain keys: {required_keys}")
+            raise ValueError(f"dictionary entries must contain keys: {required_keys}")
 
         return converted
 
     @field_validator("question")
     @classmethod
-    def validate_question(cls, v):
+    def validate_question(cls: Type["BusinessAnalysisRequest"], v: str) -> str:
         if not v.strip():
             raise ValueError("Question cannot be empty")
         return v.strip()
@@ -438,16 +432,19 @@ class ChatRequest(BaseModel):
     """Request model for chat history processing
 
     Attributes:
-        messages: List of dictionaries containing chat messages
+        messages: list of dictionaries containing chat messages
                  Each message must have 'role' and 'content' fields
                  Role must be one of: 'user', 'assistant', 'system'
     """
 
-    messages: List[Dict[str, str]]
+    messages: list[dict[str, str]]
 
     @field_validator("messages")
     @classmethod
-    def validate_messages(cls, v):
+    def validate_messages(
+        cls: Type["ChatRequest"], v: list[dict[str, str]]
+    ) -> list[dict[str, str]]:
+        """Validate the messages list"""
         if not v:
             raise ValueError("Messages list cannot be empty")
 
@@ -470,17 +467,17 @@ class CodeValidator:
     ALLOWED_MODULES = {"pandas", "numpy", "scipy", "statsmodels", "sklearn"}
 
     @staticmethod
-    def validate_imports(code: str) -> Tuple[bool, str]:
+    def validate_imports(code: str) -> tuple[bool, str]:
         """Check if code only imports allowed modules"""
         try:
             tree = ast.parse(code)
-            imports = []
+            imports: list[str] = []
 
             for node in ast.walk(tree):
                 if isinstance(node, (ast.Import, ast.ImportFrom)):
                     if isinstance(node, ast.Import):
                         imports.extend(n.name.split(".")[0] for n in node.names)
-                    else:
+                    elif node.module is not None:
                         imports.append(node.module.split(".")[0])
 
             illegal_imports = set(imports) - CodeValidator.ALLOWED_MODULES
@@ -501,15 +498,15 @@ class CodeGenerationResult(BaseModel):
     code: str
     description: str
     validation: ValidationMessage
-    metadata: Dict[str, Any]
+    metadata: dict[str, Any]
     attempts: int
-    validation_errors: List[str]
+    validation_errors: list[str]
 
 
 class QuestionList(BaseModel):
     """Container for list of questions"""
 
-    questions: List[str]
+    questions: list[str]
 
 
 class QuestionSuggestionMetadata(BaseModel):
@@ -527,13 +524,13 @@ class QuestionValidationResult(BaseModel):
 
     question: str
     is_valid: bool
-    available_columns: List[str]
-    missing_columns: List[str]
+    available_columns: list[str]
+    missing_columns: list[str]
     validation_message: str
 
 
 class QuestionSuggestions(BaseModel):
-    questions: List[QuestionValidationResult]
+    questions: list[QuestionValidationResult]
     metadata: QuestionSuggestionMetadata
 
 
@@ -541,22 +538,25 @@ class SnowflakeAnalysisRequest(BaseModel):
     """Request model for Snowflake analysis endpoint
 
     Attributes:
-        data: Dictionary of sample data from each table
-        dictionary: Dictionary of data dictionaries for each table
+        data: dictionary of sample data from each table
+        dictionary: dictionary of data dictionaries for each table
         question: Business question to analyze
         error_message: Optional error from previous attempt
         failed_code: Optional code that failed in previous attempt
     """
 
-    data: Dict[str, List[Dict[str, Any]]]  # Sample data from each table
-    dictionary: Dict[str, Dict[str, Any]]  # Pre-generated data dictionary
+    data: dict[str, list[dict[str, Any]]]  # Sample data from each table
+    dictionary: dict[str, dict[str, Any]]  # Pre-generated data dictionary
     question: str
     error_message: str | None = None
     failed_code: str | None = None
 
     @field_validator("data")
     @classmethod
-    def validate_data(cls, v):
+    def validate_data(
+        cls: Type["SnowflakeAnalysisRequest"], v: dict[str, list[dict[str, Any]]]
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Validate that the input data is a dictionary of lists of dictionaries (records)"""
         if not isinstance(v, dict):
             raise ValueError("Input data must be a dictionary of table samples")
         if not all(isinstance(samples, list) for samples in v.values()):
@@ -565,14 +565,18 @@ class SnowflakeAnalysisRequest(BaseModel):
 
     @field_validator("dictionary")
     @classmethod
-    def validate_dictionary(cls, v):
+    def validate_dictionary(
+        cls: Type["SnowflakeAnalysisRequest"], v: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Validate that the input data is a dictionary of table descriptions"""
         if not isinstance(v, dict):
-            raise ValueError("Dictionary must be a dictionary of table descriptions")
+            raise ValueError("dictionary must be a dictionary of table descriptions")
         return v
 
     @field_validator("question")
     @classmethod
-    def validate_question(cls, v):
+    def validate_question(cls: Type["SnowflakeAnalysisRequest"], v: str) -> str:
+        """Validate that the input data is a non-empty string"""
         if not v.strip():
             raise ValueError("Question cannot be empty")
         return v.strip()
@@ -599,14 +603,22 @@ class SnowflakeAnalysisMetadata(BaseModel):
     total_sample_rows: int | None = None
 
 
-class SnowflakeAnalysisResult(BaseModel):
+class AnalysisResult(BaseModel):
+    status: str
+    metadata: SnowflakeAnalysisMetadata | RunAnanlysisResultMetadata
+    data: list[dict[str, Any]] | None = None
+    code: str | None = None
+    suggestions: str | None = None
+
+
+class SnowflakeAnalysisResult(AnalysisResult):
     status: str
     metadata: SnowflakeAnalysisMetadata
-    data: List[Dict[str, Any]] | None = None
+    data: list[dict[str, Any]] | None = None
     code: str | None = None
+    suggestions: str | None = None
     last_generated_code: str | None = None
     description: str | None = None
-    suggestions: str | None = None
 
 
 class SnowflakeExecutionMetadata(BaseModel):
@@ -674,7 +686,7 @@ class RunChartsResultMetadata(BaseModel):
     question: str
     stdout: str
     stderr: str
-    dataframe_metadata: Dict[str, Any]
+    dataframe_metadata: dict[str, Any]
     validation: ValidationMessage
     attempts: int
     validation_errors: list[ChartValidationError]

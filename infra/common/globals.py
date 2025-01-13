@@ -24,6 +24,10 @@ class RuntimeEnvironment(BaseModel):
 
 
 class GlobalRuntimeEnvironment(Enum):
+    PYTHON_312_APPLICATION_BASE = RuntimeEnvironment(
+        name="[DataRobot] Python 3.12",
+        id="66d07fae0513a1edf18595bb",
+    )
     PYTHON_311_NOTEBOOK_BASE = RuntimeEnvironment(
         name="[DataRobot] Python 3.11 Notebook Base Image",
         id="664388ff6d426582042bb3e4",
@@ -47,10 +51,6 @@ class GlobalRuntimeEnvironment(Enum):
     PYTHON_39_GENAI = RuntimeEnvironment(
         name="[DataRobot] Python 3.9 GenAI", id="64c964448dd3f0c07f47d040"
     )
-    # TODO: add once this support applications
-    # PYTHON_312_STREAMLIT = RuntimeEnvironment(
-    #     name="[DataRobot] Python 3.12 Streamlit", id="66fd777f534b15baa0a1e88e"
-    # )
     PYTHON_39_ONNX = RuntimeEnvironment(
         name="[DataRobot] Python 3.9 ONNX Drop-In", id="62059a573f7d5f5cebabcba5"
     )

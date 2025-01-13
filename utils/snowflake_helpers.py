@@ -11,13 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from __future__ import annotations
 
 import functools
 import logging
 import os
 import time
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 import snowflake.connector
@@ -31,7 +32,7 @@ logger = logging.getLogger("DataAnalystFrontend")
 SNOWFLAKE_CREDENTIALS = SnowflakeCredentials()
 
 
-def _get_snowflake_private_key() -> str | None:
+def _get_snowflake_private_key() -> bytes | None:
     # Check if private key path is set and valid
     key_path = SNOWFLAKE_CREDENTIALS.snowflake_key_path
     if key_path and os.path.exists(key_path):
@@ -65,11 +66,12 @@ def _get_snowflake_private_key() -> str | None:
                 f"Failed to process private key: {str(e)}, falling back to password authentication"
             )
     logger.info("No valid private key path found, using password authentication")
+    return None
 
 
 def create_snowflake_connection() -> snowflake.connector.SnowflakeConnection:
     """Create a connection to Snowflake using environment variables"""
-    connect_params = {
+    connect_params: dict[str, Any] = {
         "user": SNOWFLAKE_CREDENTIALS.user,
         "account": SNOWFLAKE_CREDENTIALS.account,
         "warehouse": SNOWFLAKE_CREDENTIALS.warehouse,
@@ -94,7 +96,7 @@ def create_snowflake_connection() -> snowflake.connector.SnowflakeConnection:
 
 def execute_snowflake_query(
     conn: snowflake.connector.SnowflakeConnection, query: str, timeout: int = 300
-) -> tuple[(list[tuple] | list[dict]), SnowflakeExecutionMetadata]:
+) -> tuple[(list[tuple[Any, ...]] | list[dict[str, Any]]), SnowflakeExecutionMetadata]:
     """Execute a Snowflake query with timeout and metadata capture
 
     Args:
@@ -162,7 +164,7 @@ def get_snowflake_tables() -> list[str]:
         )
         current_settings = cursor.fetchone()
         logger.info(
-            f"Current settings - Database: {current_settings[0]}, Schema: {current_settings[1]}, Role: {current_settings[2]}, Warehouse: {current_settings[3]}"
+            f"Current settings - Database: {current_settings[0]}, Schema: {current_settings[1]}, Role: {current_settings[2]}, Warehouse: {current_settings[3]}"  # type: ignore[index]
         )
 
         # Check if schema exists
@@ -173,7 +175,7 @@ def get_snowflake_tables() -> list[str]:
             WHERE SCHEMA_NAME = '{SNOWFLAKE_CREDENTIALS.db_schema}'
         """
         )
-        schema_exists = cursor.fetchone()[0]
+        schema_exists = cursor.fetchone()[0]  # type: ignore[index]
         logger.info(f"Schema exists check: {schema_exists > 0}")
 
         # Get all objects (tables and views)
@@ -225,7 +227,7 @@ def get_snowflake_tables() -> list[str]:
 
 @functools.lru_cache(maxsize=8)
 def get_snowflake_data(
-    *table_names, sample_size: int = 5000
+    *table_names: str, sample_size: int = 5000
 ) -> dict[str, list[dict[str, Any]]]:
     """Load selected tables from Snowflake as pandas DataFrames
 
@@ -273,7 +275,7 @@ def get_snowflake_data(
                 logger.info(
                     f"Successfully loaded table {table}: {len(df)} rows, {len(df.columns)} columns"
                 )
-                dataframes[table] = df.to_dict(orient="records")
+                dataframes[table] = cast(list[dict[str, Any]], df.to_dict("records"))
 
             except Exception as e:
                 logger.error(f"Error loading table {table}: {str(e)}")

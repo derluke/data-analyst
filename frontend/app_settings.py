@@ -17,7 +17,7 @@ from streamlit_theme import st_theme
 PAGE_ICON = "./datarobot_favicon.png"
 
 
-def get_page_logo():
+def get_page_logo() -> str:
     theme = st_theme()
     logo = "./DataRobot_white.svg"
     if theme and theme.get("base") == "light":

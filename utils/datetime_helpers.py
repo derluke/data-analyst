@@ -11,13 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import annotations
 
 import logging
+from typing import Any
 
 import pandas as pd
 
 
-def is_date_column(series: pd.Series) -> bool:
+def is_date_column(series: pd.Series[Any]) -> bool:
     """Check if a pandas Series likely contains date values
 
     Args:
@@ -53,7 +55,7 @@ def is_date_column(series: pd.Series) -> bool:
     return match_ratio > 0.8  # Return True if >80% of values match date patterns
 
 
-def convert_datetime_series(series: pd.Series) -> pd.Series:
+def convert_datetime_series(series: pd.Series[Any]) -> pd.Series[Any]:
     """Convert a series of values to datetime using vectorized operations
 
     Args:

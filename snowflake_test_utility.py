@@ -30,7 +30,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
-from utils.rest_api import (
+from utils.rest_api import (  # type: ignore[attr-defined]
     get_dictionary,
     rephrase_message,
     run_snowflake_analysis,
@@ -38,7 +38,6 @@ from utils.rest_api import (
 )
 from utils.schema import (
     ChatRequest,
-    CleanseRequest,
     DatasetInput,
     SnowflakeAnalysisRequest,
 )
@@ -50,7 +49,7 @@ warnings.filterwarnings("ignore")
 
 # Add custom JSON encoder
 class DecimalEncoder(JSONEncoder):
-    def default(self, obj):
+    def default(self, obj: Any) -> Any:
         if isinstance(obj, decimal.Decimal):
             return str(obj)
         return super(DecimalEncoder, self).default(obj)
@@ -60,12 +59,12 @@ def load_snowflake_credentials() -> Dict[str, str]:
     """Load Snowflake credentials from .env file"""
 
     return {
-        "user": os.getenv("SNOWFLAKE_USER"),
-        "password": os.getenv("SNOWFLAKE_PASSWORD"),
-        "account": os.getenv("SNOWFLAKE_ACCOUNT"),
-        "warehouse": os.getenv("SNOWFLAKE_WAREHOUSE"),
-        "database": os.getenv("SNOWFLAKE_DATABASE"),
-        "schema": os.getenv("SNOWFLAKE_SCHEMA"),
+        "user": os.getenv("SNOWFLAKE_USER"),  # type: ignore[dict-item]
+        "password": os.getenv("SNOWFLAKE_PASSWORD"),  # type: ignore[dict-item]
+        "account": os.getenv("SNOWFLAKE_ACCOUNT"),  # type: ignore[dict-item]
+        "warehouse": os.getenv("SNOWFLAKE_WAREHOUSE"),  # type: ignore[dict-item]
+        "database": os.getenv("SNOWFLAKE_DATABASE"),  # type: ignore[dict-item]
+        "schema": os.getenv("SNOWFLAKE_SCHEMA"),  # type: ignore[dict-item]
     }
 
 
@@ -101,7 +100,8 @@ def serialize_snowflake_data(data: Any) -> Any:
     if isinstance(data, (datetime, pd.Timestamp)):
         return data.isoformat()
     elif isinstance(data, (date, pd.Period)):
-        return data.isoformat()
+        # TODO: does this make sense?
+        return data.isoformat()  # type: ignore
     elif isinstance(data, decimal.Decimal):
         return float(data)
     elif isinstance(data, (np.int64, np.int32)):
@@ -141,7 +141,7 @@ def get_table_sample(
         # Execute query and fetch results
         cursor = conn.cursor(snowflake.connector.DictCursor)
         cursor.execute(query)
-        raw_data = cursor.fetchall()
+        raw_data: list[dict[str, Any]] = cursor.fetchall()  # type: ignore[assignment]
 
         # Serialize the data to ensure JSON compatibility
         sample_data = [
@@ -240,7 +240,7 @@ def get_available_tables(conn: snowflake.connector.SnowflakeConnection) -> List[
         raise
 
 
-def select_tables(tables: List[str]) -> List[str]:
+def select_tables(tables: List[str]) -> list[str]:
     """Allow user to select tables from the available options"""
     questions = [
         inquirer.Checkbox(
@@ -251,10 +251,10 @@ def select_tables(tables: List[str]) -> List[str]:
     ]
 
     answers = inquirer.prompt(questions)
-    return answers["tables"]
+    return answers["tables"]  # type: ignore[no-any-return]
 
 
-async def main():
+async def main() -> None:
     start_time = time.time()
     console.print("[bold blue]Snowflake Analysis Test Utility[/bold blue]")
 
@@ -306,17 +306,13 @@ async def main():
 
             try:
                 # Prepare request for get_dictionary
-                dict_request = CleanseRequest(
-                    datasets=[
-                        DatasetInput(
-                            name=table, data=tables_metadata[table]["sample_data"]
-                        )
-                        for table in selected_tables
-                    ]
-                )
+                datasets = [
+                    DatasetInput(name=table, data=tables_metadata[table]["sample_data"])
+                    for table in selected_tables
+                ]
 
-                dictionary_result = await get_dictionary(dict_request)
-                dictionary_result = dictionary_result.model_dump()
+                _dictionary_result = await get_dictionary(datasets)
+                dictionary_result = _dictionary_result.model_dump()
                 progress.update(task, completed=True)
 
                 # Display dictionary results
@@ -334,7 +330,7 @@ async def main():
                 dict_table.add_column("Description", style="white")
 
                 # Format dictionary result for display
-                formatted_dict = {}
+                formatted_dict: dict[str, Any] = {}
                 for dict_entry in dictionary_result.get("dictionaries", []):
                     table_name = dict_entry["name"]
                     for col_info in dict_entry.get("dictionary", []):
@@ -383,8 +379,8 @@ async def main():
             transient=True,
         ) as progress:
             task = progress.add_task("Generating questions...", total=None)
-            questions_result = await suggest_questions(dict_request)
-            questions_result = questions_result.model_dump()
+            _questions_result = await suggest_questions(datasets)
+            questions_result = _questions_result.model_dump()
             progress.update(task, completed=True)
 
         # Display suggested questions
@@ -462,8 +458,8 @@ async def main():
             )
 
             try:
-                analysis_result = await run_snowflake_analysis(analysis_request)
-                analysis_result = analysis_result.model_dump()
+                _analysis_result = await run_snowflake_analysis(analysis_request)
+                analysis_result = _analysis_result.model_dump()
                 progress.update(task, completed=True)
 
                 # Always display the last generated SQL code
@@ -611,8 +607,8 @@ async def main():
                 )
 
                 try:
-                    analysis_result = await run_snowflake_analysis(analysis_request)
-                    analysis_result = analysis_result.model_dump()
+                    _analysis_result = await run_snowflake_analysis(analysis_request)
+                    analysis_result = _analysis_result.model_dump()
                     progress.update(task, completed=True)
 
                     # Display SQL code

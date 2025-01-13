@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 
 # Import FastAPI functions directly
 from utils.api import app, cleanse_dataframes, get_dictionary
-from utils.schema import CleanseRequest, DatasetInput
+from utils.schema import DatasetInput
 
 client = TestClient(app)
 
@@ -62,8 +62,8 @@ def diabetes_dataset_id(diabetes_dataset_url, dr_client):
 
 @pytest.fixture(scope="module")
 def dataset_cleaned(dataset_loaded):
-    request = CleanseRequest(datasets=[DatasetInput(**dataset_loaded)])
-    result = asyncio.run(cleanse_dataframes(request))
+    datasets = [DatasetInput(**dataset_loaded)]
+    result = asyncio.run(cleanse_dataframes(datasets))
     return result.model_dump()
 
 
@@ -73,6 +73,6 @@ def test_dataset_is_cleansed(dataset_cleaned):
 
 @pytest.fixture(scope="module")
 def data_dictionary(dataset_loaded):
-    dict_request = CleanseRequest(datasets=[DatasetInput(**dataset_loaded)])
-    dictionary_result = await get_dictionary(dict_request)
+    datasets = [DatasetInput(**dataset_loaded)]
+    dictionary_result = await get_dictionary(datasets)
     return dictionary_result.model_dump()

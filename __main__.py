@@ -97,7 +97,7 @@ app_runtime_parameters = [
 app_source = datarobot.ApplicationSource(
     files=settings_app_infra.get_app_files(),
     runtime_parameter_values=app_runtime_parameters,  # type: ignore[arg-type]
-    base_environment_id=GlobalRuntimeEnvironment.PYTHON_39_STREAMLIT.value.id,
+    base_environment_id=GlobalRuntimeEnvironment.PYTHON_312_APPLICATION_BASE.value.id,
     **settings_app_infra.app_source_args,
 )
 

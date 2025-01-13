@@ -33,7 +33,8 @@ from .settings_main import (
     project_name,
 )
 
-LLM = GlobalLLM.AZURE_OPENAI_GPT_4_O
+LLM = GlobalLLM.GOOGLE_1_5_PRO
+
 
 custom_model_args = CustomModelArgs(
     resource_name=f"Generative Analyst Custom Model [{project_name}]",

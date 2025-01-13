@@ -21,7 +21,9 @@ snowflake-connector-python
 instructor
 pydantic<2.8.0
 pydantic-settings==2.4.0
+llvmlite>=0.43.0
 
 eval_type_backport
-snowflake-sqlalchemy==1.5.1
-sqlalchemy==1.4.49
+snowflake-sqlalchemy
+sqlalchemy
+anthropic

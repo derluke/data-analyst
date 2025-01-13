@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import sys
-from typing import Any, Callable, Optional
+from typing import Any, Awaitable, Callable
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,10 +40,9 @@ from utils.schema import (
     BusinessAnalysisRequest,
     BusinessAnalysisResult,
     ChatRequest,
-    CleanseRequest,
     CleanseResult,
     DataDictionariesAndMetadata,
-    DictionaryRequest,
+    DatasetInput,
     QuestionSuggestions,
     RunAnalysisRequest,
     RunAnalysisResult,
@@ -65,7 +64,7 @@ app = FastAPI(
     - Python code generation
     - Chart creation
     - Business analysis
-    
+
     The API uses OpenAI's GPT models for intelligent analysis and response generation.
     """,
     version="1.0.0",
@@ -89,7 +88,7 @@ app.add_middleware(
 
 
 # Add custom OpenAPI schema
-def custom_openapi():
+def custom_openapi() -> dict[str, Any]:
     if app.openapi_schema:
         return app.openapi_schema
 
@@ -109,7 +108,7 @@ def custom_openapi():
     return app.openapi_schema
 
 
-app.openapi = custom_openapi
+app.openapi = custom_openapi  # type: ignore[method-assign]
 
 
 @app.get("/list_catalog_datasets")
@@ -120,7 +119,7 @@ async def list_catalog_datasets_endpoint(limit: int = 100) -> list[AiCatalogData
 @app.get("/download_catalog_datasets")
 async def download_catalog_datasets_endpoint(
     dataset_ids: list[str],
-) -> dict[str, dict[str, Any]]:
+) -> dict[str, list[dict[str, Any]]]:
     return download_catalog_datasets(*dataset_ids)
 
 
@@ -138,50 +137,52 @@ async def get_snowflake_data_endpoint(
 
 @app.post("/cleanse_dataframes")
 async def cleanse_dataframes_endpoint(
-    request: CleanseRequest,
-    progress_callback: Optional[Callable[[str, int], None]] = None,
+    datasets: list[DatasetInput],
+    progress_callback: Callable[[str, int], Awaitable[None]] | None = None,
 ) -> CleanseResult:
-    return cleanse_dataframes(request, progress_callback=progress_callback)
+    return await cleanse_dataframes(datasets, progress_callback=progress_callback)
 
 
 @app.post("/get_dictionary")
 async def get_dictionary_endpoint(
-    request: DictionaryRequest,
+    datasets: list[DatasetInput],
 ) -> DataDictionariesAndMetadata:
-    return get_dictionary(request)
+    return await get_dictionary(datasets)
 
 
 @app.post("/suggest_questions")
-async def suggest_questions_endpoint(request: DictionaryRequest) -> QuestionSuggestions:
-    return suggest_questions(request)
+async def suggest_questions_endpoint(
+    datasets: list[DatasetInput],
+) -> QuestionSuggestions:
+    return await suggest_questions(datasets)
 
 
 @app.post("/run_charts")
 async def run_charts_endpoint(request: RunChartsRequest) -> RunChartsResult:
-    return run_charts(request)
+    return await run_charts(request)
 
 
 @app.post("/get_business_analysis")
 async def get_business_analysis_endpoint(
     request: BusinessAnalysisRequest,
 ) -> BusinessAnalysisResult:
-    return get_business_analysis(request)
+    return await get_business_analysis(request)
 
 
 @app.post("/chat")
 async def rephrase_message_endpoint(request: ChatRequest) -> dict[str, Any]:
-    return rephrase_message(request)
+    return await rephrase_message(request)
 
 
 @app.post("/run_analysis")
 async def run_analysis_endpoint(request: RunAnalysisRequest) -> RunAnalysisResult:
-    return run_analysis(request)
+    return await run_analysis(request)
 
 
 @app.post("/run_snowflake_analysis")
 async def run_snowflake_analysis_endpoint(
     request: SnowflakeAnalysisRequest, max_attempts: int = 3, timeout: int = 300
 ) -> SnowflakeAnalysisResult:
-    return run_snowflake_analysis(
+    return await run_snowflake_analysis(
         request=request, max_attempts=max_attempts, timeout=timeout
     )

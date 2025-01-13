@@ -19,6 +19,8 @@ import sys
 import warnings
 from typing import Any, Dict
 
+from streamlit.runtime.uploaded_file_manager import UploadedFile
+
 sys.path.append("..")
 
 import pandas as pd
@@ -32,7 +34,7 @@ from utils.api import (
     list_catalog_datasets,
 )
 from utils.credentials import SnowflakeCredentials
-from utils.schema import CleanseRequest, DatasetInput
+from utils.schema import DatasetInput
 from utils.snowflake_helpers import get_snowflake_data, get_snowflake_tables
 
 SNOWFLAKE_CREDENTIALS = SnowflakeCredentials()
@@ -77,11 +79,8 @@ async def process_data_async(datasets_dict: Dict[str, pd.DataFrame]) -> Dict[str
             for name, df in datasets_dict.items()
         ]
 
-        # Create cleanse request with the list
-        cleanse_request = CleanseRequest(datasets=datasets_list)
-
         # Cleanse the data
-        cleansed_results = await cleanse_dataframes(cleanse_request)
+        cleansed_results = await cleanse_dataframes(datasets_list)
 
         # Format results
         cleansed_data = {
@@ -127,11 +126,8 @@ async def generate_dictionaries_async(
                 )
                 logger.info(f"Added dataset {name} for dictionary generation")
 
-        # Create the request with the datasets
-        request_data = CleanseRequest(datasets=datasets)
-
-        dictionary_response = await get_dictionary(request_data)
-        dictionary_response = dictionary_response.model_dump()
+        _dictionary_response = await get_dictionary(datasets)
+        dictionary_response = _dictionary_response.model_dump()
 
         if dictionary_response and isinstance(dictionary_response, dict):
             if "dictionaries" in dictionary_response:
@@ -159,7 +155,7 @@ async def generate_dictionaries_async(
 
 
 @st.cache_data(show_spinner=False)
-def process_uploaded_file(file) -> list[tuple[str, pd.DataFrame]]:
+def process_uploaded_file(file: UploadedFile) -> list[tuple[str, pd.DataFrame]]:
     """Process a single uploaded file and return a list of (dataset_name, dataframe) tuples
 
     Args:
@@ -208,7 +204,7 @@ def process_uploaded_file(file) -> list[tuple[str, pd.DataFrame]]:
 
 
 # Add callback for AI Catalog dataset selection
-def catalog_download_callback():
+def catalog_download_callback() -> None:
     """Callback function for AI Catalog dataset download"""
     if (
         "selected_catalog_datasets" in st.session_state
@@ -252,7 +248,7 @@ def catalog_download_callback():
                     )
 
 
-def clear_data_callback():
+def clear_data_callback() -> None:
     """Callback function to clear all data from session state and cache"""
     # Clear session state
     st.session_state.datasets = {}
@@ -267,7 +263,7 @@ def clear_data_callback():
 
 
 # Modify the load_snowflake_data callback
-def load_snowflake_data_callback():
+def load_snowflake_data_callback() -> None:
     """Callback function for Snowflake table download"""
     if (
         "selected_snowflake_tables" in st.session_state
@@ -486,7 +482,7 @@ else:
                         st.write(f"- {error}")
 
         # Display dataframe with column filters
-        df = data["data"]
+        df_display: pd.DataFrame = data["data"]
 
         # Create column filters
         col1, col2 = st.columns([3, 1])
@@ -495,27 +491,30 @@ else:
                 "Search columns", key=f"search_{name}", help="Filter columns by name"
             )
         with col2:
-            n_rows = st.number_input(
-                "Rows to display",
-                min_value=1,
-                max_value=len(df),
-                value=min(10, len(df)),
-                key=f"n_rows_{name}",
+            n_rows = int(
+                st.number_input(
+                    "Rows to display",
+                    min_value=1,
+                    max_value=len(df_display),
+                    value=min(10, len(df_display)),
+                    step=1,
+                    key=f"n_rows_{name}",
+                )
             )
 
         # Filter columns based on search
         if search:
-            cols = [col for col in df.columns if search.lower() in col.lower()]
+            cols = [col for col in df_display.columns if search.lower() in col.lower()]
         else:
-            cols = df.columns
+            cols = df_display.columns.tolist()
 
         # Display filtered dataframe
-        st.dataframe(df[cols].head(n_rows), use_container_width=True)
+        st.dataframe(df_display[cols].head(n_rows), use_container_width=True)
 
         # Download button
         col1, col2, col3 = st.columns([1, 3, 1])
         with col1:
-            csv = df.to_csv(index=False)
+            csv = df_display.to_csv(index=False)
             st.download_button(
                 label="Download Cleansed Data",
                 data=csv,

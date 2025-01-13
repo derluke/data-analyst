@@ -17,6 +17,6 @@ fix-lint:
 lint:
 	ruff format --check .
 	ruff check .
-	# mypy . Turning this off until I'm ready to handle it
+	mypy .
 
 check-all: check-licenses lint

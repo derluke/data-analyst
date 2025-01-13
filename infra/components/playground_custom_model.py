@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Optional
+from __future__ import annotations
+
+from typing import Optional
 
 import pulumi
 import pulumi_datarobot as datarobot
@@ -27,10 +29,10 @@ class PlaygroundCustomModel(pulumi.ComponentResource):
         use_case: datarobot.UseCase,
         playground_args: PlaygroundArgs,
         llm_blueprint_args: LLMBlueprintArgs,
-        runtime_parameter_values: List[datarobot.CustomModelRuntimeParameterValueArgs],
+        runtime_parameter_values: list[datarobot.CustomModelRuntimeParameterValueArgs],
         custom_model_args: CustomModelArgs,
         guard_configurations: (
-            List[datarobot.CustomModelGuardConfigurationArgs] | None
+            list[datarobot.CustomModelGuardConfigurationArgs] | None
         ) = None,
         opts: Optional[pulumi.ResourceOptions] = None,
     ):
