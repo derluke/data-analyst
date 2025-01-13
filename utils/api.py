@@ -27,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime
 from types import FunctionType
-from typing import Any, Awaitable, Callable, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import datarobot as dr
 import instructor
@@ -842,14 +842,12 @@ async def _generate_analysis_code(
 
 async def cleanse_dataframes(
     datasets: list[DatasetInput],
-    progress_callback: Callable[[str, int], Awaitable[None]] | None = None,
 ) -> CleanseResult:
     """
     Clean and standardize multiple pandas DataFrames.
 
     Parameters:
     - datasets: list[DatasetInput] containing datasets to clean
-    - progress_callback: Optional callback for progress reporting
 
     Returns:
     - CleanseResult containing cleaned datasets and metadata
@@ -1008,11 +1006,6 @@ async def cleanse_dataframes(
                 )
                 cleaned_datasets.append(cleaned_dataset)
                 logger.info(f"Successfully cleaned dataset: {dataset.name}")
-
-                # Report progress if callback provided
-                if progress_callback:
-                    progress = int((idx + 1) / total_datasets * 100)
-                    await progress_callback(f"Processed {dataset.name}", progress)
 
             except Exception as e:
                 logger.error(f"Error processing dataset {dataset.name}: {str(e)}")

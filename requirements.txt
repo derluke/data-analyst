@@ -37,8 +37,10 @@ pandas-stubs==2.2.3.241009
 types-requests==2.32.0.20241016
 types-pyyaml==6.0.12.20240917
 
-
 google-auth
 boto3
 anthropic
+
+snowflake-sqlalchemy==1.5.1
+sqlalchemy==1.4.49
 snowflake-connector-python

@@ -38,7 +38,7 @@ def ensure_app_settings(app_id: str) -> None:
         )
     except Exception:
         pulumi.warn("Patching app unsuccessful.")
-    return version_id
+    return
 
 
 def ensure_app_source_settings(source_id: str, version_id: str) -> str:

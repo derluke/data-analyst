@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import sys
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -138,9 +138,8 @@ async def get_snowflake_data_endpoint(
 @app.post("/cleanse_dataframes")
 async def cleanse_dataframes_endpoint(
     datasets: list[DatasetInput],
-    progress_callback: Callable[[str, int], Awaitable[None]] | None = None,
 ) -> CleanseResult:
-    return await cleanse_dataframes(datasets, progress_callback=progress_callback)
+    return await cleanse_dataframes(datasets)
 
 
 @app.post("/get_dictionary")
