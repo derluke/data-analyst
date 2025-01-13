@@ -38,7 +38,7 @@ Codespace users can **skip steps 1 and 2**. For local development, follow all of
 2. Clone the template repository.
 
    ```bash
-   git clone https://github.com/datarobot/talk-to-my-data-agent.git
+   git clone https://github.com/datarobot-community/talk-to-my-data-agent.git
    cd talk-to-my-data-agent
    ```
 
