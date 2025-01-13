@@ -41,7 +41,7 @@ def ensure_app_settings(app_id: str) -> None:
     return version_id
 
 
-def ensure_app_source_settings(source_id: str, version_id: str):
+def ensure_app_source_settings(source_id: str, version_id: str) -> str:
     try:
         dr.client.get_client().patch(
             url=f"customApplicationSources/{source_id}/versions/{version_id}/",
@@ -62,27 +62,24 @@ app_resource_name: str = f"Data Analyst Application [{project_name}]"
 
 
 def get_app_files() -> List[Tuple[str, str]]:
+    # Get all files from application path
     source_files = [
-        (rf"{str(f)}", str(f.relative_to(application_path)).replace("\\", "/"))
+        (f.as_posix(), f.relative_to(application_path).as_posix())
         for f in application_path.glob("**/*")
         if f.is_file() and not f.name.endswith(".yaml")
     ]
 
-    source_files.extend(
-        [
-            (r"utils/__init__.py", r"utils/__init__.py"),
-            (r"utils/api.py", r"utils/api.py"),
-            (r"utils/credentials.py", r"utils/credentials.py"),
-            (r"utils/datetime_helpers.py", r"utils/datetime_helpers.py"),
-            (r"utils/errors.py", r"utils/errors.py"),
-            (r"utils/prompts.py", r"utils/prompts.py"),
-            (r"utils/resources.py", r"utils/resources.py"),
-            (r"utils/rest_api.py", r"utils/rest_api.py"),
-            (r"utils/schema.py", r"utils/schema.py"),
-            (r"utils/logging.py", r"utils/logging.py"),
-            (r"utils/snowflake_helpers.py", r"utils/snowflake_helpers.py"),
-            (str(application_path / "metadata.yaml"), "metadata.yaml"),
-        ]
+    # Get all .py files from utils directory
+    utils_files = [
+        (f"utils/{f.name}", f"utils/{f.name}")
+        for f in Path("utils").glob("*.py")
+        if f.is_file()
+    ]
+
+    # Add the metadata.yaml file
+    source_files.extend(utils_files)
+    source_files.append(
+        ((application_path / "metadata.yaml").as_posix(), "metadata.yaml")
     )
 
     return source_files
