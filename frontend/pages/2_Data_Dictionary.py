@@ -13,20 +13,23 @@
 # limitations under the License.
 
 import logging
+import sys
 
 import pandas as pd
 import streamlit as st
+
+sys.path.append("..")
+
+from app_settings import PAGE_ICON, get_page_logo
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Page config
-st.set_page_config(
-    page_title="Data Dictionary", page_icon="datarobot icon.svg", layout="wide"
-)
+st.set_page_config(page_title="Data Dictionary", page_icon=PAGE_ICON, layout="wide")
 
-st.image("datarobot logo.svg", width=200)
+st.image(get_page_logo(), width=200)
 st.title("Dictionary")
 
 # Add debug logging

@@ -30,6 +30,8 @@ sys.path.append("..")
 
 
 # Import FastAPI functions directly
+from app_settings import PAGE_ICON, get_page_logo
+
 from utils.api import (
     get_business_analysis,
     rephrase_message,
@@ -73,7 +75,7 @@ elif "chat_input_key" not in st.session_state:
 # Page config
 st.set_page_config(
     page_title="AI Data Analyst",
-    page_icon="datarobot icon.svg",
+    page_icon=PAGE_ICON,
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -545,7 +547,7 @@ async def rephrase_message_and_analysis(question: str, chat_messages: list) -> N
 
 
 # Main page content (Chat Interface)
-st.image("datarobot logo.svg", width=200)
+st.image(get_page_logo(), width=200)
 
 if not st.session_state.cleansed_data:
     st.info("Please upload and process data using the sidebar before starting the chat")

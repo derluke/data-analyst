@@ -2,6 +2,7 @@ pandas
 numpy
 openai
 streamlit
+st-theme>=1.2.3,<2
 fastapi
 uvicorn
 plotly

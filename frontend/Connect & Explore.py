@@ -23,6 +23,7 @@ sys.path.append("..")
 
 import pandas as pd
 import streamlit as st
+from app_settings import PAGE_ICON, get_page_logo
 
 from utils.api import (
     cleanse_dataframes,
@@ -319,9 +320,7 @@ def load_snowflake_data_callback():
 
 
 # Page config
-st.set_page_config(
-    page_title="Connect Data", page_icon="datarobot icon.svg", layout="wide"
-)
+st.set_page_config(page_title="Connect Data", page_icon=PAGE_ICON, layout="wide")
 
 
 # Custom CSS
@@ -459,7 +458,7 @@ with st.sidebar:
     )
 
 # Main content area
-st.image("datarobot logo.svg", width=200)
+st.image(get_page_logo(), width=200)
 st.title("Explore")
 
 # Main content area - conditional rendering based on cleansed data
