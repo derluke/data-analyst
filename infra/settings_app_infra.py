@@ -31,10 +31,14 @@ app_source_args = ApplicationSourceArgs(
 
 
 def ensure_app_settings(app_id: str) -> None:
-    dr.client.get_client().patch(
-        f"customApplications/{app_id}/",
-        json={"allowAutoStopping": True},
-    )
+    try:
+        dr.client.get_client().patch(
+            f"customApplications/{app_id}/",
+            json={"allowAutoStopping": True},
+        )
+    except Exception:
+        pulumi.warn("Patching app unsuccessful.")
+    return version_id
 
 
 def ensure_app_source_settings(source_id: str, version_id: str):
@@ -50,7 +54,7 @@ def ensure_app_source_settings(source_id: str, version_id: str):
             },
         )
     except dr.errors.ClientError:
-        pulumi.warn("Patching app resource unsuccessful.")
+        pulumi.warn("Patching app source unsuccessful.")
     return version_id
 
 
