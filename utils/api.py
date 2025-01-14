@@ -1166,7 +1166,7 @@ async def rephrase_message(messages: ChatRequest) -> dict[str, Any]:
 
     completion: EnhancedUserMessageForChat = client.chat.completions.create(
         response_model=EnhancedUserMessageForChat,
-        model="dr_llm",
+        model="gpt-4o",
         messages=prompt_messages,
     )
 
