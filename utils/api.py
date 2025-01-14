@@ -109,7 +109,12 @@ try:
         dr_client.endpoint + f"/deployments/{chat_agent_deployment_id}/"
     )
 
-    openai_client = OpenAI(api_key=dr_client.token, base_url=deployment_chat_base_url)
+    openai_client = OpenAI(
+        api_key=dr_client.token,
+        base_url=deployment_chat_base_url,
+        timeout=90,
+        max_retries=2,
+    )
     client = instructor.from_openai(openai_client, mode=instructor.Mode.MD_JSON)
 
 
