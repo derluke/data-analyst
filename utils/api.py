@@ -35,7 +35,6 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import psutil
-from fastapi import HTTPException
 from openai import OpenAI
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 from openai.types.chat.chat_completion_system_message_param import (
@@ -52,7 +51,6 @@ sys.path.append("..")
 from utils import prompts
 from utils.credentials import SnowflakeCredentials
 from utils.datetime_helpers import convert_datetime_series, is_date_column
-from utils.errors import EmptyDataError
 from utils.resources import LLMDeployment
 from utils.schema import (
     AiCatalogDataset,
@@ -687,9 +685,6 @@ async def _generate_python_analysis_code(
 
     Returns:
     - Dictionary containing generated code and description
-
-    Raises:
-    - HTTPException: If code generation fails
     """
     # Convert dictionary data structure to list of columns for all datasets
     all_columns = []
@@ -791,7 +786,6 @@ async def _generate_analysis_code(
 
     while attempts < max_attempts:
         attempts += 1
-
         try:
             # Get code from OpenAI
             code_response = await _generate_python_analysis_code(
@@ -826,18 +820,11 @@ async def _generate_analysis_code(
             validation_error["failed_code"] = code_response["code"]
 
         except Exception as e:
-            validation_errors.append(str(e))
-            if attempts == max_attempts:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Failed to generate valid code after {max_attempts} attempts: {str(e)}",
-                )
+            msg = type(e).__name__ + f": {str(e)}"
+            validation_errors.append(msg)
 
     # If we get here, we've exhausted our attempts
-    raise HTTPException(
-        status_code=500,
-        detail=f"Failed to generate valid code after {max_attempts} attempts",
-    )
+    raise RuntimeError(f"Failed to generate valid code after {max_attempts} attempts")
 
 
 async def cleanse_dataframes(
@@ -851,9 +838,6 @@ async def cleanse_dataframes(
 
     Returns:
     - CleanseResult containing cleaned datasets and metadata
-
-    Raises:
-    - HTTPException: If cleaning fails
     """
     try:
         logger.info("Starting cleanse_dataframes")
@@ -869,7 +853,7 @@ async def cleanse_dataframes(
                 logger.debug(f"Created DataFrame with shape: {df.shape}")
 
                 if df.empty:
-                    raise EmptyDataError("Input DataFrame is empty")
+                    raise ValueError("Input DataFrame is empty")
 
                 # Initialize cleaning report
                 cleaning_report = CleansingReport(
@@ -1021,8 +1005,9 @@ async def cleanse_dataframes(
         )
 
     except Exception as e:
-        logger.error(f"Error in cleanse_dataframes: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        msg = type(e).__name__ + f": {str(e)}"
+        logger.error(f"Error in cleanse_dataframes: {msg}")
+        raise
 
 
 async def get_dictionary(datasets: list[DatasetInput]) -> DataDictionariesAndMetadata:
@@ -1034,9 +1019,6 @@ async def get_dictionary(datasets: list[DatasetInput]) -> DataDictionariesAndMet
 
     Returns:
     - Dictionary containing column descriptions and metadata
-
-    Raises:
-    - HTTPException: If dictionary generation fails
     """
     try:
         # Add debug logging
@@ -1096,8 +1078,9 @@ async def get_dictionary(datasets: list[DatasetInput]) -> DataDictionariesAndMet
         return response
 
     except Exception as e:
-        logger.error(f"Error in get_dictionary: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        msg = type(e).__name__ + f": {str(e)}"
+        logger.error(f"Error in get_dictionary: {msg}")
+        raise
 
 
 async def suggest_questions(datasets: list[DatasetInput]) -> QuestionSuggestions:
@@ -1109,15 +1092,10 @@ async def suggest_questions(datasets: list[DatasetInput]) -> QuestionSuggestions
 
     Returns:
     - Dictionary containing suggested questions and metadata
-
-    Raises:
-    - HTTPException: If question generation fails
     """
+    if not datasets:
+        raise ValueError("Must provide at least one dataset")
     try:
-        # Input validation
-        if not datasets:
-            raise ValueError("Dictionary cannot be empty")
-
         # Convert dictionary list to DataFrame
         dict_df = pd.DataFrame(
             [
@@ -1132,11 +1110,10 @@ async def suggest_questions(datasets: list[DatasetInput]) -> QuestionSuggestions
         )
 
         return await _generate_question_suggestions(dict_df)
-
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        msg = type(e).__name__ + f": {str(e)}"
+        logger.error(f"Error in suggest_questions: {msg}")
+        raise
 
 
 async def rephrase_message(messages: ChatRequest) -> dict[str, Any]:
@@ -1177,97 +1154,87 @@ async def run_charts(request: RunChartsRequest) -> RunChartsResult:
     """
     Generate and execute chart code with validation.
     """
-    try:
-        # Convert JSON to DataFrame
-        df = pd.DataFrame(request.data)
-        if df.empty:
-            raise ValueError("Input DataFrame cannot be empty")
+    # TODO: this needs a refactor, does duplicative transformations, loop appears broken, etc.
+    # Convert JSON to DataFrame
+    df = pd.DataFrame(request.data)
+    if df.empty:
+        raise ValueError("Input DataFrame cannot be empty")
 
-        dataframe_metadata = {
-            "metadata_shape": list(df.shape),
-            "metadata_describe": json.loads(df.describe(include="all").to_json()),
-            "metadata_dtypes": json.loads(df.dtypes.astype(str).to_json()),
-        }
-        dataframe_metadata_clone = dataframe_metadata.copy()
-        max_attempts = 3
-        attempt = 0
-        last_error = None
-        last_failed_code = None
+    dataframe_metadata = {
+        "metadata_shape": list(df.shape),
+        "metadata_describe": json.loads(df.describe(include="all").to_json()),
+        "metadata_dtypes": json.loads(df.dtypes.astype(str).to_json()),
+    }
+    dataframe_metadata_clone = dataframe_metadata.copy()
+    max_attempts = 3
+    attempt = 0
+    last_error = None
+    last_failed_code = None
 
-        while True:  # Changed to while True with explicit breaks
-            try:
-                # Generate charts with retry logic
-                result = await _create_charts(
-                    df=df.head(25),
-                    question=request.question,
-                    metadata=dataframe_metadata_clone,
-                    error_message=last_error,
-                    failed_code=last_failed_code,
-                )
-                fig1_base64 = _figure_to_base64(result.fig1) if result.fig1 else None
-                fig2_base64 = _figure_to_base64(result.fig2) if result.fig2 else None
+    while True:  # Changed to while True with explicit breaks
+        try:
+            # Generate charts with retry logic
+            result = await _create_charts(
+                df=df.head(25),
+                question=request.question,
+                metadata=dataframe_metadata_clone,
+                error_message=last_error,
+                failed_code=last_failed_code,
+            )
+            fig1_base64 = _figure_to_base64(result.fig1) if result.fig1 else None
+            fig2_base64 = _figure_to_base64(result.fig2) if result.fig2 else None
 
-                # Explicit return here
-                return RunChartsResult(
-                    fig1=result.fig1,
-                    fig2=result.fig2,
-                    fig1_base_64=fig1_base64,
-                    fig2_base_64=fig2_base64,
-                    code=result.code,
-                    metadata=RunChartsResultMetadata(
-                        timestamp=result.metadata.timestamp,
-                        question=result.metadata.question,
-                        stdout=result.metadata.stdout,
-                        stderr=result.metadata.stderr,
-                        dataframe_metadata=dataframe_metadata,
-                        validation=result.validation,
-                        attempts=result.attempts,
-                        validation_errors=result.validation_errors,
-                        execution_errors=result.execution_errors,
-                        code_history=result.code_history,
-                        performance=ChartPerformance(
-                            memory_usage=_get_memory_usage(),
-                            total_time=(
-                                datetime.fromisoformat(result.metadata.timestamp)
-                                - datetime.fromisoformat(
-                                    result.code_history[0].timestamp
-                                )
-                            ).total_seconds(),
-                        ),
+            # Explicit return here
+            return RunChartsResult(
+                fig1=result.fig1,
+                fig2=result.fig2,
+                fig1_base_64=fig1_base64,
+                fig2_base_64=fig2_base64,
+                code=result.code,
+                metadata=RunChartsResultMetadata(
+                    timestamp=result.metadata.timestamp,
+                    question=result.metadata.question,
+                    stdout=result.metadata.stdout,
+                    stderr=result.metadata.stderr,
+                    dataframe_metadata=dataframe_metadata,
+                    validation=result.validation,
+                    attempts=result.attempts,
+                    validation_errors=result.validation_errors,
+                    execution_errors=result.execution_errors,
+                    code_history=result.code_history,
+                    performance=ChartPerformance(
+                        memory_usage=_get_memory_usage(),
+                        total_time=(
+                            datetime.fromisoformat(result.metadata.timestamp)
+                            - datetime.fromisoformat(result.code_history[0].timestamp)
+                        ).total_seconds(),
                     ),
-                )
+                ),
+            )
 
-            except Exception as e:
-                attempt += 1
-                last_error = str(e)
-                last_failed_code = result.code if "result" in locals() else None
+        except Exception as e:
+            attempt += 1
+            last_error = str(e)
+            last_failed_code = result.code if "result" in locals() else None
 
-                if attempt >= max_attempts:
-                    error_context = {
-                        "error_type": type(e).__name__,
-                        "error_message": str(e),
-                        "validation_errors": result.validation_errors
-                        if "result" in locals()
-                        else [],
-                        "execution_errors": result.execution_errors
-                        if "result" in locals()
-                        else [],
-                        "code_history": result.code_history
-                        if "result" in locals()
-                        else [],
-                        "attempts": attempt,
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                    raise HTTPException(
-                        status_code=500,
-                        detail={"error": str(e), "context": error_context},
-                    )
+            if attempt >= max_attempts:
+                error_context = {
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                    "validation_errors": result.validation_errors
+                    if "result" in locals()
+                    else [],
+                    "execution_errors": result.execution_errors
+                    if "result" in locals()
+                    else [],
+                    "code_history": result.code_history if "result" in locals() else [],
+                    "attempts": attempt,
+                    "timestamp": datetime.now().isoformat(),
+                }
+                raise RuntimeError(str(error_context))
 
-                # Always raise the exception
-                raise e
-
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+            # Always raise the exception
+            raise e
 
 
 async def get_business_analysis(
@@ -1281,9 +1248,6 @@ async def get_business_analysis(
 
     Returns:
     - Dictionary containing analysis components
-
-    Raises:
-    - HTTPException: If analysis generation fails
     """
     try:
         # Convert JSON data to DataFrame for analysis
@@ -1330,8 +1294,9 @@ async def get_business_analysis(
         )
 
     except Exception as e:
-        logger.error(f"Error generating business analysis: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        msg = type(e).__name__ + f": {str(e)}"
+        logger.error(f"Error in get_business_analysis: {msg}")
+        raise
 
 
 async def run_analysis(request: RunAnalysisRequest) -> RunAnalysisResult:
@@ -1340,13 +1305,14 @@ async def run_analysis(request: RunAnalysisRequest) -> RunAnalysisResult:
 
     Contains integration and retry logic
     """
+    # TODO: should align to the run_charts refactor
     max_attempts = 3
     attempts = 0
     error_history: list[AnalysisError] = []
 
     # Input validation
     if not request.data:
-        raise HTTPException(status_code=422, detail="Input data cannot be empty")
+        raise ValueError("Input data cannot be empty")
 
     try:
         # Convert JSON to DataFrames dictionary
@@ -1462,8 +1428,9 @@ async def run_analysis(request: RunAnalysisRequest) -> RunAnalysisResult:
                 continue
 
     except Exception as e:
-        logger.error(f"Error in run_analysis: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        msg = type(e).__name__ + f": {str(e)}"
+        logger.error(f"Error in run_analysis: {msg}")
+        raise
 
 
 async def _get_snowflake_analysis_code(
@@ -1477,9 +1444,6 @@ async def _get_snowflake_analysis_code(
 
     Returns:
     - Dictionary containing generated code and description
-
-    Raises:
-    - HTTPException: If code generation fails
     """
     try:
         # Convert dictionary data structure to list of columns for all tables
@@ -1556,8 +1520,9 @@ async def _get_snowflake_analysis_code(
         return completion
 
     except Exception as e:
-        logger.error(f"Error generating Snowflake analysis code: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        msg = type(e).__name__ + f": {str(e)}"
+        logger.error(f"Error in _get_snowflake_analysis_code: {msg}")
+        raise
 
 
 async def run_snowflake_analysis(
@@ -1570,10 +1535,10 @@ async def run_snowflake_analysis(
     last_generated_code = None
     start_time = time.time()
 
-    try:
-        if not request.data:
-            raise HTTPException(status_code=422, detail="Input data cannot be empty")
+    if not request.data:
+        raise ValueError("Input data cannot be empty")
 
+    try:
         conn = create_snowflake_connection()
 
         while True:  # Changed from while attempts < max_attempts
