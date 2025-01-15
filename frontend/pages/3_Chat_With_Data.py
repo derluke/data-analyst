@@ -39,22 +39,19 @@ from utils.api import (
     rephrase_message,
     run_analysis,
     run_charts,
-    run_snowflake_analysis,
+    run_database_analysis,
 )
-from utils.credentials import SnowflakeCredentials
 from utils.schema import (
     BusinessAnalysisRequest,
     BusinessAnalysisResult,
     ChatRequest,
+    DatabaseAnalysisRequest,
+    DatabaseAnalysisResult,
     RunAnalysisRequest,
     RunAnalysisResult,
     RunChartsRequest,
     RunChartsResult,
-    SnowflakeAnalysisRequest,
-    SnowflakeAnalysisResult,
 )
-
-SNOWFLAKE_CREDENTIALS = SnowflakeCredentials()
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -289,7 +286,7 @@ rephrase_message = log_api_call(rephrase_message)
 run_analysis = log_api_call(run_analysis)
 run_charts = log_api_call(run_charts)
 get_business_analysis = log_api_call(get_business_analysis)
-run_snowflake_analysis = log_api_call(run_snowflake_analysis)
+run_database_analysis = log_api_call(run_database_analysis)
 
 
 # Add enhanced error logging function
@@ -352,11 +349,10 @@ async def rephrase_message_and_analysis(
                 logger.error(f"Error in chat function: {str(e)}", exc_info=True)
 
             # Run analysis with enhanced error capture
-            analysis_result: SnowflakeAnalysisResult | RunAnalysisResult
+            analysis_result: DatabaseAnalysisResult | RunAnalysisResult
             with st.spinner("Running analysis..."):
                 try:
-                    if st.session_state.get("data_source") == "snowflake":
-                        # Use Snowflake analysis
+                    if st.session_state.data_source == "database":
                         # Convert DataFrames to dictionary format
                         data_dict = {}
                         for name, df in st.session_state.datasets.items():
@@ -381,12 +377,12 @@ async def rephrase_message_and_analysis(
                                     ],
                                 }
 
-                        sf_analysis_request = SnowflakeAnalysisRequest(
+                        sf_analysis_request = DatabaseAnalysisRequest(
                             data=data_dict,
                             dictionary=dict_data,
                             question=chat_response.get("enhanced_question", question),
                         )
-                        analysis_result = await run_snowflake_analysis(
+                        analysis_result = await run_database_analysis(
                             sf_analysis_request
                         )
                     else:
@@ -410,11 +406,10 @@ async def rephrase_message_and_analysis(
                     with analysis_container:
                         if analysis_result.code:
                             with st.expander("Analysis Code", expanded=False):
-                                # Use SQL language highlighting for Snowflake mode
+                                # Use SQL language highlighting for database mode
                                 language = (
                                     "sql"
-                                    if st.session_state.get("data_source")
-                                    == "snowflake"
+                                    if st.session_state.get("data_source") == "database"
                                     else "python"
                                 )
                                 st.code(analysis_result.code, language=language)

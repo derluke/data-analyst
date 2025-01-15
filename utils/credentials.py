@@ -56,9 +56,20 @@ class AzureOpenAICredentials(DRCredentials):
 
 class GoogleCredentials(DRCredentials):
     service_account_key: Dict[str, Any] = Field(
-        validation_alias="GOOGLE_SERVICE_ACCOUNT"
+        validation_alias=AliasChoices(
+            "GOOGLE_SERVICE_ACCOUNT",
+            AliasPath(
+                "MLOPS_RUNTIME_PARAM_GOOGLE_SERVICE_ACCOUNT", "payload", "gcpKey"
+            ),
+        )
     )
     region: Optional[str] = Field(default="us-west1", validation_alias="GOOGLE_REGION")
+    db_schema: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "GOOGLE_DB_SCHEMA", AliasPath("MLOPS_RUNTIME_PARAM_GOOGLE_DB_SCHEMA")
+        ),
+    )
 
 
 class AWSBedrockCredentials(DRCredentials):
@@ -86,7 +97,7 @@ class AWSBedrockCredentials(DRCredentials):
     region_name: Optional[str] = Field(default=None, validation_alias="AWS_REGION")
 
 
-class SnowflakeCredentials(BaseSettings):
+class SnowflakeCredentials(DRCredentials):
     """Snowflake Connection credentials auto-constructed using environment variables."""
 
     user: str = Field(
@@ -133,7 +144,6 @@ class SnowflakeCredentials(BaseSettings):
     )
     snowflake_key_path: str = Field(
         validation_alias=AliasChoices(
-            AliasPath("MLOPS_RUNTIME_PARAM_SNOWFLAKE_KEY_PATH"),
-            "SNOWFLAKE_KEY_PATH",
+            AliasPath("MLOPS_RUNTIME_PARAM_SNOWFLAKE_KEY_PATH"), "SNOWFLAKE_KEY_PATH"
         )
     )

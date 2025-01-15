@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 from streamlit_theme import st_theme
+
+from utils.schema import AppInfra
 
 PAGE_ICON = "./datarobot_favicon.png"
 
@@ -22,5 +25,11 @@ def get_page_logo() -> str:
     logo = "./DataRobot_white.svg"
     if theme and theme.get("base") == "light":
         logo = "./DataRobot_black.svg"
-
     return logo
+
+
+def get_database_logo(app_infra: AppInfra) -> str:
+    if app_infra.database == "snowflake":
+        return "./Snowflake.svg"
+    elif app_infra.database == "bigquery":
+        return "./Google_Cloud.svg"

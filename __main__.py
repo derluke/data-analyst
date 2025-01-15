@@ -21,7 +21,6 @@ import pulumi_datarobot as datarobot
 
 from infra import (
     settings_app_infra,
-    settings_credentials,
     settings_generative,
     settings_main,
 )
@@ -31,6 +30,7 @@ from infra.common.urls import get_deployment_url
 from infra.components.custom_model_deployment import CustomModelDeployment
 from infra.components.dr_credential import (
     get_credential_runtime_parameter_values,
+    get_database_credentials,
     get_llm_credentials,
 )
 from infra.components.playground_custom_model import PlaygroundCustomModel
@@ -58,12 +58,16 @@ prediction_environment = datarobot.PredictionEnvironment(
 )
 
 
-llm_credential = get_llm_credentials(settings_generative.LLM)
-db_credential = settings_credentials.db_credential
+llm_credential = get_llm_credentials(settings_main.LLM)
+db_credential = get_database_credentials(settings_main.DATABASE_CONNECTION_TYPE)
 
-llm_runtime_parameter_values = get_credential_runtime_parameter_values(llm_credential)
-db_runtime_parameter_values = get_credential_runtime_parameter_values(db_credential)  # type: ignore[arg-type]
 
+llm_runtime_parameter_values = get_credential_runtime_parameter_values(
+    llm_credential, "llm"
+)
+db_runtime_parameter_values = get_credential_runtime_parameter_values(
+    db_credential, "db"
+)
 
 llm_custom_model = PlaygroundCustomModel(
     resource_name=f"Chat Agent Buzok Deployment [{settings_main.project_name}]",
@@ -93,8 +97,11 @@ app_runtime_parameters = [
     ),
 ] + db_runtime_parameter_values
 
+
 app_source = datarobot.ApplicationSource(
-    files=settings_app_infra.get_app_files(),
+    files=settings_app_infra.get_app_files(
+        runtime_parameter_values=app_runtime_parameters
+    ),
     runtime_parameter_values=app_runtime_parameters,  # type: ignore[arg-type]
     base_environment_id=GlobalRuntimeEnvironment.PYTHON_312_APPLICATION_BASE.value.id,
     **settings_app_infra.app_source_args,
@@ -103,7 +110,6 @@ app_source = datarobot.ApplicationSource(
 app_source_version_id = pulumi.Output.all(app_source.id, app_source.version_id).apply(
     lambda args: settings_app_infra.ensure_app_source_settings(*args)
 )
-
 
 app = datarobot.CustomApplication(
     resource_name=settings_app_infra.app_resource_name,

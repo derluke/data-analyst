@@ -14,7 +14,14 @@
 
 from __future__ import annotations
 
-from .common.globals import GlobalPredictionEnvironmentPlatforms
+from typing import Literal
+
+from utils.schema import AppInfra
+
+from .common.globals import (
+    GlobalLLM,
+    GlobalPredictionEnvironmentPlatforms,
+)
 from .common.schema import (
     PredictionEnvironmentArgs,
     UseCaseArgs,
@@ -36,3 +43,12 @@ use_case_args = UseCaseArgs(
     resource_name=f"Data Analyst Use Case [{project_name}]",
     description="Use case for Data Analyst application",
 ).model_dump(exclude_none=True)
+
+LLM = GlobalLLM.AZURE_OPENAI_GPT_4_O
+
+DATABASE_CONNECTION_TYPE: Literal["bigquery", "snowflake"] = "snowflake"
+
+with open("frontend/app_infra.json", "w") as infra_selection:
+    infra_selection.write(
+        AppInfra(database=DATABASE_CONNECTION_TYPE, llm=LLM.name).model_dump_json()
+    )

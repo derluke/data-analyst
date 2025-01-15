@@ -33,13 +33,13 @@ from rich.table import Table
 from utils.rest_api import (  # type: ignore[attr-defined]
     get_dictionary,
     rephrase_message,
-    run_snowflake_analysis,
+    run_database_analysis,
     suggest_questions,
 )
 from utils.schema import (
     ChatRequest,
+    DatabaseAnalysisRequest,
     DatasetInput,
-    SnowflakeAnalysisRequest,
 )
 
 console = Console()
@@ -445,7 +445,7 @@ async def main() -> None:
             task = progress.add_task("Analyzing data...", total=None)
 
             # Create analysis request
-            analysis_request = SnowflakeAnalysisRequest(
+            analysis_request = DatabaseAnalysisRequest(
                 data={
                     table: metadata["sample_data"]
                     for table, metadata in tables_metadata.items()
@@ -458,7 +458,7 @@ async def main() -> None:
             )
 
             try:
-                _analysis_result = await run_snowflake_analysis(analysis_request)
+                _analysis_result = await run_database_analysis(analysis_request)
                 analysis_result = _analysis_result.model_dump()
                 progress.update(task, completed=True)
 
@@ -594,7 +594,7 @@ async def main() -> None:
                 task = progress.add_task("Analyzing data...", total=None)
 
                 # Create new analysis request
-                analysis_request = SnowflakeAnalysisRequest(
+                analysis_request = DatabaseAnalysisRequest(
                     data={
                         table: metadata["sample_data"]
                         for table, metadata in tables_metadata.items()
@@ -607,7 +607,7 @@ async def main() -> None:
                 )
 
                 try:
-                    _analysis_result = await run_snowflake_analysis(analysis_request)
+                    _analysis_result = await run_database_analysis(analysis_request)
                     analysis_result = _analysis_result.model_dump()
                     progress.update(task, completed=True)
 

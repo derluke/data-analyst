@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import ast
-from typing import Any, Type, Union
+from typing import Any, Literal, Type, Union
 
 import plotly.graph_objects as go
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -229,7 +229,7 @@ class RunAnanlysisResultMetadata(BaseModel):
 
 class RunAnalysisResult(BaseModel):
     status: str
-    metadata: SnowflakeAnalysisMetadata | RunAnanlysisResultMetadata
+    metadata: DatabaseAnalysisMetadata | RunAnanlysisResultMetadata
     data: list[dict[str, Any]] | None = None
     code: str | None = None
     suggestions: str | None = None
@@ -534,8 +534,8 @@ class QuestionSuggestions(BaseModel):
     metadata: QuestionSuggestionMetadata
 
 
-class SnowflakeAnalysisRequest(BaseModel):
-    """Request model for Snowflake analysis endpoint
+class DatabaseAnalysisRequest(BaseModel):
+    """Request model for Database analysis endpoint
 
     Attributes:
         data: dictionary of sample data from each table
@@ -554,7 +554,7 @@ class SnowflakeAnalysisRequest(BaseModel):
     @field_validator("data")
     @classmethod
     def validate_data(
-        cls: Type["SnowflakeAnalysisRequest"], v: dict[str, list[dict[str, Any]]]
+        cls: Type["DatabaseAnalysisRequest"], v: dict[str, list[dict[str, Any]]]
     ) -> dict[str, list[dict[str, Any]]]:
         """Validate that the input data is a dictionary of lists of dictionaries (records)"""
         if not isinstance(v, dict):
@@ -566,7 +566,7 @@ class SnowflakeAnalysisRequest(BaseModel):
     @field_validator("dictionary")
     @classmethod
     def validate_dictionary(
-        cls: Type["SnowflakeAnalysisRequest"], v: dict[str, Any]
+        cls: Type["DatabaseAnalysisRequest"], v: dict[str, Any]
     ) -> dict[str, Any]:
         """Validate that the input data is a dictionary of table descriptions"""
         if not isinstance(v, dict):
@@ -575,14 +575,14 @@ class SnowflakeAnalysisRequest(BaseModel):
 
     @field_validator("question")
     @classmethod
-    def validate_question(cls: Type["SnowflakeAnalysisRequest"], v: str) -> str:
+    def validate_question(cls: Type["DatabaseAnalysisRequest"], v: str) -> str:
         """Validate that the input data is a non-empty string"""
         if not v.strip():
             raise ValueError("Question cannot be empty")
         return v.strip()
 
 
-class SnowflakeAnalysisCode(BaseModel):
+class DatabaseAnalysisCode(BaseModel):
     code: str
     description: str
 
@@ -593,27 +593,27 @@ class MemoryUsage(BaseModel):
     percent: float
 
 
-class SnowflakeAnalysisMetadata(BaseModel):
+class DatabaseAnalysisMetadata(BaseModel):
     attempts: int
     execution_time: float
     memory_usage: MemoryUsage
     error_history: list[AnalysisError]
-    query_metadata: SnowflakeExecutionMetadata | None = None
+    query_metadata: DatabaseExecutionMetadata | None = None
     tables_analyzed: int | None = None
     total_sample_rows: int | None = None
 
 
 class AnalysisResult(BaseModel):
     status: str
-    metadata: SnowflakeAnalysisMetadata | RunAnanlysisResultMetadata
+    metadata: DatabaseAnalysisMetadata | RunAnanlysisResultMetadata
     data: list[dict[str, Any]] | None = None
     code: str | None = None
     suggestions: str | None = None
 
 
-class SnowflakeAnalysisResult(AnalysisResult):
+class DatabaseAnalysisResult(AnalysisResult):
     status: str
-    metadata: SnowflakeAnalysisMetadata
+    metadata: DatabaseAnalysisMetadata
     data: list[dict[str, Any]] | None = None
     code: str | None = None
     suggestions: str | None = None
@@ -621,13 +621,13 @@ class SnowflakeAnalysisResult(AnalysisResult):
     description: str | None = None
 
 
-class SnowflakeExecutionMetadata(BaseModel):
+class DatabaseExecutionMetadata(BaseModel):
     query_id: str
     row_count: int
     execution_time: float
-    warehouse: str
-    database: str
     db_schema: str
+    database: str | None = None
+    warehouse: str | None = None
 
 
 class AnalysisError(BaseModel):
@@ -702,3 +702,8 @@ class EnhancedUserMessageForChat(BaseModel):
 class Code(BaseModel):
     code: str
     description: str
+
+
+class AppInfra(BaseModel):
+    database: Literal["bigquery", "snowflake"]
+    llm: str

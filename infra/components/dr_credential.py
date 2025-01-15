@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import textwrap
-from typing import Any
+from typing import Any, Literal
 
 import pulumi
 import pulumi_datarobot as datarobot
@@ -33,11 +33,9 @@ from utils.credentials import (
 
 from ..settings_main import project_name
 
-# from .aws_credential import AWSCredential
-
 
 def get_credential_runtime_parameter_values(
-    credentials: DRCredentials,
+    credentials: DRCredentials, credential_type: str = "llm"
 ) -> list[datarobot.CustomModelRuntimeParameterValueArgs]:
     if isinstance(credentials, AzureOpenAICredentials):
         rtps: list[dict[str, Any]] = [
@@ -78,6 +76,14 @@ def get_credential_runtime_parameter_values(
         if credentials.region:
             rtps.append(
                 {"key": "GOOGLE_REGION", "type": "string", "value": credentials.region}
+            )
+        if credential_type == "db":
+            rtps.append(
+                {
+                    "key": "GOOGLE_DB_SCHEMA",
+                    "type": "string",
+                    "value": credentials.db_schema,
+                }
             )
         credential_rtp_dicts = [rtp for rtp in rtps if rtp["value"] is not None]
     elif isinstance(credentials, AWSBedrockCredentials):
@@ -165,7 +171,7 @@ def get_credential_runtime_parameter_values(
                 )
             elif rtp_dict["type"] == "google_credential":
                 dr_credential = datarobot.GoogleCloudCredential(
-                    resource_name=f"Generative Analyst {rtp_dict['key']} Credential [{project_name}]",
+                    resource_name=f"Generative Analyst {rtp_dict['key']} {credential_type} Credential [{project_name}]",
                     gcp_key=rtp_dict["value"].get("gcpKey"),
                 )
             elif rtp_dict["type"] == "aws_credential":
@@ -361,4 +367,51 @@ def get_llm_credentials(llm: LLMConfig, test_credentials: bool = True) -> DRCred
         for error in exc.errors():
             msg += f"- Field '{error['loc'][0]}': {error['msg']}" + "\n"
         raise TypeError("Could not Validate LLM Credentials" + "\n" + msg) from exc
+    return credentials
+
+
+def get_database_credentials(
+    database: Literal["snowflake", "bigquery"], test_credentials: bool = True
+) -> SnowflakeCredentials | GoogleCredentials:
+    try:
+        credentials: SnowflakeCredentials | GoogleCredentials
+        con: snowflake.connector.SnowflakeConnection | google.cloud.bigquery.Client
+        if database == "snowflake":
+            credentials = SnowflakeCredentials()
+            if test_credentials:
+                import snowflake.connector
+
+                connect_params: dict[str, Any] = {
+                    "user": credentials.user,
+                    "password": credentials.password,
+                    "account": credentials.account,
+                    "warehouse": credentials.warehouse,
+                    "database": credentials.database,
+                    "schema": credentials.db_schema,
+                    "role": credentials.role,
+                }
+                con = snowflake.connector.connect(**connect_params)
+                con.close()
+
+        elif database == "bigquery":
+            credentials = GoogleCredentials()
+            if test_credentials:
+                import google.cloud.bigquery
+                from google.oauth2 import service_account
+
+                google_credentials = (
+                    service_account.Credentials.from_service_account_info(  # type: ignore
+                        credentials.service_account_key,
+                        scopes=["https://www.googleapis.com/auth/cloud-platform"],
+                    )
+                )
+                con = google.cloud.bigquery.Client(credentials=google_credentials)
+                con.close()  # type: ignore
+
+    except pydantic.ValidationError as exc:
+        msg = "Validation errors, please check that .env is correct. Remember to run `source set_env.sh` (or set_env.bat/Set-Env.ps1 on windows):\n\n"
+        for error in exc.errors():
+            msg += f"- Field '{error['loc'][0]}': {error['msg']}" + "\n"
+        raise TypeError("Could not Validate database Credentials" + "\n" + msg) from exc
+
     return credentials

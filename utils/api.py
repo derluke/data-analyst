@@ -49,7 +49,7 @@ from pydantic import ValidationError
 sys.path.append("..")
 
 from utils import prompts
-from utils.credentials import SnowflakeCredentials
+from utils.database_helpers import Database
 from utils.datetime_helpers import convert_datetime_series, is_date_column
 from utils.resources import LLMDeployment
 from utils.schema import (
@@ -71,6 +71,10 @@ from utils.schema import (
     Code,
     CodeGenerationResult,
     CodeValidator,
+    DatabaseAnalysisCode,
+    DatabaseAnalysisMetadata,
+    DatabaseAnalysisRequest,
+    DatabaseAnalysisResult,
     DataDictionariesAndMetadata,
     DataDictionary,
     DataDictionaryColumn,
@@ -90,17 +94,10 @@ from utils.schema import (
     RunChartsRequest,
     RunChartsResult,
     RunChartsResultMetadata,
-    SnowflakeAnalysisCode,
-    SnowflakeAnalysisMetadata,
-    SnowflakeAnalysisRequest,
-    SnowflakeAnalysisResult,
     ValidationMessage,
 )
-from utils.snowflake_helpers import create_snowflake_connection, execute_snowflake_query
 
 logger = logging.getLogger("DataAnalystFrontend")
-
-SNOWFLAKE_CREDENTIALS = SnowflakeCredentials()
 
 try:
     dr_client = dr.Client()  # type: ignore[attr-defined]
@@ -1285,12 +1282,12 @@ async def run_charts(request: RunChartsRequest) -> RunChartsResult:
                 error_context = {
                     "error_type": type(e).__name__,
                     "error_message": str(e),
-                    "validation_errors": result.validation_errors
-                    if "result" in locals()
-                    else [],
-                    "execution_errors": result.execution_errors
-                    if "result" in locals()
-                    else [],
+                    "validation_errors": (
+                        result.validation_errors if "result" in locals() else []
+                    ),
+                    "execution_errors": (
+                        result.execution_errors if "result" in locals() else []
+                    ),
                     "code_history": result.code_history if "result" in locals() else [],
                     "attempts": attempt,
                     "timestamp": datetime.now().isoformat(),
@@ -1497,14 +1494,14 @@ async def run_analysis(request: RunAnalysisRequest) -> RunAnalysisResult:
         raise
 
 
-async def _get_snowflake_analysis_code(
-    request: SnowflakeAnalysisRequest,
-) -> SnowflakeAnalysisCode:
+async def _get_database_analysis_code(
+    request: DatabaseAnalysisRequest,
+) -> DatabaseAnalysisCode:
     """
     Generate Snowflake SQL analysis code based on data samples and question.
 
     Parameters:
-    - request: SnowflakeAnalysisRequest containing data samples and question
+    - request: DatabaseAnalysisRequest containing data samples and question
 
     Returns:
     - Dictionary containing generated code and description
@@ -1538,14 +1535,7 @@ async def _get_snowflake_analysis_code(
 
         # Create messages for OpenAI
         messages: list[ChatCompletionMessageParam] = [
-            ChatCompletionSystemMessageParam(
-                role="system",
-                content=prompts.SYSTEM_PROMPT_SNOWFLAKE.format(
-                    warehouse=SNOWFLAKE_CREDENTIALS.warehouse,
-                    database=SNOWFLAKE_CREDENTIALS.database,
-                    schema=SNOWFLAKE_CREDENTIALS.db_schema,
-                ),
-            ),
+            Database.get_system_prompt(),
             ChatCompletionUserMessageParam(
                 content=f"Business Question: {request.question}",
                 role="user",
@@ -1575,7 +1565,7 @@ async def _get_snowflake_analysis_code(
 
         # Get response from OpenAI
         completion = client.chat.completions.create(
-            response_model=SnowflakeAnalysisCode,
+            response_model=DatabaseAnalysisCode,
             model="gpt-4o",
             temperature=0.1,
             messages=messages,
@@ -1589,9 +1579,9 @@ async def _get_snowflake_analysis_code(
         raise
 
 
-async def run_snowflake_analysis(
-    request: SnowflakeAnalysisRequest, max_attempts: int = 3, timeout: int = 300
-) -> SnowflakeAnalysisResult:
+async def run_database_analysis(
+    request: DatabaseAnalysisRequest, max_attempts: int = 3, timeout: int = 300
+) -> DatabaseAnalysisResult:
     """Execute Snowflake analysis with retry logic and error handling"""
     attempts = 0
     error_history: list[AnalysisError] = []
@@ -1601,10 +1591,7 @@ async def run_snowflake_analysis(
 
     if not request.data:
         raise ValueError("Input data cannot be empty")
-
     try:
-        conn = create_snowflake_connection()
-
         while True:  # Changed from while attempts < max_attempts
             attempts += 1
 
@@ -1615,20 +1602,19 @@ async def run_snowflake_analysis(
                     request.failed_code = error_history[-1].code
 
                 # Generate SQL code
-                code_result = await _get_snowflake_analysis_code(request)
+                code_result = await _get_database_analysis_code(request)
                 sql_code = code_result.code
                 last_generated_code = sql_code
 
-                results, query_metadata = execute_snowflake_query(
-                    conn=conn, query=sql_code, timeout=timeout
+                results, query_metadata = Database.execute_query(
+                    query=sql_code, timeout=timeout
                 )
-
-                return SnowflakeAnalysisResult(
+                return DatabaseAnalysisResult(
                     status="success",
                     code=sql_code,
                     description=code_result.description,
                     data=results,
-                    metadata=SnowflakeAnalysisMetadata(
+                    metadata=DatabaseAnalysisMetadata(
                         attempts=attempts,
                         execution_time=time.time() - start_time,
                         error_history=error_history,
@@ -1655,10 +1641,10 @@ async def run_snowflake_analysis(
 
                 if attempts >= max_attempts:
                     # Explicit return for max attempts reached
-                    return SnowflakeAnalysisResult(
+                    return DatabaseAnalysisResult(
                         status="failed",
                         last_generated_code=last_generated_code,
-                        metadata=SnowflakeAnalysisMetadata(
+                        metadata=DatabaseAnalysisMetadata(
                             attempts=attempts,
                             error_history=error_history,
                             execution_time=time.time() - start_time,
@@ -1682,17 +1668,14 @@ async def run_snowflake_analysis(
                 memory_usage=_get_memory_usage(),
             )
         )
-        logger.error(f"Error in run_snowflake_analysis: {str(e)}")
-        return SnowflakeAnalysisResult(
+        logger.error(f"Error in run_database_analysis: {str(e)}")
+        return DatabaseAnalysisResult(
             status="failed",
             last_generated_code=last_generated_code,
-            metadata=SnowflakeAnalysisMetadata(
+            metadata=DatabaseAnalysisMetadata(
                 attempts=attempts,
                 error_history=error_history,
                 execution_time=time.time() - start_time,
                 memory_usage=_get_memory_usage(),
             ),
         )
-    finally:
-        if conn:
-            conn.close()

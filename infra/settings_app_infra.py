@@ -12,11 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import textwrap
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Sequence, Tuple
 
 import datarobot as dr
 import pulumi
+import pulumi_datarobot as datarobot
 
 from infra.common.schema import ApplicationSourceArgs
 
@@ -61,12 +63,46 @@ def ensure_app_source_settings(source_id: str, version_id: str) -> str:
 app_resource_name: str = f"Data Analyst Application [{project_name}]"
 
 
-def get_app_files() -> List[Tuple[str, str]]:
+def _prep_metadata_yaml(
+    runtime_parameter_values: Sequence[
+        datarobot.ApplicationSourceRuntimeParameterValueArgs
+        | datarobot.CustomModelRuntimeParameterValueArgs
+    ],
+) -> None:
+    from jinja2 import BaseLoader, Environment
+
+    llm_runtime_parameter_specs = "\n".join(
+        [
+            textwrap.dedent(
+                f"""\
+            - fieldName: {param.key}
+              type: {param.type}
+        """
+            )
+            for param in runtime_parameter_values
+        ]
+    )
+    with open(application_path / "metadata.yaml.jinja") as f:
+        template = Environment(loader=BaseLoader()).from_string(f.read())
+    (application_path / "metadata.yaml").write_text(
+        template.render(
+            additional_params=llm_runtime_parameter_specs,
+        )
+    )
+
+
+def get_app_files(
+    runtime_parameter_values: Sequence[
+        datarobot.ApplicationSourceRuntimeParameterValueArgs
+        | datarobot.CustomModelRuntimeParameterValueArgs,
+    ],
+) -> List[Tuple[str, str]]:
+    _prep_metadata_yaml(runtime_parameter_values)
     # Get all files from application path
     source_files = [
         (f.as_posix(), f.relative_to(application_path).as_posix())
         for f in application_path.glob("**/*")
-        if f.is_file() and not f.name.endswith(".yaml")
+        if f.is_file() and ".yaml" not in f.name
     ]
 
     # Get all .py files from utils directory

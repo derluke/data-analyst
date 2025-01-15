@@ -19,13 +19,13 @@ import sys
 import warnings
 from typing import Any, Dict
 
+import pandas as pd
+import streamlit as st
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 sys.path.append("..")
 
-import pandas as pd
-import streamlit as st
-from app_settings import PAGE_ICON, get_page_logo
+from app_settings import PAGE_ICON, get_database_logo, get_page_logo
 
 from utils.api import (
     cleanse_dataframes,
@@ -33,11 +33,8 @@ from utils.api import (
     get_dictionary,
     list_catalog_datasets,
 )
-from utils.credentials import SnowflakeCredentials
+from utils.database_helpers import Database, app_infra
 from utils.schema import DatasetInput
-from utils.snowflake_helpers import get_snowflake_data, get_snowflake_tables
-
-SNOWFLAKE_CREDENTIALS = SnowflakeCredentials()
 
 warnings.filterwarnings("ignore")
 
@@ -262,22 +259,19 @@ def clear_data_callback() -> None:
     st.cache_resource.clear()
 
 
-# Modify the load_snowflake_data callback
-def load_snowflake_data_callback() -> None:
+def load_from_database_callback() -> None:
     """Callback function for Snowflake table download"""
     if (
-        "selected_snowflake_tables" in st.session_state
-        and st.session_state.selected_snowflake_tables
+        "selected_schema_tables" in st.session_state
+        and st.session_state.selected_schema_tables
     ):
         with st.sidebar:
             with st.spinner("Loading selected tables..."):
                 # Get data from Snowflake
-                dataframes = get_snowflake_data(
-                    *st.session_state.selected_snowflake_tables
-                )
+                dataframes = Database.get_data(*st.session_state.selected_schema_tables)
 
                 if not dataframes:
-                    st.error("Failed to load data from Snowflake")
+                    st.error(f"Failed to load data from {app_infra.database}")
                     return
 
                 # Add downloaded dataframes to session state
@@ -285,8 +279,8 @@ def load_snowflake_data_callback() -> None:
                     st.session_state.datasets[name] = pd.DataFrame(df)
                     st.success(f"✓ {name}: {len(df)} rows, {len(df[0].keys())} columns")
 
-                # Set flag to indicate data source is Snowflake
-                st.session_state.data_source = "snowflake"
+                # Set flag to indicate data source is a database
+                st.session_state.data_source = "database"
 
                 # Process the new data
                 results = process_data_cached(st.session_state.datasets)
@@ -422,27 +416,27 @@ with st.sidebar:
 
     # Database expander containing Snowflake section
     with st.expander("Database", expanded=False):
-        st.image("Snowflake.svg", width=100)
+        st.image(get_database_logo(app_infra), width=100)
 
-        snowflake_tables = get_snowflake_tables()
+        schema_tables = Database.get_tables()
 
         # Create form for Snowflake table selection
-        with st.form("snowflake_selection_form", border=False):
-            selected_snowflake_tables = st.multiselect(
+        with st.form("table_selection_form", border=False):
+            selected_schema_tables = st.multiselect(
                 "Select datasets from Snowflake",
-                options=snowflake_tables,
+                options=schema_tables,
                 help="You can select multiple tables",
-                key="selected_snowflake_tables",
+                key="selected_schema_tables",
             )
 
             # Form submit button
             submit_button = st.form_submit_button(
                 "Load Selected Tables",
                 use_container_width=False,
-                on_click=load_snowflake_data_callback,
+                on_click=load_from_database_callback,
             )
 
-            if submit_button and not selected_snowflake_tables:
+            if submit_button and not selected_schema_tables:
                 st.warning("Please select at least one table")
 
     # Add Clear Data button after the Database expander

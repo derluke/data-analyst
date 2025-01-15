@@ -45,3 +45,5 @@ anthropic
 snowflake-sqlalchemy==1.5.1
 sqlalchemy==1.4.49
 snowflake-connector-python
+google-cloud-bigquery
+db-dtypes

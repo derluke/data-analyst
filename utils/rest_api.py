@@ -32,15 +32,18 @@ from utils.api import (
     rephrase_message,
     run_analysis,
     run_charts,
-    run_snowflake_analysis,
+    run_database_analysis,
     suggest_questions,
 )
+from utils.database_helpers import Database
 from utils.schema import (
     AiCatalogDataset,
     BusinessAnalysisRequest,
     BusinessAnalysisResult,
     ChatRequest,
     CleanseResult,
+    DatabaseAnalysisRequest,
+    DatabaseAnalysisResult,
     DataDictionariesAndMetadata,
     DatasetInput,
     QuestionSuggestions,
@@ -48,10 +51,7 @@ from utils.schema import (
     RunAnalysisResult,
     RunChartsRequest,
     RunChartsResult,
-    SnowflakeAnalysisRequest,
-    SnowflakeAnalysisResult,
 )
-from utils.snowflake_helpers import get_snowflake_data, get_snowflake_tables
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -126,14 +126,14 @@ async def download_catalog_datasets_endpoint(
 
 @app.get("/get_snowflake_tables")
 async def get_snowflake_tables_endpoint() -> list[str]:
-    return get_snowflake_tables()
+    return Database.get_tables()
 
 
 @app.get("/get_snowflake_data")
 async def get_snowflake_data_endpoint(
     table_names: list[str], sample_size: int = 5000
 ) -> dict[str, list[dict[str, Any]]]:
-    return get_snowflake_data(*table_names, sample_size=sample_size)
+    return Database.get_data(*table_names, sample_size=sample_size)
 
 
 @app.post("/cleanse_dataframes")
@@ -179,10 +179,10 @@ async def run_analysis_endpoint(request: RunAnalysisRequest) -> RunAnalysisResul
     return await run_analysis(request)
 
 
-@app.post("/run_snowflake_analysis")
-async def run_snowflake_analysis_endpoint(
-    request: SnowflakeAnalysisRequest, max_attempts: int = 3, timeout: int = 300
-) -> SnowflakeAnalysisResult:
-    return await run_snowflake_analysis(
+@app.post("/run_database_analysis")
+async def run_database_analysis_endpoint(
+    request: DatabaseAnalysisRequest, max_attempts: int = 3, timeout: int = 300
+) -> DatabaseAnalysisResult:
+    return await run_database_analysis(
         request=request, max_attempts=max_attempts, timeout=timeout
     )

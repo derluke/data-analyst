@@ -18,7 +18,6 @@ import datarobot as dr
 import pulumi
 import pulumi_datarobot as datarobot
 
-from infra.common.globals import GlobalLLM
 from utils.schema import LLMDeploymentSettings
 
 from .common.globals import GlobalRuntimeEnvironment
@@ -29,12 +28,7 @@ from .common.schema import (
     PlaygroundArgs,
     RegisteredModelArgs,
 )
-from .settings_main import (
-    project_name,
-)
-
-LLM = GlobalLLM.AZURE_OPENAI_GPT_4_O
-
+from .settings_main import LLM, project_name
 
 custom_model_args = CustomModelArgs(
     resource_name=f"Generative Analyst Custom Model [{project_name}]",
@@ -58,11 +52,11 @@ deployment_args = DeploymentArgs(
         auto_generate_id=False,
         required_in_prediction_requests=True,
     ),
-    predictions_settings=(
-        datarobot.DeploymentPredictionsSettingsArgs(min_computes=0, max_computes=2)
-    ),
     predictions_data_collection_settings=datarobot.DeploymentPredictionsDataCollectionSettingsArgs(
         enabled=True,
+    ),
+    predictions_settings=(
+        datarobot.DeploymentPredictionsSettingsArgs(min_computes=0, max_computes=2)
     ),
 )
 
@@ -70,13 +64,11 @@ playground_args = PlaygroundArgs(
     resource_name=f"Generative Analyst Playground [{project_name}]",
 )
 
-system_prompt = """You are a helpful assistant"""
-
 llm_blueprint_args = LLMBlueprintArgs(
     resource_name=f"Generative Analyst LLM Blueprint [{project_name}]",
     llm_id=LLM.name,
     llm_settings=datarobot.LlmBlueprintLlmSettingsArgs(
-        max_completion_length=512,
+        max_completion_length=1024,
         temperature=0.1,
     ),
 )

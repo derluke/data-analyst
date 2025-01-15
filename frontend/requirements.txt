@@ -27,3 +27,6 @@ eval_type_backport
 snowflake-sqlalchemy
 sqlalchemy
 anthropic
+google-cloud-bigquery
+google-auth
+db-dtypes

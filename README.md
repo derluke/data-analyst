@@ -25,7 +25,7 @@ and govern the components.
 
 ## Setup
 
-Before proceeding, ensure you have access to the required credentials and services. This template is pre-configured to use an Azure OpenAI endpoint. To run the template as-is, you will need access to Azure OpenAI (leverages `gpt-4o` and `gpt-4o-mini` by default). If you wish to use a different LLM provider, modifications to the code will be necessary.
+Before proceeding, ensure you have access to the required credentials and services. This template is pre-configured to use an Azure OpenAI endpoint and Snowflake Database credentials. To run the template as-is, you will need access to Azure OpenAI (leverages `gpt-4o` by default). 
 
 Codespace users can **skip steps 1 and 2**. For local development, follow all of the following steps.
 
@@ -104,9 +104,28 @@ Your data privacy is important to us. Data handling is governed by the DataRobot
 
 ## Make changes
 
-### Snowflake connection
+### Change the LLM
 
-Snowflake will try to use the user/password to log in and if it doesn't find it, it will use the file in the `snowflake_key_path` variable in the `.env` file.
+1. Modify the `LLM` setting in `infra/settings_main.py` by changing `LLM=GlobalLLM.AZURE_OPENAI_GPT_4_O` to any other LLM from the `GlobalLLM` object.
+2. Provide the required credentials in `.env` dependent on your choice.
+3. Run `pulumi up` to update your stack (Or rerun your quickstart).
+      ```bash
+      source set_env.sh  # On windows use `set_env.bat`
+      pulumi up
+      ```
+
+### Change the database
+
+#### BigQuery
+
+The Talk to my Data Agent supports connecting to BigQuery.
+1. Modify the `DATABASE_CONNECTION_TYPE` setting in `infra/settings_main.py` by changing `DATABASE_CONNECTION_TYPE=snowflake` to `DATABASE_CONNECTION_TYPE=bigquery`. 
+2. Provide the required google credentials in `.env` dependent on your choice.  Ensure that GOOGLE_DB_SCHEMA is also populated `.env`.
+3. Run `pulumi up` to update your stack (Or rerun your quickstart).
+      ```bash
+      source set_env.sh  # On windows use `set_env.bat`
+      pulumi up
+      ```
 
 ## Share results
 
