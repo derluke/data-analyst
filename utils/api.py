@@ -128,6 +128,7 @@ except ValidationError as e:
 
 MODEL_MODE = "openai"
 DICTIONARY_BATCH_SIZE = 10
+MAX_AI_CATALOG_DATASET_SIZE = 400e6  # aligns to 400MB set in streamlit config.toml
 
 
 class InvalidGeneratedCode(Exception):
@@ -225,8 +226,15 @@ def download_catalog_datasets(*args: Any) -> dict[str, list[dict[str, Any]]]:
     """
     dataframes: dict[str, list[dict[str, Any]]] = {}
     dataset_ids = list(args)
-    for id in dataset_ids:
-        dataset = dr.Dataset.get(id)  # type: ignore[attr-defined]
+    datasets = [dr.Dataset.get(id_) for id_ in dataset_ids]  # type: ignore
+    if (
+        sum([ds.size for ds in datasets if ds.size is not None])
+        > MAX_AI_CATALOG_DATASET_SIZE
+    ):
+        raise ValueError(
+            f"The requested AI Catalog datasets must total <= {int(MAX_AI_CATALOG_DATASET_SIZE)} bytes"
+        )
+    for dataset in datasets:
         try:
             df_records = dataset.get_as_dataframe().to_dict(orient="records")
 
