@@ -27,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime
 from types import FunctionType
-from typing import Any, Dict, List, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Tuple
 
 import datarobot as dr
 import instructor
@@ -128,6 +128,57 @@ except ValidationError as e:
 
 MODEL_MODE = "openai"
 DICTIONARY_BATCH_SIZE = 10
+
+
+class InvalidGeneratedCode(Exception):
+    """Raised when LLM generated code is found to be invalid."""
+
+    def __init__(
+        self, *args: Any, code: str | None = None, exception: Exception | None = None
+    ):
+        super().__init__(*args)
+        self.code = code
+        self.exception = exception
+
+
+def reflect_code_generation_errors(
+    max_retries: int,
+) -> Callable[[Callable[..., Awaitable[Any]]], Callable[..., Awaitable[Any]]]:
+    """Reflect LLM code generation errors for self-correction
+
+    Exceptions raised by invalid code will be injected back into the
+    decorated function via the `exception_history` keyword argument.
+
+    `exception_history` contains a list of InvalidGeneratedCode
+    exceptions.
+    """
+
+    def _outer_wrapper(
+        f: Callable[..., Awaitable[Any]],
+    ) -> Callable[..., Awaitable[Any]]:
+        # @functools.wraps(f)
+        async def _inner_wrapper(*args: Any, **kwargs: Any) -> Any:
+            attempts = 1
+            exception_history: list[InvalidGeneratedCode] = []
+            kwargs["exception_history"] = exception_history
+            while attempts <= max_retries:
+                try:
+                    return await f(*args, **kwargs)
+                except InvalidGeneratedCode as e:
+                    msg = type(e.exception).__name__ + f": {str(e.exception)}"
+                    logger.info(
+                        "LLM generated code raised {msg}\nGenerated code:\n{e.code}"
+                    )
+                    exception_history.append(e)
+                attempts += 1
+
+            msg = "{f.__name__} failed to generate valid code after {max_retries} attempts"
+            logger.error(msg)
+            raise RuntimeError(msg)
+
+        return _inner_wrapper
+
+    return _outer_wrapper
 
 
 @functools.lru_cache(maxsize=2)

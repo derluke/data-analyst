@@ -21,7 +21,8 @@ from datarobotx.idp.datasets import get_or_create_dataset_from_df
 from fastapi.testclient import TestClient
 
 # Import FastAPI functions directly
-from utils.api import app, cleanse_dataframes, get_dictionary
+from utils.api import cleanse_dataframes, get_dictionary
+from utils.rest_api import app
 from utils.schema import DatasetInput
 
 client = TestClient(app)
@@ -72,7 +73,7 @@ def test_dataset_is_cleansed(dataset_cleaned):
 
 
 @pytest.fixture(scope="module")
-def data_dictionary(dataset_loaded):
+async def data_dictionary(dataset_loaded):
     datasets = [DatasetInput(**dataset_loaded)]
     dictionary_result = await get_dictionary(datasets)
     return dictionary_result.model_dump()
