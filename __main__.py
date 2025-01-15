@@ -21,7 +21,6 @@ import pulumi_datarobot as datarobot
 
 from infra import (
     settings_app_infra,
-    settings_chat_agent,
     settings_credentials,
     settings_generative,
     settings_main,
@@ -80,9 +79,9 @@ llm_deployment = CustomModelDeployment(
     resource_name=f"Chat Agent Deployment [{settings_main.project_name}]",
     use_case_ids=[use_case.id],
     custom_model_version_id=llm_custom_model.version_id,
-    registered_model_args=settings_chat_agent.registered_model_args,
+    registered_model_args=settings_generative.registered_model_args,
     prediction_environment=prediction_environment,
-    deployment_args=settings_chat_agent.deployment_args,
+    deployment_args=settings_generative.deployment_args,
 )
 
 
@@ -117,7 +116,7 @@ app.id.apply(settings_app_infra.ensure_app_settings)
 # Chat Agent output
 pulumi.export(llm_deployment_env_name, llm_deployment.id)
 pulumi.export(
-    settings_chat_agent.deployment_args.resource_name,
+    settings_generative.deployment_args.resource_name,
     llm_deployment.id.apply(get_deployment_url),
 )
 

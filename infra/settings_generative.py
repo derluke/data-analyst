@@ -58,6 +58,9 @@ deployment_args = DeploymentArgs(
         auto_generate_id=False,
         required_in_prediction_requests=True,
     ),
+    predictions_settings=(
+        datarobot.DeploymentPredictionsSettingsArgs(min_computes=0, max_computes=2)
+    ),
     predictions_data_collection_settings=datarobot.DeploymentPredictionsDataCollectionSettingsArgs(
         enabled=True,
     ),

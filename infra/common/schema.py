@@ -15,35 +15,17 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Optional, Tuple, Type
+from typing import Any, Optional
 
 import pulumi
 import pulumi_datarobot as datarobot
 from datarobot.enums import VectorDatabaseChunkingMethod, VectorDatabaseEmbeddingModel
 from pydantic import BaseModel, ConfigDict, Field
-from pydantic_settings import (
-    BaseSettings,
-    PydanticBaseSettingsSource,
-    SettingsConfigDict,
-)
 
 from .globals import (
     GlobalGuardrailTemplateName,
-    GlobalLLM,
     GlobalPredictionEnvironmentPlatforms,
 )
-
-
-class GenAIDeploymentType(str, Enum):
-    DIY = "diy"
-    DR = "dr"
-
-
-class GenAIBuzokDeploymentType(str, Enum):
-    AZ = "azure"
-    GOOG = "google"
-    AMZN = "amazon"
-    OPENAI = "openai"
 
 
 class ModerationAction(str, Enum):
@@ -96,39 +78,6 @@ class CustomModelGuardConfigurationArgs(BaseModel):
     intervention: Intervention
     input_column_name: str | None = None
     output_column_name: str | None = None
-
-
-class CoreSettings(BaseSettings):
-    """Schema for core settings that can also be overridden by environment variables
-
-    e.g. for running automated tests.
-    """
-
-    genai_deployment_type: GenAIDeploymentType = Field(
-        description="Whether to create generative AI deployment from DR Playground or custom model",
-    )
-    genai_deployment_provider: GenAIBuzokDeploymentType = Field(
-        description="Specify the provider of the generative AI deployment",
-    )
-    genai_deployment_name_buzok: GlobalLLM = Field(
-        description="Name of the generative AI deployment",
-    )
-
-    model_config = SettingsConfigDict(env_prefix="MAIN_", case_sensitive=False)
-
-    @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls: Type[BaseSettings],
-        init_settings: PydanticBaseSettingsSource,
-        env_settings: PydanticBaseSettingsSource,
-        dotenv_settings: PydanticBaseSettingsSource,
-        file_secret_settings: PydanticBaseSettingsSource,
-    ) -> Tuple[PydanticBaseSettingsSource, ...]:
-        return (
-            env_settings,
-            init_settings,
-        )
 
 
 class UseCaseArgs(BaseModel):
