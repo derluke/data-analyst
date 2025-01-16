@@ -267,16 +267,15 @@ def list_catalog_datasets(limit: int = 100) -> List[AiCatalogDataset]:
 
 
 @cache
-def download_catalog_datasets(*args: Any) -> dict[str, list[dict[str, Any]]]:
+def download_catalog_datasets(*args: Any) -> list[DatasetInput]:
     """Load selected datasets as pandas DataFrames
 
     Args:
         *args: list of dataset IDs to download
 
     Returns:
-        dict[str, list[dict[str, Any]]]: Dictionary of dataset names and data
+        list[DatasetInput]: Dictionary of dataset names and data
     """
-    dataframes: dict[str, list[dict[str, Any]]] = {}
     dataset_ids = list(args)
     datasets = [dr.Dataset.get(id_) for id_ in dataset_ids]  # type: ignore
     if (
@@ -286,19 +285,20 @@ def download_catalog_datasets(*args: Any) -> dict[str, list[dict[str, Any]]]:
         raise ValueError(
             f"The requested AI Catalog datasets must total <= {int(MAX_AI_CATALOG_DATASET_SIZE)} bytes"
         )
+
+    result_datasets: list[DatasetInput] = []
     for dataset in datasets:
         try:
-            df_records = dataset.get_as_dataframe().to_dict(orient="records")
-
-            df_records_converted = [
-                {str(k): v for k, v in record.items()} for record in df_records
-            ]
-            dataframes[dataset.name] = df_records_converted
+            df_records = cast(
+                list[dict[str, Any]],
+                dataset.get_as_dataframe().to_dict(orient="records"),
+            )
+            result_datasets.append(DatasetInput(name=dataset.name, data=df_records))
             logger.info(f"Successfully downloaded {dataset.name}")
         except Exception as e:
             logger.error(f"Failed to read dataset {dataset.name}: {str(e)}")
             continue
-    return dataframes
+    return result_datasets
 
 
 def _process_column_batch(

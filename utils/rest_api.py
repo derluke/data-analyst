@@ -121,7 +121,7 @@ async def list_catalog_datasets_endpoint(limit: int = 100) -> list[AiCatalogData
 async def download_catalog_datasets_endpoint(
     dataset_ids: list[str],
 ) -> dict[str, list[dict[str, Any]]]:
-    return download_catalog_datasets(*dataset_ids)
+    return {ds.name: ds.data for ds in download_catalog_datasets(*dataset_ids)}
 
 
 @app.get("/get_snowflake_tables")
@@ -133,7 +133,10 @@ async def get_snowflake_tables_endpoint() -> list[str]:
 async def get_snowflake_data_endpoint(
     table_names: list[str], sample_size: int = 5000
 ) -> dict[str, list[dict[str, Any]]]:
-    return Database.get_data(*table_names, sample_size=sample_size)
+    return {
+        ds.name: ds.data
+        for ds in Database.get_data(*table_names, sample_size=sample_size)
+    }
 
 
 @app.post("/cleanse_dataframes")

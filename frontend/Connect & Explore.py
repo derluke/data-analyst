@@ -17,14 +17,13 @@ import logging
 import os
 import sys
 import warnings
-from typing import Any, Dict
+from typing import Any, cast
 
 import pandas as pd
 import streamlit as st
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 sys.path.append("..")
-
 from app_settings import PAGE_ICON, get_database_logo, get_page_logo
 
 from utils.api import (
@@ -34,7 +33,12 @@ from utils.api import (
     list_catalog_datasets,
 )
 from utils.database_helpers import Database, app_infra
-from utils.schema import DatasetInput
+from utils.schema import (
+    CleanseResult,
+    DataDictionariesAndMetadata,
+    DatasetInput,
+    DatasetOutput,
+)
 
 warnings.filterwarnings("ignore")
 
@@ -49,109 +53,30 @@ logger = logging.getLogger(__name__)
 # Initialize session state variables
 if "initialized" not in st.session_state:
     st.session_state.initialized = True
-    st.session_state.datasets = {}
-    st.session_state.cleansed_data = {}
-    st.session_state.data_dictionaries = {}
+    st.session_state.datasets = []
+    st.session_state.cleansed_data = []
+    st.session_state.data_dictionaries = []
     st.session_state.data_source = None
 
 
 # Modify process_data to handle coroutine reuse
-def process_data_cached(datasets_dict: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
+def process_data_cached(_datasets: list[DatasetInput]) -> CleanseResult:
     """
     Wrapper function to handle async processing with caching
     """
-    return asyncio.run(process_data_async(datasets_dict))
-
-
-async def process_data_async(datasets_dict: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
-    """
-    Process and cleanse the uploaded datasets using the API functions.
-    Returns a dictionary containing cleansed data and success status.
-    """
-    try:
-        # Convert the datasets dictionary to a list of DatasetInput objects
-        datasets_list = [
-            DatasetInput(name=name, data=df.to_dict(orient="records"))
-            for name, df in datasets_dict.items()
-        ]
-
-        # Cleanse the data
-        cleansed_results = await cleanse_dataframes(datasets_list)
-
-        # Format results
-        cleansed_data = {
-            dataset.name: {
-                "data": pd.DataFrame(dataset.data),
-                "report": dataset.cleaning_report,
-            }
-            for dataset in cleansed_results.datasets
-        }
-
-        return {"success": True, "data": cleansed_data}
-
-    except Exception as e:
-        logger.error(f"Error processing data: {str(e)}")
-        return {"success": False, "error": str(e)}
+    return asyncio.run(cleanse_dataframes(_datasets))
 
 
 def generate_dictionaries(
-    _cleansed_data: Dict[str, Dict[str, Any]],
-) -> Dict[str, Any]:
+    _cleansed_data: list[DatasetOutput],
+) -> DataDictionariesAndMetadata:
     """
     Wrapper function to handle async dictionary generation
     """
-    return asyncio.run(generate_dictionaries_async(_cleansed_data))
+    return asyncio.run(get_dictionary(_cleansed_data))
 
 
-# TODO: move to utils.api.py def generate_dictionaries(cleansed_data: CleansedResult) -> DataDictionariesAndMetadata
-async def generate_dictionaries_async(
-    _cleansed_data: Dict[str, Dict[str, Any]],
-) -> Dict[str, Any]:
-    """Generate data dictionaries for all datasets"""
-    try:
-        # Create a list of DatasetInput objects
-        datasets = []
-        logger.info(
-            f"Starting dictionary generation for {len(_cleansed_data)} datasets"
-        )
-
-        for name, data in _cleansed_data.items():
-            if isinstance(data, dict) and "data" in data:
-                df = data["data"]
-                datasets.append(
-                    DatasetInput(name=name, data=df.to_dict(orient="records"))
-                )
-                logger.info(f"Added dataset {name} for dictionary generation")
-
-        _dictionary_response = await get_dictionary(datasets)
-        dictionary_response = _dictionary_response.model_dump()
-
-        if dictionary_response and isinstance(dictionary_response, dict):
-            if "dictionaries" in dictionary_response:
-                result_dict = {
-                    dict_entry["name"]: dict_entry["dictionary"]
-                    for dict_entry in dictionary_response["dictionaries"]
-                    if dict_entry.get("name") and "dictionary" in dict_entry
-                }
-                logger.info(
-                    f"Successfully generated dictionaries for {len(result_dict)} datasets"
-                )
-                return result_dict
-            else:
-                logger.warning("Dictionary response missing 'dictionaries' key")
-        else:
-            logger.warning(
-                f"Unexpected dictionary response format: {type(dictionary_response)}"
-            )
-
-        return {}
-
-    except Exception as e:
-        logger.error(f"Error generating dictionaries: {str(e)}", exc_info=True)
-        return {}
-
-
-def process_uploaded_file(file: UploadedFile) -> list[tuple[str, pd.DataFrame]]:
+def process_uploaded_file(file: UploadedFile) -> list[DatasetInput]:
     """Process a single uploaded file and return a list of (dataset_name, dataframe) tuples
 
     Args:
@@ -167,7 +92,8 @@ def process_uploaded_file(file: UploadedFile) -> list[tuple[str, pd.DataFrame]]:
         if file_extension == ".csv":
             df = pd.read_csv(file)
             dataset_name = os.path.splitext(file.name)[0]
-            results.append((dataset_name, df))
+            data = cast(list[dict[str, Any]], df.to_dict(orient="records"))
+            results.append(DatasetInput(name=dataset_name, data=data))
             logger.info(
                 f"Loaded CSV {dataset_name}: {len(df)} rows, {len(df.columns)} columns"
             )
@@ -185,7 +111,8 @@ def process_uploaded_file(file: UploadedFile) -> list[tuple[str, pd.DataFrame]]:
                     if len(excel_file.sheet_names) > 1
                     else base_name
                 )
-                results.append((dataset_name, df))
+                data = cast(list[dict[str, Any]], df.to_dict(orient="records"))
+                results.append(DatasetInput(name=dataset_name, data=data))
                 logger.info(
                     f"Loaded Excel sheet {dataset_name}: {len(df)} rows, {len(df.columns)} columns"
                 )
@@ -214,42 +141,39 @@ def catalog_download_callback() -> None:
                 dataframes = download_catalog_datasets(*selected_ids)
 
                 # Add downloaded dataframes to session state
-                for name, df in dataframes.items():
-                    st.session_state.datasets[name] = pd.DataFrame(df)
+
+                st.session_state.datasets.extend(dataframes)
 
                 # Process the new data
-                results = process_data_cached(st.session_state.datasets)
+                try:
+                    results = process_data_cached(st.session_state.datasets)
+                except Exception as e:
+                    logger.error("Data processing failed")
+                    st.error(f"❌ Error processing data: {str(e)}")
+                st.session_state.cleansed_data = results.datasets
+                logger.info("Data processing successful, generating dictionaries")
 
-                if results["success"]:
-                    st.session_state.cleansed_data = results["data"]
-                    logger.info("Data processing successful, generating dictionaries")
-
-                    # Generate data dictionaries
+                # Generate data dictionaries
+                try:
                     st.session_state.data_dictionaries = generate_dictionaries(
                         st.session_state.cleansed_data
+                    ).dictionaries
+                except Exception:
+                    st.warning(
+                        "⚠️ Data processed but there were issues generating some dictionaries"
                     )
-
-                    if st.session_state.data_dictionaries:
-                        st.success(
-                            "✅ Data processed and dictionaries generated successfully!"
-                        )
-                    else:
-                        st.warning(
-                            "⚠️ Data processed but there were issues generating some dictionaries"
-                        )
-                else:
-                    logger.error("Data processing failed")
-                    st.error(
-                        f"❌ Error processing data: {results.get('error', 'Unknown error')}"
+                if st.session_state.data_dictionaries:
+                    st.success(
+                        "✅ Data processed and dictionaries generated successfully!"
                     )
 
 
 def clear_data_callback() -> None:
     """Callback function to clear all data from session state and cache"""
     # Clear session state
-    st.session_state.datasets = {}
-    st.session_state.cleansed_data = {}
-    st.session_state.data_dictionaries = {}
+    st.session_state.datasets = []
+    st.session_state.cleansed_data = []
+    st.session_state.data_dictionaries = []
     st.session_state.selected_catalog_datasets = []  # Also clear catalog selection
     st.session_state.data_source = None  # Reset data source flag
 
@@ -270,37 +194,38 @@ def load_from_database_callback() -> None:
                     return
 
                 # Add downloaded dataframes to session state
-                for name, df in dataframes.items():
-                    st.session_state.datasets[name] = pd.DataFrame(df)
-                    st.success(f"✓ {name}: {len(df)} rows, {len(df[0].keys())} columns")
+
+                st.session_state.datasets.extend(dataframes)
+                for ds in dataframes:
+                    st.success(
+                        f"✓ {ds.name}: {len(ds.data)} rows, {len(ds.data[0].keys())} columns"
+                    )
 
                 # Set flag to indicate data source is a database
                 st.session_state.data_source = "database"
 
                 # Process the new data
-                results = process_data_cached(st.session_state.datasets)
+                try:
+                    results = process_data_cached(st.session_state.datasets)
+                except Exception as e:
+                    logger.error("Data processing failed")
+                    st.error(f"❌ Error processing data: {str(e)}")
 
-                if results["success"]:
-                    st.session_state.cleansed_data = results["data"]
-                    logger.info("Data processing successful, generating dictionaries")
+                st.session_state.cleansed_data = results.datasets
+                logger.info("Data processing successful, generating dictionaries")
 
-                    # Generate data dictionaries
+                # Generate data dictionaries
+                try:
                     st.session_state.data_dictionaries = generate_dictionaries(
                         st.session_state.cleansed_data
+                    ).dictionaries
+                except Exception:
+                    st.warning(
+                        "⚠️ Data processed but there were issues generating some dictionaries"
                     )
-
-                    if st.session_state.data_dictionaries:
-                        st.success(
-                            "✅ Data processed and dictionaries generated successfully!"
-                        )
-                    else:
-                        st.warning(
-                            "⚠️ Data processed but there were issues generating some dictionaries"
-                        )
-                else:
-                    logger.error("Data processing failed")
-                    st.error(
-                        f"❌ Error processing data: {results.get('error', 'Unknown error')}"
+                if st.session_state.data_dictionaries:
+                    st.success(
+                        "✅ Data processed and dictionaries generated successfully!"
                     )
 
 
@@ -337,47 +262,43 @@ with st.sidebar:
                 for file in uploaded_files:
                     dataset_results = process_uploaded_file(file)
                     if dataset_results:
-                        for dataset_name, df in dataset_results:
-                            st.session_state.datasets[dataset_name] = df
+                        for ds in dataset_results:
+                            st.session_state.datasets.append(ds)
                             st.success(
-                                f"✓ {dataset_name}: {len(df)} rows, {len(df.columns)} columns"
+                                f"✓ {ds.name}: {len(ds.data)} rows, {len(ds.data[0].keys())} columns"
                             )
 
                 # Process data and generate dictionaries
                 logger.info("Starting data processing")
-                results = process_data_cached(st.session_state.datasets)
+                try:
+                    results = process_data_cached(st.session_state.datasets)
+                    st.session_state.cleansed_data = results.datasets
+                except Exception as e:
+                    logger.error("Data processing failed")
+                    st.error(f"❌ Error processing data: {str(e)}")
 
-                if results["success"]:
-                    st.session_state.cleansed_data = results["data"]
-                    logger.info("Data processing successful, generating dictionaries")
+                logger.info("Data processing successful, generating dictionaries")
 
-                    # Generate new dictionaries
+                # Generate new dictionaries
+                try:
                     new_dictionaries = generate_dictionaries(
                         st.session_state.cleansed_data
+                    ).dictionaries
+                except Exception:
+                    st.warning(
+                        "⚠️ Data processed but there were issues generating some dictionaries"
                     )
 
-                    # Update session state by merging existing and new dictionaries
-                    existing_dicts = st.session_state.get("data_dictionaries", {})
-                    st.session_state.data_dictionaries = {
-                        **existing_dicts,
-                        **new_dictionaries,
-                    }
+                # Update session state by merging existing and new dictionaries
+                existing_dicts = st.session_state.data_dictionaries
+                st.session_state.data_dictionaries = existing_dicts + new_dictionaries
 
-                    if st.session_state.data_dictionaries:
-                        st.success(
-                            "✅ Data processed and dictionaries generated successfully!"
-                        )
-                        st.info(
-                            "View the generated data dictionaries in the [Data Dictionary](/Data_Dictionary) page"
-                        )
-                    else:
-                        st.warning(
-                            "⚠️ Data processed but there were issues generating some dictionaries"
-                        )
-                else:
-                    logger.error("Data processing failed")
-                    st.error(
-                        f"❌ Error processing data: {results.get('error', 'Unknown error')}"
+                if st.session_state.data_dictionaries:
+                    st.success(
+                        "✅ Data processed and dictionaries generated successfully!"
+                    )
+                    st.info(
+                        "View the generated data dictionaries in the [Data Dictionary](/Data_Dictionary) page"
                     )
 
         # AI Catalog section
@@ -450,12 +371,12 @@ st.title("Explore")
 if not st.session_state.cleansed_data:
     st.info("Upload and process your data using the sidebar to get started")
 else:
-    for name, data in st.session_state.cleansed_data.items():
-        st.subheader(f"{name}")
+    for ds_clean in st.session_state.cleansed_data:
+        st.subheader(f"{ds_clean.name}")
 
         # Display cleaning report in expander
         with st.expander("View Cleaning Report"):
-            report = data["report"]
+            report = ds_clean.cleaning_report
             if report.columns_cleaned:
                 st.write("**Columns Cleaned:**")
                 st.write(", ".join(report.columns_cleaned))
@@ -471,13 +392,15 @@ else:
                         st.write(f"- {error}")
 
         # Display dataframe with column filters
-        df_display: pd.DataFrame = data["data"]
+        df_display: pd.DataFrame = pd.DataFrame.from_records(ds_clean.data)
 
         # Create column filters
         col1, col2 = st.columns([3, 1])
         with col1:
             search = st.text_input(
-                "Search columns", key=f"search_{name}", help="Filter columns by name"
+                "Search columns",
+                key=f"search_{ds_clean.name}",
+                help="Filter columns by name",
             )
         with col2:
             n_rows = int(
@@ -487,7 +410,7 @@ else:
                     max_value=len(df_display),
                     value=min(10, len(df_display)),
                     step=1,
-                    key=f"n_rows_{name}",
+                    key=f"n_rows_{ds_clean.name}",
                 )
             )
 
@@ -507,9 +430,9 @@ else:
             st.download_button(
                 label="Download Cleansed Data",
                 data=csv,
-                file_name=f"{name}_cleansed.csv",
+                file_name=f"{ds_clean.name}_cleansed.csv",
                 mime="text/csv",
-                key=f"download_{name}",
+                key=f"download_{ds_clean.name}",
             )
 
         st.markdown("---")

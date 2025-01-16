@@ -21,7 +21,7 @@ import time
 import traceback
 import warnings
 from datetime import datetime
-from typing import Any, Callable, Coroutine, Dict, TypeVar
+from typing import Any, Callable, Coroutine, Dict, TypeVar, cast
 
 import pandas as pd
 import streamlit as st
@@ -47,6 +47,9 @@ from utils.schema import (
     ChatRequest,
     DatabaseAnalysisRequest,
     DatabaseAnalysisResult,
+    DataDictionary,
+    DatasetInput,
+    DatasetOutput,
     RunAnalysisRequest,
     RunAnalysisResult,
     RunChartsRequest,
@@ -63,9 +66,9 @@ logger = logging.getLogger(__name__)
 # Initialize session state variables at the very beginning of the file
 if "initialized" not in st.session_state:
     st.session_state.initialized = True
-    st.session_state.datasets = {}
-    st.session_state.cleansed_data = {}
-    st.session_state.data_dictionaries = {}
+    st.session_state.datasets = []
+    st.session_state.cleansed_data = []
+    st.session_state.data_dictionaries = []
     st.session_state.chat_messages = []
     st.session_state.chat_input_key = 0
     st.session_state.debug_mode = True
@@ -314,6 +317,13 @@ def log_error_details(error: Exception, context: Dict[str, Any]) -> None:
 async def rephrase_message_and_analysis(
     question: str, chat_messages: list[ChatCompletionMessageParam]
 ) -> None:
+    st.session_state.datasets = cast(list[DatasetInput], st.session_state.datasets)
+    st.session_state.cleansed_data = cast(
+        list[DatasetOutput], st.session_state.cleansed_data
+    )
+    st.session_state.data_dictionaries = cast(
+        list[DataDictionary], st.session_state.data_dictionaries
+    )
     error_context = {"question": question, "chat_history_length": len(chat_messages)}
 
     try:
@@ -355,27 +365,23 @@ async def rephrase_message_and_analysis(
                     if st.session_state.data_source == "database":
                         # Convert DataFrames to dictionary format
                         data_dict = {}
-                        for name, df in st.session_state.datasets.items():
+                        for ds in st.session_state.datasets:
                             # Convert DataFrame to records format and ensure each record is a dictionary
-                            records = df.to_dict("records")
-                            data_dict[name] = records
+                            records = ds.data
+                            data_dict[ds.name] = records
 
                         # Convert data dictionary to proper format
                         dict_data = {}
-                        for (
-                            name,
-                            dict_list,
-                        ) in st.session_state.data_dictionaries.items():
-                            if isinstance(dict_list, list):
-                                dict_data[name] = {
-                                    "columns": [d.get("column") for d in dict_list],
-                                    "descriptions": [
-                                        d.get("description") for d in dict_list
-                                    ],
-                                    "data_types": [
-                                        d.get("data_type") for d in dict_list
-                                    ],
-                                }
+                        for dictionary in st.session_state.data_dictionaries:
+                            dict_data[dictionary.name] = {
+                                "columns": [d.column for d in dictionary.dictionary],
+                                "descriptions": [
+                                    d.description for d in dictionary.dictionary
+                                ],
+                                "data_types": [
+                                    d.data_type for d in dictionary.dictionary
+                                ],
+                            }
 
                         sf_analysis_request = DatabaseAnalysisRequest(
                             data=data_dict,
@@ -387,12 +393,16 @@ async def rephrase_message_and_analysis(
                         )
                     else:
                         formatted_data = {}
-                        for name, df in st.session_state.datasets.items():
-                            formatted_data[name] = df.to_dict("records")
-
+                        for ds in st.session_state.datasets:
+                            formatted_data[ds.name] = ds.data
+                        dict_data = {}
+                        for dictionary in st.session_state.data_dictionaries:
+                            dict_data[dictionary.name] = dictionary.model_dump()[
+                                "dictionary"
+                            ]
                         analysis_request = RunAnalysisRequest(
                             data=formatted_data,
-                            dictionary=st.session_state.data_dictionaries,
+                            dictionary=dict_data,
                             question=chat_response.get("enhanced_question", question),
                         )
                         analysis_result = await run_analysis(analysis_request)

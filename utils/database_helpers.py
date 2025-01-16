@@ -37,6 +37,7 @@ from utils.prompts import SYSTEM_PROMPT_BIGQUERY, SYSTEM_PROMPT_SNOWFLAKE
 from utils.schema import (
     AppInfra,
     DatabaseExecutionMetadata,
+    DatasetInput,
 )
 
 logger = logging.getLogger("DataAnalystFrontend")
@@ -78,8 +79,8 @@ class DatabaseOperator(ABC, Generic[T]):
     @abstractmethod
     def get_data(
         self, *table_names: str, sample_size: int = 5000
-    ) -> dict[str, list[dict[str, Any]]]:
-        return {"": []}
+    ) -> list[DatasetInput]:
+        return []
 
     @abstractmethod
     def get_system_prompt(self) -> ChatCompletionSystemMessageParam:
@@ -276,7 +277,7 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
     @functools.lru_cache(maxsize=8)
     def get_data(
         self, *table_names: str, sample_size: int = 5000
-    ) -> dict[str, list[dict[str, Any]]]:
+    ) -> list[DatasetInput]:
         """Load selected tables from Snowflake as pandas DataFrames
 
         Args:
@@ -289,7 +290,7 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
 
         conn: snowflake.connector.SnowflakeConnection
 
-        dataframes = {}
+        dataframes = []
         try:
             with self.create_connection() as conn:
                 cursor = conn.cursor()
@@ -327,9 +328,8 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
                         logger.info(
                             f"Successfully loaded table {table}: {len(df)} rows, {len(df.columns)} columns"
                         )
-                        dataframes[table] = cast(
-                            list[dict[str, Any]], df.to_dict("records")
-                        )
+                        data = cast(list[dict[str, Any]], df.to_dict("records"))
+                        dataframes.append(DatasetInput(name=table, data=data))
 
                     except Exception as e:
                         logger.error(f"Error loading table {table}: {str(e)}")
@@ -343,7 +343,7 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
             logger.error(f"Error fetching Snowflake data: {str(e)}")
             logger.error(f"Error type: {type(e)}")
             logger.error(f"Error details: {str(e)}")
-            return {}
+            return []
 
     def get_system_prompt(self) -> ChatCompletionSystemMessageParam:
         return ChatCompletionSystemMessageParam(
@@ -443,8 +443,8 @@ class BigQueryOperator(DatabaseOperator[BigQueryCredentialArgs]):
     @functools.lru_cache(maxsize=8)
     def get_data(
         self, *table_names: str, sample_size: int = 5000
-    ) -> dict[str, list[dict[str, Any]]]:
-        dataframes = {}
+    ) -> list[DatasetInput]:
+        dataframes = []
 
         conn: bigquery.Client
 
@@ -481,9 +481,8 @@ class BigQueryOperator(DatabaseOperator[BigQueryCredentialArgs]):
                         logger.info(
                             f"Successfully loaded table {table}: {len(df)} rows, {len(df.columns)} columns"
                         )
-                        dataframes[table] = cast(
-                            list[dict[str, Any]], df.to_dict(orient="records")
-                        )
+                        data = cast(list[dict[str, Any]], df.to_dict("records"))
+                        dataframes.append(DatasetInput(name=table, data=data))
 
                     except Exception as e:
                         logger.error(f"Error loading table {table}: {str(e)}")
@@ -497,7 +496,7 @@ class BigQueryOperator(DatabaseOperator[BigQueryCredentialArgs]):
             logger.error(f"Error fetching data: {str(e)}")
             logger.error(f"Error type: {type(e)}")
             logger.error(f"Error details: {str(e)}")
-            return {}
+            return []
 
     def get_system_prompt(self) -> ChatCompletionSystemMessageParam:
         return ChatCompletionSystemMessageParam(
