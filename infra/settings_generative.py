@@ -20,7 +20,7 @@ import pulumi_datarobot as datarobot
 
 from utils.schema import LLMDeploymentSettings
 
-from .common.globals import GlobalRuntimeEnvironment
+from .common.globals import GlobalLLM, GlobalRuntimeEnvironment
 from .common.schema import (
     CustomModelArgs,
     DeploymentArgs,
@@ -28,7 +28,9 @@ from .common.schema import (
     PlaygroundArgs,
     RegisteredModelArgs,
 )
-from .settings_main import LLM, project_name
+from .common.stack import project_name
+
+LLM = GlobalLLM.AZURE_OPENAI_GPT_4_O
 
 custom_model_args = CustomModelArgs(
     resource_name=f"Generative Analyst Custom Model [{project_name}]",

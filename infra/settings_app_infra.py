@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import textwrap
-from pathlib import Path
 from typing import List, Sequence, Tuple
 
 import datarobot as dr
@@ -21,10 +20,9 @@ import pulumi
 import pulumi_datarobot as datarobot
 
 from infra.common.schema import ApplicationSourceArgs
+from infra.common.stack import PROJECT_ROOT, project_name
 
-from .settings_main import project_name
-
-application_path = Path("frontend/")
+application_path = PROJECT_ROOT / "frontend"
 
 app_source_args = ApplicationSourceArgs(
     resource_name=f"Data Analyst App Source [{project_name}]",
@@ -107,8 +105,8 @@ def get_app_files(
 
     # Get all .py files from utils directory
     utils_files = [
-        (f"utils/{f.name}", f"utils/{f.name}")
-        for f in Path("utils").glob("*.py")
+        (str(PROJECT_ROOT / f"utils/{f.name}"), f"utils/{f.name}")
+        for f in (PROJECT_ROOT / "utils").glob("*.py")
         if f.is_file()
     ]
 

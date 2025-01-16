@@ -23,6 +23,7 @@ import pulumi_datarobot as datarobot
 import pydantic
 
 from infra.common.globals import GlobalLLM, LLMConfig
+from infra.common.stack import project_name
 from utils.credentials import (
     AWSBedrockCredentials,
     AzureOpenAICredentials,
@@ -30,8 +31,6 @@ from utils.credentials import (
     GoogleCredentials,
     SnowflakeCredentials,
 )
-
-from ..settings_main import project_name
 
 
 def get_credential_runtime_parameter_values(

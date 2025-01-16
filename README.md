@@ -85,7 +85,7 @@ App templates contain three families of complementary logic:
   ```
 - **Operational Logic**: Necessary to activate DataRobot assets.
   ```
-  __main__.py  # Pulumi program for configuring DataRobot to serve and monitor AI and app logic
+  infra/__main__.py  # Pulumi program for configuring DataRobot to serve and monitor AI and app logic
   infra/  # Settings for resources and assets created in DataRobot
   ```
 
@@ -106,7 +106,7 @@ Your data privacy is important to us. Data handling is governed by the DataRobot
 
 ### Change the LLM
 
-1. Modify the `LLM` setting in `infra/settings_main.py` by changing `LLM=GlobalLLM.AZURE_OPENAI_GPT_4_O` to any other LLM from the `GlobalLLM` object.
+1. Modify the `LLM` setting in `infra/settings_generative.py` by changing `LLM=GlobalLLM.AZURE_OPENAI_GPT_4_O` to any other LLM from the `GlobalLLM` object.
 2. Provide the required credentials in `.env` dependent on your choice.
 3. Run `pulumi up` to update your stack (Or rerun your quickstart).
       ```bash
@@ -119,7 +119,7 @@ Your data privacy is important to us. Data handling is governed by the DataRobot
 #### BigQuery
 
 The Talk to my Data Agent supports connecting to BigQuery.
-1. Modify the `DATABASE_CONNECTION_TYPE` setting in `infra/settings_main.py` by changing `DATABASE_CONNECTION_TYPE=snowflake` to `DATABASE_CONNECTION_TYPE=bigquery`. 
+1. Modify the `DATABASE_CONNECTION_TYPE` setting in `infra/__main__.py` by changing `DATABASE_CONNECTION_TYPE=snowflake` to `DATABASE_CONNECTION_TYPE=bigquery`. 
 2. Provide the required google credentials in `.env` dependent on your choice.  Ensure that GOOGLE_DB_SCHEMA is also populated `.env`.
 3. Run `pulumi up` to update your stack (Or rerun your quickstart).
       ```bash

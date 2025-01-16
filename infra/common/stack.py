@@ -14,6 +14,7 @@
 
 import os
 import subprocess
+from pathlib import Path
 
 import pulumi
 
@@ -52,3 +53,8 @@ def get_stack() -> str:
             "Verify you have selected created and selected a stack with `pulumi stack`."
         )
     )
+
+
+project_name = get_stack()
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.absolute()
