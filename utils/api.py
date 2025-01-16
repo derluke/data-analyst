@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 import base64
 import functools
 import io
@@ -22,12 +23,23 @@ import json
 import logging
 import re
 import sys
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime
 from types import FunctionType
-from typing import Any, Awaitable, Callable, Dict, List, Sequence, Tuple
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Sequence,
+    Tuple,
+    TypeVar,
+    cast,
+)
 
 import datarobot as dr
 import instructor
@@ -35,6 +47,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import psutil
+from joblib import Memory
 from openai import OpenAI
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 from openai.types.chat.chat_completion_system_message_param import (
@@ -127,6 +140,46 @@ except ValidationError as e:
 MODEL_MODE = "openai"
 DICTIONARY_BATCH_SIZE = 10
 MAX_AI_CATALOG_DATASET_SIZE = 400e6  # aligns to 400MB set in streamlit config.toml
+DISK_CACHE_LIMIT_BYTES = 512e6
+
+_memory = Memory(tempfile.gettempdir(), verbose=0)
+_memory.clear(warn=False)  # clear cache on startup
+
+T = TypeVar("T")
+
+
+def cache(f: T) -> T:
+    """Cache function and coroutine results to disk using joblib."""
+    cached_f = _memory.cache(f)
+
+    if asyncio.iscoroutinefunction(f):
+
+        async def awrapper(*args: Any, **kwargs: Any) -> Any:
+            in_cache = cached_f.check_call_in_cache(*args, **kwargs)
+            result = await cached_f(*args, **kwargs)
+            if not in_cache:
+                _memory.reduce_size(DISK_CACHE_LIMIT_BYTES)
+            else:
+                logger.info(
+                    f"Using previously cached result for function `{f.__name__}`"
+                )
+            return result
+
+        return cast(T, awrapper)
+    else:
+
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            in_cache = cached_f.check_call_in_cache(*args, **kwargs)
+            result = cached_f(*args, **kwargs)
+            if not in_cache:
+                _memory.reduce_size(DISK_CACHE_LIMIT_BYTES)
+            else:
+                logger.info(
+                    f"Using previously cached result for function `{f.__name__}`"  # type: ignore
+                )
+            return result
+
+        return cast(T, wrapper)
 
 
 class InvalidGeneratedCode(Exception):
@@ -155,7 +208,7 @@ def reflect_code_generation_errors(
     def _outer_wrapper(
         f: Callable[..., Awaitable[Any]],
     ) -> Callable[..., Awaitable[Any]]:
-        # @functools.wraps(f)
+        @functools.wraps(f)
         async def _inner_wrapper(*args: Any, **kwargs: Any) -> Any:
             attempts = 1
             exception_history: list[InvalidGeneratedCode] = []
@@ -180,7 +233,8 @@ def reflect_code_generation_errors(
     return _outer_wrapper
 
 
-@functools.lru_cache(maxsize=2)
+# This can be large as we are not storing the actual datasets in memory, just metadata
+@functools.lru_cache(maxsize=32)
 def list_catalog_datasets(limit: int = 100) -> List[AiCatalogDataset]:
     """
     Fetch datasets from AI Catalog with specified limit
@@ -212,7 +266,7 @@ def list_catalog_datasets(limit: int = 100) -> List[AiCatalogDataset]:
     ]
 
 
-@functools.lru_cache(maxsize=8)
+@cache
 def download_catalog_datasets(*args: Any) -> dict[str, list[dict[str, Any]]]:
     """Load selected datasets as pandas DataFrames
 
@@ -889,6 +943,7 @@ async def _generate_analysis_code(
     raise RuntimeError(f"Failed to generate valid code after {max_attempts} attempts")
 
 
+@cache
 async def cleanse_dataframes(
     datasets: list[DatasetInput],
 ) -> CleanseResult:

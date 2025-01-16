@@ -23,6 +23,8 @@ pydantic<2.8.0
 pydantic-settings==2.4.0
 llvmlite>=0.43.0
 
+joblib==1.4.2
+
 eval_type_backport
 snowflake-sqlalchemy
 sqlalchemy

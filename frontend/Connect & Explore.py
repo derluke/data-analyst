@@ -56,7 +56,6 @@ if "initialized" not in st.session_state:
 
 
 # Modify process_data to handle coroutine reuse
-@st.cache_resource(show_spinner=False)
 def process_data_cached(datasets_dict: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
     """
     Wrapper function to handle async processing with caching
@@ -152,7 +151,6 @@ async def generate_dictionaries_async(
         return {}
 
 
-@st.cache_data(show_spinner=False)
 def process_uploaded_file(file: UploadedFile) -> list[tuple[str, pd.DataFrame]]:
     """Process a single uploaded file and return a list of (dataset_name, dataframe) tuples
 
@@ -254,10 +252,6 @@ def clear_data_callback() -> None:
     st.session_state.data_dictionaries = {}
     st.session_state.selected_catalog_datasets = []  # Also clear catalog selection
     st.session_state.data_source = None  # Reset data source flag
-
-    # Clear all Streamlit caches
-    st.cache_data.clear()
-    st.cache_resource.clear()
 
 
 def load_from_database_callback() -> None:
