@@ -27,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime
 from types import FunctionType
-from typing import Any, Awaitable, Callable, Dict, List, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Sequence, Tuple
 
 import datarobot as dr
 import instructor
@@ -66,6 +66,7 @@ from utils.schema import (
     ChartPerformance,
     ChartValidationError,
     ChatRequest,
+    CleanseReportMetadata,
     CleanseResult,
     CleansingReport,
     Code,
@@ -202,7 +203,7 @@ def list_catalog_datasets(limit: int = 100) -> List[AiCatalogDataset]:
                 ds["creationDate"][:10] if "creationDate" in ds else "N/A"  # %Y-%m-%d
             ),
             size=(
-                f"{ds['datasetSize'] / (1024*1024):.1f} MB"
+                f"{ds['datasetSize'] / (1024 * 1024):.1f} MB"
                 if "datasetSize" in ds
                 else "N/A"
             ),
@@ -333,7 +334,7 @@ def _process_column_batch(
         return {col: "No valid description available" for col in columns}
 
 
-def _process_dataset(dataset: DatasetInput) -> DataDictionary:
+def _process_dataset(dataset: DatasetInput | DatasetOutput) -> DataDictionary:
     """Process a single dataset with parallel column batch processing"""
     try:
         batch_start = datetime.now()
@@ -1058,11 +1059,11 @@ async def cleanse_dataframes(
 
         return CleanseResult(
             datasets=cleaned_datasets,
-            metadata={
-                "total_datasets": total_datasets,
-                "timestamp": datetime.now().isoformat(),
-                "version": "1.0",
-            },
+            metadata=CleanseReportMetadata(
+                total_datasets=total_datasets,
+                timestamp=datetime.now().isoformat(),
+                version="1.0",
+            ),
         )
 
     except Exception as e:
@@ -1071,7 +1072,9 @@ async def cleanse_dataframes(
         raise
 
 
-async def get_dictionary(datasets: list[DatasetInput]) -> DataDictionariesAndMetadata:
+async def get_dictionary(
+    datasets: Sequence[DatasetInput | DatasetOutput],
+) -> DataDictionariesAndMetadata:
     """
     Generate data dictionary for multiple datasets.
 

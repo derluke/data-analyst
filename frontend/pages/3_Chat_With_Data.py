@@ -184,7 +184,7 @@ def format_dataframe_info(df: pd.DataFrame, name: str) -> str:
     return f"""
 DataFrame: {name}
 Shape: {df.shape}
-Columns: {', '.join(df.columns)}
+Columns: {", ".join(df.columns)}
 Info:
 {buffer.getvalue()}
 Sample (first 5 rows):
@@ -201,7 +201,7 @@ def log_api_call(
 ) -> Callable[P, Coroutine[Any, Any, T]]:
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
         request_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        separator = f"\n{'='*80}\n"
+        separator = f"\n{'=' * 80}\n"
 
         logger.info(
             f"{separator}API CALL START: {func.__name__} [{request_id}]{separator}"

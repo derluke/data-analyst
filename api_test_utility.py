@@ -403,7 +403,7 @@ async def main() -> None:
                 "selected_question",
                 message="Select a question to analyze",
                 choices=[
-                    *[f"{i+1}. {q}" for i, q in enumerate(suggested_questions)],
+                    *[f"{i + 1}. {q}" for i, q in enumerate(suggested_questions)],
                     "4. Enter my own question",
                 ],
             )
@@ -832,7 +832,7 @@ async def main() -> None:
                                 </style>
                             </head>
                             <body>
-                                <h2>{chat_result.get('enhanced_user_message', selected_question)}</h2>
+                                <h2>{chat_result.get("enhanced_user_message", selected_question)}</h2>
                                 <div class="chart-container">
                                     <div id="chart1" style="width: 100%; height: 600px;"></div>
                                 </div>
@@ -840,8 +840,8 @@ async def main() -> None:
                                     <div id="chart2" style="width: 100%; height: 600px;"></div>
                                 </div>
                                 <script>
-                                    var fig1 = {charts_result['fig1'].to_json()};
-                                    var fig2 = {charts_result['fig2'].to_json()};
+                                    var fig1 = {charts_result["fig1"].to_json()};
+                                    var fig2 = {charts_result["fig2"].to_json()};
                                     Plotly.newPlot('chart1', fig1.data, fig1.layout);
                                     Plotly.newPlot('chart2', fig2.data, fig2.layout);
                                 </script>
@@ -891,7 +891,10 @@ async def main() -> None:
                         "selected_question",
                         message="Would you like to analyze another question?",
                         choices=[
-                            *[f"{i+1}. {q}" for i, q in enumerate(follow_up_questions)],
+                            *[
+                                f"{i + 1}. {q}"
+                                for i, q in enumerate(follow_up_questions)
+                            ],
                             f"{len(follow_up_questions) + 1}. Enter my own question",
                             f"{len(follow_up_questions) + 2}. Exit",
                         ],

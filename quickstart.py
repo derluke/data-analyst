@@ -87,7 +87,8 @@ def get_activate_command():
                 "&&",
                 "conda",
                 "activate",
-                f"{str(venv_dir)}" "&&",
+                f"{str(venv_dir)}",
+                "&&",
             ]
 
     else:
@@ -236,7 +237,7 @@ def run_pulumi_command(command: list, work_dir: Path, env_vars: dict):
     cmd_str = " ".join(command)
     try:
         if is_windows():
-            os.system(f'{" ".join(get_activate_command())}{cmd_str}')
+            os.system(f"{' '.join(get_activate_command())}{cmd_str}")
         else:
             os.system(f"bash -c '{' '.join(get_activate_command())}{cmd_str}'")
     except Exception as e:

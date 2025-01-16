@@ -27,7 +27,7 @@ import pytest
 from dotenv import dotenv_values
 from openai import OpenAI
 
-from utils.resources import ChatAgentDeployment
+from utils.resources import ChatAgentDeployment, LLMDeployment
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -224,5 +224,39 @@ def get_response():
 
 
 @pytest.fixture
-def chat_agent_deployment_id():
-    return ChatAgentDeployment().id
+def llm_deployment_id():
+    return LLMDeployment().id
+
+
+DATA_FILES = {
+    "lending_club_profile": "https://s3.amazonaws.com/datarobot_public_datasets/drx/Lending+Club+Profile.csv",
+    "lending_club_target": "https://s3.amazonaws.com/datarobot_public_datasets/drx/Lending+Club+Target.csv",
+    "lending_club_transactions": "https://s3.amazonaws.com/datarobot_public_datasets/drx/Lending+Club+Transactions.csv",
+    "diabetes": "https://s3.amazonaws.com/datarobot_public_datasets/10k_diabetes_20.csv",
+    "mpg": "https://s3.us-east-1.amazonaws.com/datarobot_public_datasets/auto-mpg.csv",
+}
+
+
+@pytest.fixture(scope="module")
+def url_lending_club_profile():
+    return DATA_FILES["lending_club_profile"]
+
+
+@pytest.fixture(scope="module")
+def url_lending_club_target():
+    return DATA_FILES["lending_club_target"]
+
+
+@pytest.fixture(scope="module")
+def url_lending_club_transactions():
+    return DATA_FILES["lending_club_transactions"]
+
+
+@pytest.fixture(scope="module")
+def url_diabetes():
+    return DATA_FILES["diabetes"]
+
+
+@pytest.fixture(scope="module")
+def url_mpg():
+    return DATA_FILES["mpg"]

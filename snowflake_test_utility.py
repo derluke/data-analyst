@@ -398,7 +398,7 @@ async def main() -> None:
                 "selected_question",
                 message="Select a question to analyze",
                 choices=[
-                    *[f"{i+1}. {q}" for i, q in enumerate(suggested_questions)],
+                    *[f"{i + 1}. {q}" for i, q in enumerate(suggested_questions)],
                     "4. Enter my own question",
                 ],
             )

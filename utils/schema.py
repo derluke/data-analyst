@@ -15,10 +15,11 @@
 from __future__ import annotations
 
 import ast
+import json
 from typing import Any, Literal, Type, Union
 
 import plotly.graph_objects as go
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
 
 
 class LLMDeploymentSettings(BaseModel):
@@ -59,9 +60,15 @@ class DatasetOutput(BaseModel):
     cleaning_report: CleansingReport
 
 
+class CleanseReportMetadata(BaseModel):
+    total_datasets: int
+    timestamp: str
+    version: str = "1.0"
+
+
 class CleanseResult(BaseModel):
     datasets: list[DatasetOutput]
-    metadata: dict[str, Any]
+    metadata: CleanseReportMetadata
 
 
 class DataDictionaryColumn(BaseModel):
@@ -331,6 +338,21 @@ class RunChartsResult(BaseModel):
     metadata: RunChartsResultMetadata
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @field_serializer("fig1", "fig2")
+    def serialize_plotly(self, fig: go.Figure) -> str:
+        return fig.to_json()  # type: ignore[no-any-return]
+
+    @field_validator("fig1", "fig2", mode="before")
+    @classmethod
+    def validate_figs(cls, fig_dict: dict[str, Any]) -> go.Figure:
+        if not isinstance(fig_dict, go.Figure):
+            if isinstance(fig_dict, dict):
+                return go.Figure(fig_dict)
+            if isinstance(fig_dict, str):
+                return go.Figure(json.loads(fig_dict))
+        else:
+            return fig_dict
 
 
 class BusinessAnalysisMetadata(BaseModel):

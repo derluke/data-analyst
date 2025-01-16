@@ -11,26 +11,28 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Any
 
-import datarobot as dr
 import pytest
+from datarobot.rest import RESTClientObject
 from openai import OpenAI
 
 
 @pytest.fixture
-def chat_client(chat_agent_deployment_id, dr_client) -> OpenAI:
-    deployment_chat_base_url = (
-        dr.Client().endpoint + f"/deployments/{chat_agent_deployment_id}/"
-    )
+def chat_client(
+    pulumi_up: Any, llm_deployment_id: str, dr_client: RESTClientObject
+) -> OpenAI:
+    deployment_chat_base_url = dr_client.endpoint + f"/deployments/{llm_deployment_id}/"
 
     client = OpenAI(api_key=dr_client.token, base_url=deployment_chat_base_url)
     return client
 
 
-def test_can_chat(chat_client: OpenAI):
+def test_can_chat(chat_client: OpenAI) -> None:
     model = "gpt-4o"
     messages = [{"role": "user", "content": "What is the capital of France?"}]
-    response = chat_client.chat.completions.create(model=model, messages=messages)
+    response = chat_client.chat.completions.create(model=model, messages=messages)  # type: ignore[arg-type]
+    assert response.choices[0].message.content is not None
     assert "paris" in response.choices[0].message.content.lower()
 
 

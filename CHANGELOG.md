@@ -11,3 +11,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial functioning version of Pulumi template for data analyst
 - Changelog file to keep track of changes in the project.
+- pytest for api functions

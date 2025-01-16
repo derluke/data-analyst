@@ -519,12 +519,16 @@ def get_database_operator(app_infra: AppInfra) -> DatabaseOperator[Any]:
 try:
     with open("app_infra.json", "r") as infra_selection:
         app_infra = AppInfra(**json.load(infra_selection))
-except (FileNotFoundError, ValidationError) as e:
-    raise ValueError(
-        "Failed to read app_infra.json."
-        "If running locally, verify you have selected the correct "
-        "stack and that it is active using `pulumi stack output`."
-        f"Ensure file is created by running `pulumi up`: {str(e)}"
-    ) from e
+except (FileNotFoundError, ValidationError):
+    try:
+        with open("frontend/app_infra.json", "r") as infra_selection:
+            app_infra = AppInfra(**json.load(infra_selection))
+    except (FileNotFoundError, ValidationError) as e:
+        raise ValueError(
+            "Failed to read app_infra.json.\n"
+            "If running locally, verify you have selected the correct "
+            "stack and that it is active using `pulumi stack output`.\n"
+            f"Ensure file is created by running `pulumi up`: {str(e)}"
+        ) from e
 
 Database = get_database_operator(app_infra)

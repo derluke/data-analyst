@@ -68,7 +68,7 @@ llm_blueprint_args = LLMBlueprintArgs(
     resource_name=f"Generative Analyst LLM Blueprint [{project_name}]",
     llm_id=LLM.name,
     llm_settings=datarobot.LlmBlueprintLlmSettingsArgs(
-        max_completion_length=1024,
+        max_completion_length=2048,
         temperature=0.1,
     ),
 )
