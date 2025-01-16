@@ -9,7 +9,7 @@ and govern the components.
 > Application templates are intended to be starting points that provide guidance on how to develop, serve, and maintain AI applications.
 > They require a developer or data scientist to adapt and modify them for their business requirements before being put into production.
 
-![Using the "Talk to my data" agent](https://s3.amazonaws.com/datarobot_public/drx/recipe_gifs/dataanalyst.gif)
+![Using the "Talk to my data" agent](https://s3.us-east-1.amazonaws.com/datarobot_public/drx/recipe_gifs/launch_gifs/talktomydata.gif)
 
 
 ## Table of contents
