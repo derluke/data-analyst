@@ -944,187 +944,90 @@ async def _generate_analysis_code(
 
 
 @cache
-async def cleanse_dataframes(
-    datasets: list[DatasetInput],
-) -> CleanseResult:
-    """
-    Clean and standardize multiple pandas DataFrames.
+async def cleanse_dataframes(datasets: list[DatasetInput]) -> CleanseResult:
+    """Clean and standardize multiple pandas DataFrames."""
+    cleaned_datasets = []
 
-    Parameters:
-    - datasets: list[DatasetInput] containing datasets to clean
+    for dataset in datasets:
+        df = pd.DataFrame(dataset.data)
+        if df.empty:
+            raise ValueError(f"Dataset {dataset.name} is empty")
 
-    Returns:
-    - CleanseResult containing cleaned datasets and metadata
-    """
-    try:
-        logger.info("Starting cleanse_dataframes")
-        cleaned_datasets = []
-        total_datasets = len(datasets)
+        report = CleansingReport(columns_cleaned=[], errors=[], warnings=[])
 
-        for idx, dataset in enumerate(datasets):
+        # Clean column names
+        original_cols = df.columns.tolist()
+        df.columns = [re.sub(r"\s+", " ", col.strip()) for col in df.columns]  # type: ignore[assignment]
+        cleaned_cols = df.columns.tolist()
+
+        # Track column name changes
+        for orig, cleaned in zip(original_cols, cleaned_cols):
+            if orig != cleaned:
+                report.columns_cleaned.append(orig)
+                report.warnings.append(f"Column '{orig}' renamed to '{cleaned}'")
+
+        # Process each column
+        for col in df.columns:
             try:
-                logger.info(f"Processing dataset: {dataset.name}")
+                original = df[col].copy()
 
-                # Convert JSON to DataFrame
-                df = pd.DataFrame(dataset.data)
-                logger.debug(f"Created DataFrame with shape: {df.shape}")
+                # Handle numeric columns
+                if pd.api.types.is_numeric_dtype(df[col]):
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+                    if not df[col].equals(original):
+                        report.columns_cleaned.append(col)
 
-                if df.empty:
-                    raise ValueError("Input DataFrame is empty")
+                # Handle potential numeric strings (with currency/percentage)
+                elif (
+                    df[col].dtype == "object"
+                    and df[col].notna().all()
+                    and df[col]
+                    .str.replace(r"[$%,\s]", "", regex=True)
+                    .str.match(r"^-?\d*\.?\d*$")
+                    .all()
+                ):
+                    df[col] = pd.to_numeric(
+                        df[col].astype(str).str.replace(r"[$%,\s]", "", regex=True),
+                        errors="coerce",
+                    )
+                    report.columns_cleaned.append(col)
 
-                # Initialize cleaning report
-                cleaning_report = CleansingReport(
-                    columns_cleaned=[], value_counts={}, errors=[], warnings=[]
-                )
+                # Handle dates
+                elif is_date_column(df[col]):
+                    df[col] = convert_datetime_series(df[col])
+                    if not df[col].equals(original):
+                        report.columns_cleaned.append(col)
 
-                # Clean column names - only remove leading/trailing whitespace and consecutive spaces
-                original_columns = df.columns.tolist()
-                df.columns = pd.Index(
-                    [re.sub(r"\s+", " ", col.strip()) for col in df.columns], dtype=str
-                )
-                cleaned_columns = df.columns.tolist()
-
-                # Track column name changes
-                for orig, cleaned in zip(original_columns, cleaned_columns):
-                    if orig != cleaned:
-                        cleaning_report.columns_cleaned.append(orig)
-                        cleaning_report.warnings.append(
-                            f"Column '{orig}' renamed to '{cleaned}'"
-                        )
-
-                # Process each column
-                for column in df.columns:
-                    try:
-                        # Store original value counts for reporting
-                        original_counts = df[column].value_counts().to_dict()
-
-                        # Clean numeric columns - more careful detection
-                        if pd.api.types.is_numeric_dtype(df[column]):
-                            try:
-                                # Handle already numeric columns
-                                df[column] = pd.to_numeric(df[column], errors="coerce")
-
-                            except Exception as e:
-                                cleaning_report.errors.append(
-                                    f"Error cleaning numeric column {column}: {str(e)}"
-                                )
-                                continue
-                        # Handle columns that might be numeric strings with currency/percentage
-                        elif (
-                            df[column].dtype == "object"
-                            and df[column].notna().all()  # Only check non-null values
-                            and df[column]
-                            .str.replace(r"[$%,\s]", "", regex=True)
-                            .str.match(r"^-?\d*\.?\d*$")
-                            .all()
-                        ):
-                            try:
-                                # Remove currency symbols, commas, and percentages
-                                df[column] = pd.to_numeric(
-                                    df[column]
-                                    .astype(str)
-                                    .str.replace(r"[$%,\s]", "", regex=True),
-                                    errors="coerce",
-                                )
-
-                            except Exception as e:
-                                cleaning_report.errors.append(
-                                    f"Error cleaning numeric column {column}: {str(e)}"
-                                )
-                                continue
-
-                        # Clean date columns
-                        elif is_date_column(df[column]):
-                            try:
-                                original_values = df[column].copy()
-                                # Convert to datetime strings using vectorized operation
-                                df[column] = convert_datetime_series(df[column])
-
-                                # Compare before and after
-                                if not df[column].equals(original_values):
-                                    cleaning_report.columns_cleaned.append(column)
-                                    cleaning_report.value_counts[column] = {
-                                        "before": {
-                                            str(k): str(v)
-                                            for k, v in original_counts.items()
-                                        },
-                                        "after": df[column]
-                                        .value_counts()
-                                        .to_dict(),  # Already strings
-                                        "change_type": "date_cleaning",
-                                    }
-                            except Exception as e:
-                                cleaning_report.errors.append(
-                                    f"Error cleaning date column {column}: {str(e)}"
-                                )
-                                continue
-
-                        # Clean categorical columns
-                        elif df[column].dtype == "object":
-                            try:
-                                original_values = df[column].copy()
-
-                                # Handle non-null values only
-                                mask = df[column].notna()
-                                if (
-                                    mask.any()
-                                ):  # Only process if there are any non-null values
-                                    # Convert to string only if not already string
-                                    temp_series = df.loc[mask, column]
-                                    if not pd.api.types.is_string_dtype(temp_series):
-                                        temp_series = temp_series.astype(str)
-
-                                    # Only strip leading/trailing spaces, preserve internal spaces
-                                    df.loc[mask, column] = temp_series.str.strip()
-
-                                # Compare before and after
-                                if not df[column].equals(original_values):
-                                    cleaning_report.columns_cleaned.append(column)
-                                    cleaning_report.value_counts[column] = {
-                                        "before": original_counts,
-                                        "after": df[column].value_counts().to_dict(),
-                                        "change_type": "categorical_cleaning",
-                                    }
-                            except Exception as e:
-                                cleaning_report.errors.append(
-                                    f"Error cleaning categorical column {column}: {str(e)}"
-                                )
-                                continue
-
-                    except Exception as e:
-                        cleaning_report.errors.append(
-                            f"Error processing column {column}: {str(e)}"
-                        )
-                        continue
-
-                # Create DatasetOutput - ensure all data is JSON serializable
-                cleaned_dataset = DatasetOutput(
-                    name=dataset.name,
-                    data=df.replace({pd.NaT: None}).to_dict(
-                        "records"
-                    ),  # Replace NaT with None
-                    cleaning_report=cleaning_report,
-                )
-                cleaned_datasets.append(cleaned_dataset)
-                logger.info(f"Successfully cleaned dataset: {dataset.name}")
+                # Handle categorical
+                elif df[col].dtype == "object":
+                    mask = df[col].notna()
+                    if mask.any():
+                        temp = df.loc[mask, col]
+                        if not pd.api.types.is_string_dtype(temp):
+                            temp = temp.astype(str)
+                        df.loc[mask, col] = temp.str.strip()
+                        if not df[col].equals(original):
+                            report.columns_cleaned.append(col)
 
             except Exception as e:
-                logger.error(f"Error processing dataset {dataset.name}: {str(e)}")
-                raise
+                report.errors.append(f"Error processing column {col}: {str(e)}")
 
-        return CleanseResult(
-            datasets=cleaned_datasets,
-            metadata=CleanseReportMetadata(
-                total_datasets=total_datasets,
-                timestamp=datetime.now().isoformat(),
-                version="1.0",
-            ),
+        cleaned_datasets.append(
+            DatasetOutput(
+                name=dataset.name,
+                data=df.replace({pd.NaT: None}).to_dict("records"),
+                cleaning_report=report,
+            )
         )
 
-    except Exception as e:
-        msg = type(e).__name__ + f": {str(e)}"
-        logger.error(f"Error in cleanse_dataframes: {msg}")
-        raise
+    return CleanseResult(
+        datasets=cleaned_datasets,
+        metadata=CleanseReportMetadata(
+            total_datasets=len(datasets),
+            timestamp=datetime.now().isoformat(),
+            version="1.0",
+        ),
+    )
 
 
 async def get_dictionary(

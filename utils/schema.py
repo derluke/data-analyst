@@ -49,7 +49,6 @@ class DatasetInput(BaseModel):
 
 class CleansingReport(BaseModel):
     columns_cleaned: list[str]
-    value_counts: dict[str, Any]
     errors: list[str]
     warnings: list[str]
 
