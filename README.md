@@ -119,7 +119,7 @@ Your data privacy is important to us. Data handling is governed by the DataRobot
 #### BigQuery
 
 The Talk to my Data Agent supports connecting to BigQuery.
-1. Modify the `DATABASE_CONNECTION_TYPE` setting in `infra/__main__.py` by changing `DATABASE_CONNECTION_TYPE=snowflake` to `DATABASE_CONNECTION_TYPE=bigquery`. 
+1. Modify the `DATABASE_CONNECTION_TYPE` setting in `infra/settings_database.py` by changing `DATABASE_CONNECTION_TYPE=snowflake` to `DATABASE_CONNECTION_TYPE=bigquery`. 
 2. Provide the required google credentials in `.env` dependent on your choice.  Ensure that GOOGLE_DB_SCHEMA is also populated `.env`.
 3. Run `pulumi up` to update your stack (Or rerun your quickstart).
       ```bash
