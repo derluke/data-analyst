@@ -126,48 +126,6 @@ def process_uploaded_file(file: UploadedFile) -> list[DatasetInput]:
         return []
 
 
-# Add callback for AI Catalog dataset selection
-def catalog_download_callback() -> None:
-    """Callback function for AI Catalog dataset download"""
-    if (
-        "selected_catalog_datasets" in st.session_state
-        and st.session_state.selected_catalog_datasets
-    ):
-        with st.sidebar:  # Use sidebar context
-            with st.spinner("Loading selected datasets..."):
-                selected_ids = [
-                    ds["id"] for ds in st.session_state.selected_catalog_datasets
-                ]
-                dataframes = download_catalog_datasets(*selected_ids)
-
-                # Add downloaded dataframes to session state
-
-                st.session_state.datasets.extend(dataframes)
-
-                # Process the new data
-                try:
-                    results = process_data_cached(st.session_state.datasets)
-                except Exception as e:
-                    logger.error("Data processing failed")
-                    st.error(f"❌ Error processing data: {str(e)}")
-                st.session_state.cleansed_data = results.datasets
-                logger.info("Data processing successful, generating dictionaries")
-
-                # Generate data dictionaries
-                try:
-                    st.session_state.data_dictionaries = generate_dictionaries(
-                        st.session_state.cleansed_data
-                    ).dictionaries
-                except Exception:
-                    st.warning(
-                        "⚠️ Data processed but there were issues generating some dictionaries"
-                    )
-                if st.session_state.data_dictionaries:
-                    st.success(
-                        "✅ Data processed and dictionaries generated successfully!"
-                    )
-
-
 def clear_data_callback() -> None:
     """Callback function to clear all data from session state and cache"""
     # Clear session state
@@ -178,8 +136,67 @@ def clear_data_callback() -> None:
     st.session_state.data_source = None  # Reset data source flag
 
 
+def process_data_and_update_state(datasets: list[DatasetInput]) -> None:
+    st.session_state.datasets.extend(datasets)
+
+    for ds in datasets:
+        st.success(
+            f"✓ {ds.name}: {len(ds.data)} rows, {len(ds.data[0].keys())} columns"
+        )
+
+    # Process the new data
+    logger.info("Starting data processing")
+    try:
+        results = process_data_cached(datasets)
+    except Exception as e:
+        logger.error("Data processing failed")
+        st.error(f"❌ Error processing data: {str(e)}")
+
+    st.session_state.cleansed_data += results.datasets
+    logger.info("Data processing successful, generating dictionaries")
+
+    # Generate data dictionaries
+    try:
+        new_dictionaries = generate_dictionaries(results.datasets).dictionaries
+        st.session_state.data_dictionaries = st.session_state.data_dictionaries + [
+            d
+            for d in new_dictionaries
+            if d.name not in [d.name for d in st.session_state.data_dictionaries]
+        ]
+
+    except Exception:
+        st.warning(
+            "⚠️ Data processed but there were issues generating some dictionaries"
+        )
+    if len(new_dictionaries) > 0:
+        st.success("✅ Data processed and dictionaries generated successfully!")
+        st.info(
+            "View the generated data dictionaries in the [Data Dictionary](/Data_Dictionary) page"
+        )
+
+
+# Add callback for AI Catalog dataset selection
+def catalog_download_callback() -> None:
+    """Callback function for AI Catalog dataset download"""
+    if (
+        "selected_catalog_datasets" in st.session_state
+        and st.session_state.selected_catalog_datasets
+    ):
+        st.session_state.data_source = "catalog"
+        with st.sidebar:  # Use sidebar context
+            with st.spinner("Loading selected datasets..."):
+                selected_ids = [
+                    ds["id"] for ds in st.session_state.selected_catalog_datasets
+                ]
+                dataframes = download_catalog_datasets(*selected_ids)
+
+                process_data_and_update_state(dataframes)
+
+
 def load_from_database_callback() -> None:
     """Callback function for Snowflake table download"""
+    # Set flag to indicate data source is a database
+    st.session_state.data_source = "database"
     if (
         "selected_schema_tables" in st.session_state
         and st.session_state.selected_schema_tables
@@ -193,40 +210,19 @@ def load_from_database_callback() -> None:
                     st.error(f"Failed to load data from {app_infra.database}")
                     return
 
-                # Add downloaded dataframes to session state
+                process_data_and_update_state(dataframes)
 
-                st.session_state.datasets.extend(dataframes)
-                for ds in dataframes:
-                    st.success(
-                        f"✓ {ds.name}: {len(ds.data)} rows, {len(ds.data[0].keys())} columns"
-                    )
 
-                # Set flag to indicate data source is a database
-                st.session_state.data_source = "database"
+def uploaded_file_callback(uploaded_files: list[UploadedFile]) -> None:
+    """Callback function for file uploads"""
+    # Set flag to indicate data source is a file
+    st.session_state.data_source = "file"
 
-                # Process the new data
-                try:
-                    results = process_data_cached(st.session_state.datasets)
-                except Exception as e:
-                    logger.error("Data processing failed")
-                    st.error(f"❌ Error processing data: {str(e)}")
-
-                st.session_state.cleansed_data = results.datasets
-                logger.info("Data processing successful, generating dictionaries")
-
-                # Generate data dictionaries
-                try:
-                    st.session_state.data_dictionaries = generate_dictionaries(
-                        st.session_state.cleansed_data
-                    ).dictionaries
-                except Exception:
-                    st.warning(
-                        "⚠️ Data processed but there were issues generating some dictionaries"
-                    )
-                if st.session_state.data_dictionaries:
-                    st.success(
-                        "✅ Data processed and dictionaries generated successfully!"
-                    )
+    with st.spinner("Loading and processing files..."):
+        # Process uploaded files
+        for file in uploaded_files:
+            dataset_results = process_uploaded_file(file)
+            process_data_and_update_state(dataset_results)
 
 
 # Page config
@@ -254,52 +250,10 @@ with st.sidebar:
             "Select 1 or multiple files",
             type=["csv", "xlsx", "xls"],
             accept_multiple_files=True,
+            disabled=st.session_state.data_source == "database",
         )
-
         if uploaded_files:
-            with st.spinner("Loading and processing files..."):
-                # Process uploaded files
-                for file in uploaded_files:
-                    dataset_results = process_uploaded_file(file)
-                    if dataset_results:
-                        for ds in dataset_results:
-                            st.session_state.datasets.append(ds)
-                            st.success(
-                                f"✓ {ds.name}: {len(ds.data)} rows, {len(ds.data[0].keys())} columns"
-                            )
-
-                # Process data and generate dictionaries
-                logger.info("Starting data processing")
-                try:
-                    results = process_data_cached(st.session_state.datasets)
-                    st.session_state.cleansed_data = results.datasets
-                except Exception as e:
-                    logger.error("Data processing failed")
-                    st.error(f"❌ Error processing data: {str(e)}")
-
-                logger.info("Data processing successful, generating dictionaries")
-
-                # Generate new dictionaries
-                try:
-                    new_dictionaries = generate_dictionaries(
-                        st.session_state.cleansed_data
-                    ).dictionaries
-                except Exception:
-                    st.warning(
-                        "⚠️ Data processed but there were issues generating some dictionaries"
-                    )
-
-                # Update session state by merging existing and new dictionaries
-                existing_dicts = st.session_state.data_dictionaries
-                st.session_state.data_dictionaries = existing_dicts + new_dictionaries
-
-                if st.session_state.data_dictionaries:
-                    st.success(
-                        "✅ Data processed and dictionaries generated successfully!"
-                    )
-                    st.info(
-                        "View the generated data dictionaries in the [Data Dictionary](/Data_Dictionary) page"
-                    )
+            uploaded_file_callback(uploaded_files)
 
         # AI Catalog section
         st.subheader("☁️   DataRobot AI Catalog")
@@ -316,11 +270,14 @@ with st.sidebar:
                 format_func=lambda x: f"{x['name']} ({x['size']})",
                 help="You can select multiple datasets",
                 key="selected_catalog_datasets",
+                disabled=st.session_state.data_source == "database",
             )
 
             # Form submit button
             submit_button = st.form_submit_button(
-                "Load Datasets", on_click=catalog_download_callback
+                "Load Datasets",
+                on_click=catalog_download_callback,
+                disabled=st.session_state.data_source == "database",
             )
 
             # Process form submission
@@ -343,6 +300,8 @@ with st.sidebar:
                 options=schema_tables,
                 help="You can select multiple tables",
                 key="selected_schema_tables",
+                disabled=st.session_state.data_source is not None
+                and st.session_state.data_source != "database",
             )
 
             # Form submit button
@@ -350,6 +309,8 @@ with st.sidebar:
                 "Load Selected Tables",
                 use_container_width=False,
                 on_click=load_from_database_callback,
+                disabled=st.session_state.data_source is not None
+                and st.session_state.data_source != "database",
             )
 
             if submit_button and not selected_schema_tables:
