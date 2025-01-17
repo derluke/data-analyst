@@ -727,5 +727,5 @@ class Code(BaseModel):
 
 
 class AppInfra(BaseModel):
-    database: Literal["bigquery", "snowflake"]
     llm: str
+    database: Literal["bigquery", "snowflake", "no_database"]

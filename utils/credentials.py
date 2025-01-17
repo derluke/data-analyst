@@ -147,3 +147,7 @@ class SnowflakeCredentials(DRCredentials):
             AliasPath("MLOPS_RUNTIME_PARAM_SNOWFLAKE_KEY_PATH"), "SNOWFLAKE_KEY_PATH"
         )
     )
+
+
+class NoDatabaseCredentials(DRCredentials):
+    pass

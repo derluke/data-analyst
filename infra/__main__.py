@@ -47,6 +47,14 @@ check_feature_flags(
     pathlib.Path(PROJECT_ROOT / "infra" / "feature_flag_requirements.yaml")
 )
 
+with open(PROJECT_ROOT / "frontend/app_infra.json", "w") as infra_selection:
+    infra_selection.write(
+        AppInfra(
+            database=DATABASE_CONNECTION_TYPE,
+            llm=settings_generative.LLM.name,
+        ).model_dump_json()
+    )
+
 if "DATAROBOT_DEFAULT_USE_CASE" in os.environ:
     use_case_id = os.environ["DATAROBOT_DEFAULT_USE_CASE"]
     pulumi.info(f"Using existing use case '{use_case_id}'")
@@ -66,21 +74,9 @@ prediction_environment = datarobot.PredictionEnvironment(
 )
 
 llm_credential = get_llm_credentials(settings_generative.LLM)
-db_credential = get_database_credentials(DATABASE_CONNECTION_TYPE)
-
-with open(PROJECT_ROOT / "frontend/app_infra.json", "w") as infra_selection:
-    infra_selection.write(
-        AppInfra(
-            database=DATABASE_CONNECTION_TYPE,
-            llm=settings_generative.LLM.name,
-        ).model_dump_json()
-    )
 
 llm_runtime_parameter_values = get_credential_runtime_parameter_values(
     llm_credential, "llm"
-)
-db_runtime_parameter_values = get_credential_runtime_parameter_values(
-    db_credential, "db"
 )
 
 llm_custom_model = PlaygroundCustomModel(
@@ -109,14 +105,22 @@ app_runtime_parameters = [
         type="deployment",
         value=llm_deployment.id,
     ),
-] + db_runtime_parameter_values
+]
+
+
+db_credential = get_database_credentials(DATABASE_CONNECTION_TYPE)
+
+db_runtime_parameter_values = get_credential_runtime_parameter_values(
+    db_credential, "db"
+)
+app_runtime_parameters += db_runtime_parameter_values  # type: ignore
 
 
 app_source = datarobot.ApplicationSource(
     files=settings_app_infra.get_app_files(
         runtime_parameter_values=app_runtime_parameters
     ),
-    runtime_parameter_values=app_runtime_parameters,  # type: ignore[arg-type]
+    runtime_parameter_values=app_runtime_parameters,
     base_environment_id=GlobalRuntimeEnvironment.PYTHON_312_APPLICATION_BASE.value.id,
     **settings_app_infra.app_source_args,
 )

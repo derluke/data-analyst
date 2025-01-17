@@ -32,7 +32,11 @@ from openai.types.chat.chat_completion_system_message_param import (
 )
 from pydantic import ValidationError
 
-from utils.credentials import GoogleCredentials, SnowflakeCredentials
+from utils.credentials import (
+    GoogleCredentials,
+    NoDatabaseCredentials,
+    SnowflakeCredentials,
+)
 from utils.prompts import SYSTEM_PROMPT_BIGQUERY, SYSTEM_PROMPT_SNOWFLAKE
 from utils.schema import (
     AppInfra,
@@ -53,6 +57,11 @@ class SnowflakeCredentialArgs:
 @dataclass
 class BigQueryCredentialArgs:
     credentials: GoogleCredentials
+
+
+@dataclass
+class NoDatabaseCredentialArgs:
+    credentials: NoDatabaseCredentials
 
 
 class DatabaseOperator(ABC, Generic[T]):
@@ -83,6 +92,37 @@ class DatabaseOperator(ABC, Generic[T]):
         return []
 
     @abstractmethod
+    def get_system_prompt(self) -> ChatCompletionSystemMessageParam:
+        return ChatCompletionSystemMessageParam(role="system", content="")
+
+
+class NoDatabaseOperator(DatabaseOperator[NoDatabaseCredentialArgs]):
+    def __init__(self, credentials: NoDatabaseCredentials):
+        self._credentials = credentials
+
+    @contextmanager
+    def create_connection(self) -> Generator[None]:
+        yield None
+
+    def execute_query(
+        self,
+        query: str,
+        timeout: int = 300,
+    ) -> tuple[
+        (list[tuple[Any, ...]] | list[dict[str, Any]]), DatabaseExecutionMetadata
+    ]:
+        return [], DatabaseExecutionMetadata(
+            query_id="", row_count=0, execution_time=0, db_schema=""
+        )
+
+    def get_tables(self) -> list[str]:
+        return []
+
+    def get_data(
+        self, *table_names: str, sample_size: int = 5000
+    ) -> list[DatasetInput]:
+        return []
+
     def get_system_prompt(self) -> ChatCompletionSystemMessageParam:
         return ChatCompletionSystemMessageParam(role="system", content="")
 
@@ -513,6 +553,8 @@ def get_database_operator(app_infra: AppInfra) -> DatabaseOperator[Any]:
         return BigQueryOperator(GoogleCredentials())
     elif app_infra.database == "snowflake":
         return SnowflakeOperator(SnowflakeCredentials())
+    else:
+        return NoDatabaseOperator(NoDatabaseCredentials())
 
 
 try:

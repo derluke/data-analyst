@@ -29,6 +29,7 @@ from utils.credentials import (
     AzureOpenAICredentials,
     DRCredentials,
     GoogleCredentials,
+    NoDatabaseCredentials,
     SnowflakeCredentials,
 )
 
@@ -107,7 +108,8 @@ def get_credential_runtime_parameter_values(
             )
 
         credential_rtp_dicts = [rtp for rtp in rtps if rtp["value"] is not None]
-
+    elif isinstance(credentials, NoDatabaseCredentials):
+        credential_rtp_dicts = []  # No credentials to add for NoDatabaseCredentials
     elif isinstance(credentials, SnowflakeCredentials):
         rtps = [
             {
@@ -370,10 +372,13 @@ def get_llm_credentials(llm: LLMConfig, test_credentials: bool = True) -> DRCred
 
 
 def get_database_credentials(
-    database: Literal["snowflake", "bigquery"], test_credentials: bool = True
-) -> SnowflakeCredentials | GoogleCredentials:
+    database: Literal["snowflake", "bigquery", "no_database"],
+    test_credentials: bool = True,
+) -> SnowflakeCredentials | GoogleCredentials | NoDatabaseCredentials:
     try:
-        credentials: SnowflakeCredentials | GoogleCredentials
+        credentials: SnowflakeCredentials | GoogleCredentials | NoDatabaseCredentials
+        if database == "no_database":
+            return NoDatabaseCredentials()
         con: snowflake.connector.SnowflakeConnection | google.cloud.bigquery.Client
         if database == "snowflake":
             credentials = SnowflakeCredentials()

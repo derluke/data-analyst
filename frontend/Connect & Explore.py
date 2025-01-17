@@ -24,7 +24,13 @@ import streamlit as st
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 sys.path.append("..")
-from app_settings import PAGE_ICON, get_database_logo, get_page_logo
+
+from app_settings import (
+    PAGE_ICON,
+    get_database_loader_message,
+    get_database_logo,
+    get_page_logo,
+)
 
 from utils.api import (
     cleanse_dataframes,
@@ -194,7 +200,7 @@ def catalog_download_callback() -> None:
 
 
 def load_from_database_callback() -> None:
-    """Callback function for Snowflake table download"""
+    """Callback function for Database table download"""
     # Set flag to indicate data source is a database
     st.session_state.data_source = "database"
     if (
@@ -203,7 +209,6 @@ def load_from_database_callback() -> None:
     ):
         with st.sidebar:
             with st.spinner("Loading selected tables..."):
-                # Get data from Snowflake
                 dataframes = Database.get_data(*st.session_state.selected_schema_tables)
 
                 if not dataframes:
@@ -287,16 +292,16 @@ with st.sidebar:
             elif submit_button:
                 st.warning("Please select at least one dataset")
 
-    # Database expander containing Snowflake section
+    # Database expander
     with st.expander("Database", expanded=False):
-        st.image(get_database_logo(app_infra), width=100)
+        get_database_logo(app_infra)
 
         schema_tables = Database.get_tables()
 
-        # Create form for Snowflake table selection
+        # Create form for Database table selection
         with st.form("table_selection_form", border=False):
             selected_schema_tables = st.multiselect(
-                "Select datasets from Snowflake",
+                label=get_database_loader_message(app_infra),
                 options=schema_tables,
                 help="You can select multiple tables",
                 key="selected_schema_tables",

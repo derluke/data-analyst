@@ -13,6 +13,7 @@
 # limitations under the License.
 
 
+import streamlit as st
 from streamlit_theme import st_theme
 
 from utils.schema import AppInfra
@@ -28,8 +29,17 @@ def get_page_logo() -> str:
     return logo
 
 
-def get_database_logo(app_infra: AppInfra) -> str:
+def get_database_logo(app_infra: AppInfra) -> None:
     if app_infra.database == "snowflake":
-        return "./Snowflake.svg"
+        st.image("./Snowflake.svg", width=100)
     elif app_infra.database == "bigquery":
-        return "./Google_Cloud.svg"
+        st.image("./Google_Cloud.svg", width=100)
+    return None
+
+
+def get_database_loader_message(app_infra: AppInfra) -> str:
+    if app_infra.database == "snowflake":
+        return "Load Datasets from Snowflake"
+    elif app_infra.database == "bigquery":
+        return "Load Datasets from BigQuery"
+    return "No database available"
