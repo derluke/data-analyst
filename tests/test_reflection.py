@@ -12,13 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pytest
+from typing import Any
 
-from utils.api import InvalidGeneratedCode, reflect_code_generation_errors
+import pytest
 
 
 @pytest.fixture
-def f_always_fails():
+def f_always_fails(pulumi_up: Any):
+    from utils.api import InvalidGeneratedCode
+
     received_args = []
     received_kwargs = {}
     retries = []
@@ -38,7 +40,9 @@ def f_always_fails():
 
 
 @pytest.fixture
-def f_passes_on_second():
+def f_passes_on_second(pulumi_up: Any):
+    from utils.api import InvalidGeneratedCode
+
     received_args = []
     received_kwargs = {}
     retries = []
@@ -61,7 +65,9 @@ def f_passes_on_second():
 
 
 @pytest.mark.asyncio
-async def test_max_retries(f_always_fails):
+async def test_max_retries(pulumi_up: Any, f_always_fails: Any):
+    from utils.api import reflect_code_generation_errors
+
     f, retries, received_args, received_kwargs = f_always_fails
     decorated = reflect_code_generation_errors(max_retries=3)(f)
     with pytest.raises(RuntimeError):
@@ -74,7 +80,9 @@ async def test_max_retries(f_always_fails):
 
 
 @pytest.mark.asyncio
-async def test_success(f_passes_on_second):
+async def test_success(pulumi_up: Any, f_passes_on_second: Any):
+    from utils.api import reflect_code_generation_errors
+
     f, retries, received_args, received_kwargs = f_passes_on_second
     decorated = reflect_code_generation_errors(max_retries=3)(f)
     result = await decorated(1, 2, three=3, four=4)

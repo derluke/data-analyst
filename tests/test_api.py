@@ -12,20 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import asyncio
 import os
+from typing import Any
 
 import pandas as pd
 import plotly.graph_objects as go
 import pytest
+import pytest_asyncio
 
-from utils.api import (
-    cleanse_dataframes,
-    get_business_analysis,
-    get_dictionary,
-    run_analysis,
-    run_charts,
-)
 from utils.schema import (
     BusinessAnalysisRequest,
     BusinessAnalysisResult,
@@ -54,9 +48,15 @@ def dataset_loaded(url_diabetes: str) -> DatasetInput:
     return dataset
 
 
-@pytest.fixture(scope="module")
-def dataset_cleansed(dataset_loaded: DatasetInput) -> CleanseResult:
-    result = asyncio.run(cleanse_dataframes([dataset_loaded]))
+@pytest_asyncio.fixture(scope="module")
+async def dataset_cleansed(
+    pulumi_up: Any, dataset_loaded: DatasetInput
+) -> CleanseResult:
+    from utils.api import (
+        cleanse_dataframes,
+    )
+
+    result = await cleanse_dataframes([dataset_loaded])
     return result
 
 
@@ -64,10 +64,15 @@ def test_dataset_is_cleansed(dataset_cleansed: CleanseResult) -> None:
     assert dataset_cleansed.metadata.total_datasets == 1
 
 
-@pytest.fixture(scope="module")
-def data_dictionary(dataset_loaded: DatasetInput) -> DataDictionariesAndMetadata:
-    # TODO change fixtures to pytest standard async runs
-    dictionary_result = asyncio.run(get_dictionary([dataset_loaded]))
+@pytest_asyncio.fixture(scope="module")
+async def data_dictionary(
+    pulumi_up: Any, dataset_loaded: DatasetInput
+) -> DataDictionariesAndMetadata:
+    from utils.api import (
+        get_dictionary,
+    )
+
+    dictionary_result = await get_dictionary([dataset_loaded])
     return dictionary_result
 
 
@@ -78,6 +83,7 @@ def question() -> str:
 
 @pytest.fixture
 def run_analysis_request(
+    pulumi_up: Any,
     dataset_cleansed: CleanseResult,
     data_dictionary: DataDictionariesAndMetadata,
     question: str,
@@ -112,14 +118,8 @@ def run_business_result_canned() -> BusinessAnalysisResult:
 
 
 @pytest.fixture
-def run_analysis_result(run_analysis_request: RunAnalysisRequest) -> RunAnalysisResult:
-    result = asyncio.run(run_analysis(run_analysis_request))
-    return result
-
-
-@pytest.fixture
 def chart_request(
-    run_analysis_result_canned: RunAnalysisResult, question: str
+    pulumi_up: Any, run_analysis_result_canned: RunAnalysisResult, question: str
 ) -> RunChartsRequest:
     # Prepare requests
     chart_request = RunChartsRequest(
@@ -131,7 +131,7 @@ def chart_request(
 
 @pytest.fixture
 def business_request(
-    run_analysis_result_canned: RunAnalysisResult, question: str
+    pulumi_up: Any, run_analysis_result_canned: RunAnalysisResult, question: str
 ) -> BusinessAnalysisRequest:
     df = pd.DataFrame.from_records(run_analysis_result_canned.data)
     business_request = BusinessAnalysisRequest(
@@ -149,21 +149,15 @@ def business_request(
     return business_request
 
 
-@pytest.fixture
-def run_charts_result(chart_request: RunChartsRequest) -> RunChartsResult:
-    run_charts_result = asyncio.run(run_charts(chart_request))
-    return run_charts_result
+@pytest.mark.asyncio
+async def test_run_analysis(
+    pulumi_up: Any, run_analysis_request: RunAnalysisRequest
+) -> None:
+    from utils.api import (
+        run_analysis,
+    )
 
-
-@pytest.fixture
-def run_business_result(
-    business_request: BusinessAnalysisRequest,
-) -> BusinessAnalysisResult:
-    run_business_result = asyncio.run(get_business_analysis(business_request))
-    return run_business_result
-
-
-def test_run_analysis(run_analysis_result: RunAnalysisResult) -> None:
+    run_analysis_result = await run_analysis(run_analysis_request)
     df = pd.DataFrame.from_records(run_analysis_result.data)
     assert run_analysis_result.code is not None
     assert len(run_analysis_result.code) > 1
@@ -172,15 +166,30 @@ def test_run_analysis(run_analysis_result: RunAnalysisResult) -> None:
     assert run_analysis_result.status == "success"
 
 
-def test_run_charts_analysis(run_charts_result: RunChartsResult) -> None:
+@pytest.mark.asyncio
+async def test_run_charts_analysis(
+    pulumi_up: Any, chart_request: RunChartsRequest
+) -> None:
+    from utils.api import (
+        run_charts,
+    )
+
+    run_charts_result = await run_charts(chart_request)
     assert isinstance(run_charts_result.fig1, go.Figure)
     assert isinstance(run_charts_result.fig2, go.Figure)
     assert len(run_charts_result.code) > 1
 
 
-def test_run_business_analysis(
-    run_business_result: BusinessAnalysisResult,
+@pytest.mark.asyncio
+async def test_run_business_analysis(
+    pulumi_up: Any,
+    business_request: BusinessAnalysisRequest,
 ) -> None:
+    from utils.api import (
+        get_business_analysis,
+    )
+
+    run_business_result = await get_business_analysis(business_request)
     assert len(run_business_result.bottom_line) > 1
     assert len(run_business_result.additional_insights) > 1
     assert len(run_business_result.follow_up_questions) > 0

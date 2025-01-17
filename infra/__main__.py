@@ -15,14 +15,12 @@
 import os
 import pathlib
 import sys
-from typing import Literal
 
 import datarobot as dr
 import pulumi
 import pulumi_datarobot as datarobot
 
 sys.path.append("..")
-
 from infra import (
     settings_app_infra,
     settings_generative,
@@ -38,15 +36,16 @@ from infra.components.dr_credential import (
     get_llm_credentials,
 )
 from infra.components.playground_custom_model import PlaygroundCustomModel
+from infra.settings_database import DATABASE_CONNECTION_TYPE
 from utils.resources import (
     app_env_name,
     llm_deployment_env_name,
 )
 from utils.schema import AppInfra
 
-check_feature_flags(pathlib.Path("feature_flag_requirements.yaml"))
-
-DATABASE_CONNECTION_TYPE: Literal["bigquery", "snowflake"] = "snowflake"
+check_feature_flags(
+    pathlib.Path(PROJECT_ROOT / "infra" / "feature_flag_requirements.yaml")
+)
 
 if "DATAROBOT_DEFAULT_USE_CASE" in os.environ:
     use_case_id = os.environ["DATAROBOT_DEFAULT_USE_CASE"]
