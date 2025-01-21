@@ -21,6 +21,8 @@ Ensure you have the following installed:
     DR_HOST="https://......."
     APP_URL="your_app_url"  # Optional
     RUN_VISUAL="False"  # Set to "True" to run tests with a visible browser
+    CHROME_BINARY_LOCATION="" # Optional
+    CHROMEDRIVER_BINARY_LOCATION="" # Optional
     ```
 
 3. **Build the Docker image:**
