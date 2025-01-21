@@ -96,8 +96,6 @@ from utils.schema import (
     EnhancedQuestionGeneration,
     MemoryUsage,
     QuestionListGeneration,
-    QuestionSuggestionMetadata,
-    QuestionSuggestionsAndMetadata,
     RunAnalysisRequest,
     RunAnalysisResult,
     RunAnanlysisResultMetadata,
@@ -526,9 +524,9 @@ def _validate_question_feasibility(
     )
 
 
-async def _generate_question_suggestions(
-    dictionary: pd.DataFrame, max_columns: int = 40
-) -> QuestionSuggestionsAndMetadata:
+async def suggest_questions(
+    datasets: list[AnalystDataset], max_columns: int = 40
+) -> list[ValidatedQuestion]:
     """Generate and validate suggested analysis questions
 
     Args:
@@ -541,29 +539,39 @@ async def _generate_question_suggestions(
             - metadata: Dictionary of processing information
     """
     # Validate input
-    if dictionary.empty:
-        raise ValueError("Dictionary DataFrame cannot be empty")
+    dictionary = sum(
+        [
+            DataDictionary.from_df(
+                ds.to_df(),
+                column_descriptions=f"Column from dataset {ds.name}",
+            ).dictionary
+            for ds in datasets
+        ],
+        [],
+    )
 
-    required_cols = ["column", "description", "data_type"]
-    if not all(col in dictionary.columns for col in required_cols):
-        raise ValueError(f"Dictionary must contain columns: {required_cols}")
+    if len(dictionary) < 1:
+        raise ValueError("Dictionary DataFrame cannot be empty")
 
     # Limit columns for OpenAI prompt
     total_columns = len(dictionary)
     if total_columns > max_columns:
         # Take first and last 20 columns
         half_max = max_columns // 2
-        first_half = dictionary.head(half_max)
-        last_half = dictionary.tail(half_max)
+        first_half = dictionary[:half_max]
+        last_half = dictionary[-half_max:]
 
         # Remove any duplicates
-        dictionary = pd.concat([first_half, last_half]).drop_duplicates()
+        dictionary = first_half + last_half
+
+        # deduplicate
+        dictionary = list({item.column: item for item in dictionary}.values())
 
     # Convert dictionary to format expected by OpenAI
     dict_data = {
-        "columns": dictionary["column"].tolist(),
-        "descriptions": dictionary["description"].tolist(),
-        "data_types": dictionary["data_type"].tolist(),
+        "columns": [d.column for d in dictionary],
+        "descriptions": [d.description for d in dictionary],
+        "data_types": [d.data_type for d in dictionary],
     }
 
     # Create OpenAI messages
@@ -582,7 +590,7 @@ async def _generate_question_suggestions(
         messages=messages,
     )
 
-    available_columns = dictionary["column"].tolist()
+    available_columns = dict_data["columns"]
     validated_questions: list[ValidatedQuestion] = []
 
     for question in completion.questions:
@@ -590,17 +598,7 @@ async def _generate_question_suggestions(
             _validate_question_feasibility(question, available_columns)
         )
 
-    metadata = QuestionSuggestionMetadata(
-        total_columns=total_columns,
-        columns_used=len(dictionary),
-        timestamp=datetime.now().isoformat(),
-        questions_generated=len(validated_questions),
-        valid_questions=sum(1 for q in validated_questions if q.is_valid),
-    )
-
-    return QuestionSuggestionsAndMetadata(
-        questions=validated_questions, metadata=metadata
-    )
+    return validated_questions
 
 
 # TODO: duplicated in schema
@@ -1042,41 +1040,6 @@ async def get_dictionary(
     except Exception as e:
         msg = type(e).__name__ + f": {str(e)}"
         logger.error(f"Error in get_dictionary: {msg}")
-        raise
-
-
-async def suggest_questions(
-    datasets: list[AnalystDataset],
-) -> QuestionSuggestionsAndMetadata:
-    """
-    Generate and validate suggested analysis questions.
-
-    Parameters:
-    - datasets: list[DatasetInput] containing dataset information
-
-    Returns:
-    - Dictionary containing suggested questions and metadata
-    """
-    if not datasets:
-        raise ValueError("Must provide at least one dataset")
-    try:
-        # Convert dictionary list to DataFrame
-        dict_df = pd.DataFrame(
-            [
-                {
-                    "column": f"{dataset.name}.{col}",
-                    "description": f"Column {col} from dataset {dataset.name}",
-                    "data_type": str(pd.DataFrame(dataset.data)[col].dtype),
-                }
-                for dataset in datasets
-                for col in pd.DataFrame(dataset.data).columns
-            ]
-        )
-
-        return await _generate_question_suggestions(dict_df)
-    except Exception as e:
-        msg = type(e).__name__ + f": {str(e)}"
-        logger.error(f"Error in suggest_questions: {msg}")
         raise
 
 

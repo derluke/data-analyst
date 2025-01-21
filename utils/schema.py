@@ -378,16 +378,6 @@ class QuestionListGeneration(BaseModel):
     questions: list[str]
 
 
-class QuestionSuggestionMetadata(BaseModel):
-    """Metadata for question suggestions"""
-
-    total_columns: int
-    columns_used: int
-    timestamp: str
-    questions_generated: int
-    valid_questions: int
-
-
 class ValidatedQuestion(BaseModel):
     """Stores validation results for suggested questions"""
 
@@ -396,11 +386,6 @@ class ValidatedQuestion(BaseModel):
     available_columns: list[str]
     missing_columns: list[str]
     validation_message: str
-
-
-class QuestionSuggestionsAndMetadata(BaseModel):
-    questions: list[ValidatedQuestion]
-    metadata: QuestionSuggestionMetadata
 
 
 class DatabaseAnalysisRequest(BaseModel):

@@ -46,11 +46,11 @@ from utils.schema import (
     DatabaseAnalysisRequest,
     DatabaseAnalysisResult,
     DataDictionariesAndMetadata,
-    QuestionSuggestionsAndMetadata,
     RunAnalysisRequest,
     RunAnalysisResult,
     RunChartsRequest,
     RunChartsResult,
+    ValidatedQuestion,
 )
 
 # Initialize FastAPI app
@@ -156,7 +156,7 @@ async def get_dictionary_endpoint(
 @app.post("/suggest_questions")
 async def suggest_questions_endpoint(
     datasets: list[AnalystDataset],
-) -> QuestionSuggestionsAndMetadata:
+) -> list[ValidatedQuestion]:
     return await suggest_questions(datasets)
 
 

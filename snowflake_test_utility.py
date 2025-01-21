@@ -381,18 +381,15 @@ async def main() -> None:
             transient=True,
         ) as progress:
             task = progress.add_task("Generating questions...", total=None)
-            _questions_result = await suggest_questions(datasets)
-            questions_result = _questions_result.model_dump()
+            questions_result = await suggest_questions(datasets)
             progress.update(task, completed=True)
 
         # Display suggested questions
         console.print("\n[bold green]Suggested Analysis Questions:[/bold green]")
-        suggested_questions = [
-            q["question"] for q in questions_result.get("questions", [])
-        ][:3]  # Get first 3 questions
+        suggested_questions = questions_result[:3]  # Get first 3 questions
 
         for i, question in enumerate(suggested_questions, 1):
-            console.print(f"{i}. {question}")
+            console.print(f"{i}. {question.question}")
 
         # Create question selection prompt
         questions = [
@@ -400,7 +397,10 @@ async def main() -> None:
                 "selected_question",
                 message="Select a question to analyze",
                 choices=[
-                    *[f"{i + 1}. {q}" for i, q in enumerate(suggested_questions)],
+                    *[
+                        f"{i + 1}. {q.question}"
+                        for i, q in enumerate(suggested_questions)
+                    ],
                     "4. Enter my own question",
                 ],
             )
