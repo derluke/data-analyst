@@ -1148,7 +1148,7 @@ async def run_charts(request: RunChartsRequest) -> RunChartsResult:
         try:
             # Generate charts with retry logic
             result = await _create_charts(
-                df=df.head(25),
+                df=df,
                 question=request.question,
                 metadata=dataframe_metadata_clone,
                 error_message=last_error,
