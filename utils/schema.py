@@ -19,6 +19,16 @@ import json
 from typing import Any, Literal, Type, Union
 
 import plotly.graph_objects as go
+from openai.types.chat.chat_completion_assistant_message_param import (
+    ChatCompletionAssistantMessageParam,
+)
+from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
+from openai.types.chat.chat_completion_system_message_param import (
+    ChatCompletionSystemMessageParam,
+)
+from openai.types.chat.chat_completion_user_message_param import (
+    ChatCompletionUserMessageParam,
+)
 from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
 
 
@@ -728,3 +738,26 @@ class Code(BaseModel):
 class AppInfra(BaseModel):
     llm: str
     database: Literal["bigquery", "snowflake", "no_database"]
+
+
+class AnalystChatMessage(BaseModel):
+    role: Literal["assistant", "user", "system"]
+    content: str
+    components: list[
+        RunAnalysisResult
+        | RunChartsResult
+        | BusinessAnalysisResult
+        | DatabaseAnalysisResult
+    ]
+
+    def to_openai_message_param(self) -> ChatCompletionMessageParam:
+        if self.role == "user":
+            return ChatCompletionUserMessageParam(role=self.role, content=self.content)
+        elif self.role == "assistant":
+            return ChatCompletionAssistantMessageParam(
+                role=self.role, content=self.content
+            )
+        elif self.role == "system":
+            return ChatCompletionSystemMessageParam(
+                role=self.role, content=self.content
+            )

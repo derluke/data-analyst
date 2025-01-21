@@ -26,6 +26,9 @@ from typing import Any, Callable, Coroutine, Dict, TypeVar, cast
 import pandas as pd
 import streamlit as st
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
+from openai.types.chat.chat_completion_user_message_param import (
+    ChatCompletionUserMessageParam,
+)
 from typing_extensions import ParamSpec
 
 sys.path.append("..")
@@ -42,6 +45,7 @@ from utils.api import (
     run_database_analysis,
 )
 from utils.schema import (
+    AnalystChatMessage,
     BusinessAnalysisRequest,
     BusinessAnalysisResult,
     ChatRequest,
@@ -317,6 +321,9 @@ def log_error_details(error: Exception, context: Dict[str, Any]) -> None:
 async def rephrase_message_and_analysis(
     question: str, chat_messages: list[ChatCompletionMessageParam]
 ) -> None:
+    st.session_state.chat_messages = cast(
+        list[AnalystChatMessage], st.session_state.chat_messages
+    )
     st.session_state.datasets = cast(list[DatasetInput], st.session_state.datasets)
     st.session_state.cleansed_data = cast(
         list[DatasetOutput], st.session_state.cleansed_data
@@ -339,11 +346,9 @@ async def rephrase_message_and_analysis(
             followup_container = st.container()
 
             # Initialize the assistant message structure
-            assistant_message = {
-                "role": "assistant",
-                "content": "",
-                "components": list[RunChartsResult | BusinessAnalysisResult](),
-            }
+            assistant_message = AnalystChatMessage(
+                role="assistant", content="", components=[]
+            )
 
             # Get initial chat response
             try:
@@ -351,11 +356,11 @@ async def rephrase_message_and_analysis(
                 chat_response = await rephrase_message(chat_request)
                 message_content = chat_response.get("response", "")
                 message_placeholder.markdown(message_content)
-                assistant_message["content"] = message_content
+                assistant_message.content = message_content
             except Exception as e:
                 message_content = "Something went wrong. Check your connection to the Internet and to DataRobot. The LLM could be out of quota. Try your question again or start a new chat."
                 message_placeholder.markdown(message_content)
-                assistant_message["content"] = message_content
+                assistant_message.content = message_content
                 logger.error(f"Error in chat function: {str(e)}", exc_info=True)
 
             # Run analysis with enhanced error capture
@@ -408,9 +413,7 @@ async def rephrase_message_and_analysis(
                         analysis_result = await run_analysis(analysis_request)
 
                     # Store analysis results in components
-                    assistant_message["components"].append(  # type: ignore[attr-defined]
-                        {"type": "analysis", "data": analysis_result}
-                    )
+                    assistant_message.components.append(analysis_result)
 
                     # Display analysis results
                     with analysis_container:
@@ -484,9 +487,7 @@ async def rephrase_message_and_analysis(
                                     result.fig1 or result.fig2
                                 ):
                                     # Charts task completed
-                                    assistant_message["components"].append(  # type: ignore[attr-defined]
-                                        result
-                                    )
+                                    assistant_message.components.append(result)
                                     with charts_container:
                                         if result.fig1:
                                             st.plotly_chart(
@@ -499,9 +500,7 @@ async def rephrase_message_and_analysis(
 
                                 elif isinstance(result, BusinessAnalysisResult):
                                     # Business analysis task completed
-                                    assistant_message["components"].append(  # type: ignore[attr-defined]
-                                        result
-                                    )
+                                    assistant_message.components.append(result)
 
                                     with bottom_line_container:
                                         with st.expander("Bottom Line", expanded=True):
@@ -571,25 +570,27 @@ async def rephrase_message_and_analysis(
 
 # Main page content (Chat Interface)
 st.image(get_page_logo(), width=200)
-
+st.session_state.chat_messages = cast(
+    list[AnalystChatMessage], st.session_state.chat_messages
+)
 if not st.session_state.cleansed_data:
     st.info("Please upload and process data using the sidebar before starting the chat")
 else:
     # Display chat history
-    for message in st.session_state.chat_messages:
+    for i, message in enumerate(st.session_state.chat_messages):
         # Set avatar based on role
-        avatar = "bot.jpg" if message["role"] == "assistant" else "you.jpg"
+        avatar = "bot.jpg" if message.role == "assistant" else "you.jpg"
 
-        with st.chat_message(message["role"], avatar=avatar):
-            st.markdown(message["content"])
+        with st.chat_message(message.role, avatar=avatar):
+            st.markdown(message.content)
 
             # Add components in the same structure as the original response
-            if "components" in message:
+            if len(message.components) > 0:
                 # Find business analysis component
                 business_analysis: BusinessAnalysisResult | None = next(
                     (
                         comp
-                        for comp in message["components"]
+                        for comp in message.components
                         if isinstance(comp, BusinessAnalysisResult)
                     ),
                     None,
@@ -612,7 +613,7 @@ else:
                     analysis_component: RunAnalysisResult | None = next(
                         (
                             comp
-                            for comp in message["components"]
+                            for comp in message.components
                             if isinstance(comp, RunAnalysisResult)
                         ),
                         None,
@@ -636,7 +637,7 @@ else:
                     charts_component: RunChartsResult | None = next(
                         (
                             comp
-                            for comp in message["components"]
+                            for comp in message.components
                             if isinstance(comp, RunChartsResult)
                         ),
                         None,
@@ -646,13 +647,13 @@ else:
                             st.plotly_chart(
                                 charts_component.fig1,
                                 use_container_width=True,
-                                key="fig1",
+                                key=f"fig1_{i}",
                             )
                         if charts_component.fig2:
                             st.plotly_chart(
                                 charts_component.fig2,
                                 use_container_width=True,
-                                key="fig2",
+                                key=f"fig2_{i}",
                             )
                     else:
                         st.markdown("No charts available")
@@ -681,20 +682,22 @@ else:
 
     # Chat input
     if question := st.chat_input("Ask a question about your data"):
-        valid_messages = [
-            msg
+        valid_messages: list[ChatCompletionMessageParam] = [
+            msg.to_openai_message_param()
             for msg in st.session_state.chat_messages
-            if isinstance(msg, dict)
-            and msg.get("role") in ["user", "assistant", "system"]
-            and msg.get("content", "").strip()
+            if msg.role in ["user", "assistant", "system"] and msg.content.strip()
         ]
 
-        valid_messages.append({"role": "user", "content": question})
+        valid_messages.append(
+            ChatCompletionUserMessageParam(role="user", content=question)
+        )
         chat_request = ChatRequest(messages=valid_messages)
         chat_response = asyncio.run(rephrase_message(chat_request))
 
         enhanced_question = chat_response.get("enhanced_user_message", question)
-        user_message = {"role": "user", "content": enhanced_question}
+        user_message = AnalystChatMessage(
+            role="user", content=enhanced_question, components=[]
+        )
         st.session_state.chat_messages.append(user_message)
 
         # Display user message with custom avatar
@@ -702,4 +705,4 @@ else:
             st.markdown(enhanced_question)
         # TODO: finalise the ChatMessage typing
         # Process chat and display assistant response
-        asyncio.run(rephrase_message_and_analysis(enhanced_question, valid_messages))  # type: ignore[arg-type]
+        asyncio.run(rephrase_message_and_analysis(enhanced_question, valid_messages))
