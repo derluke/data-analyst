@@ -81,8 +81,6 @@ from utils.schema import (
     ChartValidationError,
     ChatRequest,
     CleansedDataset,
-    CleansedDatasetsAndMetadata,
-    CleanseReportMetadata,
     CleansingReport,
     CodeGeneration,
     CodeValidator,
@@ -902,7 +900,7 @@ async def _generate_python_analysis_code(
 @cache
 async def cleanse_dataframes(
     datasets: list[AnalystDataset],
-) -> CleansedDatasetsAndMetadata:
+) -> list[CleansedDataset]:
     """Clean and standardize multiple pandas DataFrames."""
     cleaned_datasets = []
 
@@ -977,15 +975,7 @@ async def cleanse_dataframes(
                 cleaning_report=report,
             )
         )
-
-    return CleansedDatasetsAndMetadata(
-        datasets=cleaned_datasets,
-        metadata=CleanseReportMetadata(
-            total_datasets=len(datasets),
-            timestamp=datetime.now().isoformat(),
-            version="1.0",
-        ),
-    )
+    return cleaned_datasets
 
 
 async def get_dictionary(
@@ -1320,14 +1310,12 @@ async def _run_analysis(
 
             if not isinstance(result, (pd.DataFrame, list, dict)):
                 result = pd.DataFrame(result)
-            if isinstance(result, pd.DataFrame):
-                result = result.to_dict("records")
     except Exception as e:
         raise InvalidGeneratedCode(code=code, exception=e)
     return RunAnalysisResult(
         status="success",
         code=code,
-        data=result,
+        data=AnalystDataset(name="analysis_result", data=result),
         metadata=RunAnanlysisResultMetadata(
             timestamp=datetime.now().isoformat(),
             attempts=len(exception_history) + 1,

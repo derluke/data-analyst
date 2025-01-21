@@ -43,7 +43,6 @@ from utils.database_helpers import Database, app_infra
 from utils.schema import (
     AnalystDataset,
     CleansedDataset,
-    CleansedDatasetsAndMetadata,
     DataDictionariesAndMetadata,
 )
 
@@ -67,7 +66,7 @@ if "initialized" not in st.session_state:
 
 
 # Modify process_data to handle coroutine reuse
-def process_data_cached(_datasets: list[AnalystDataset]) -> CleansedDatasetsAndMetadata:
+def process_data_cached(_datasets: list[AnalystDataset]) -> list[CleansedDataset]:
     """
     Wrapper function to handle async processing with caching
     """
@@ -152,17 +151,17 @@ def process_data_and_update_state(datasets: list[AnalystDataset]) -> None:
     # Process the new data
     logger.info("Starting data processing")
     try:
-        results = process_data_cached(datasets)
+        cleansed_datasets = process_data_cached(datasets)
     except Exception as e:
         logger.error("Data processing failed")
         st.error(f"❌ Error processing data: {str(e)}")
 
-    st.session_state.cleansed_data += results.datasets
+    st.session_state.cleansed_data += cleansed_datasets
     logger.info("Data processing successful, generating dictionaries")
 
     # Generate data dictionaries
     try:
-        new_dictionaries = generate_dictionaries(results.datasets).dictionaries
+        new_dictionaries = generate_dictionaries(cleansed_datasets).dictionaries
         st.session_state.data_dictionaries = st.session_state.data_dictionaries + [
             d
             for d in new_dictionaries

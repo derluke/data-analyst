@@ -24,7 +24,7 @@ from utils.schema import (
     AnalystDataset,
     BusinessAnalysisRequest,
     BusinessAnalysisResult,
-    CleansedDatasetsAndMetadata,
+    CleansedDataset,
     DataDictionariesAndMetadata,
     DataDictionary,
     DataDictionaryColumn,
@@ -53,7 +53,7 @@ def dataset_loaded(url_diabetes: str) -> AnalystDataset:
 @pytest_asyncio.fixture(scope="module")
 async def dataset_cleansed(
     pulumi_up: Any, dataset_loaded: AnalystDataset
-) -> CleansedDatasetsAndMetadata:
+) -> list[CleansedDataset]:
     from utils.api import (
         cleanse_dataframes,
     )
@@ -62,8 +62,8 @@ async def dataset_cleansed(
     return result
 
 
-def test_dataset_is_cleansed(dataset_cleansed: CleansedDatasetsAndMetadata) -> None:
-    assert dataset_cleansed.metadata.total_datasets == 1
+def test_dataset_is_cleansed(dataset_cleansed: list[CleansedDataset]) -> None:
+    assert len(dataset_cleansed) == 1
 
 
 @pytest_asyncio.fixture(scope="module")
@@ -86,12 +86,12 @@ def question() -> str:
 @pytest.fixture
 def run_analysis_request(
     pulumi_up: Any,
-    dataset_cleansed: CleansedDatasetsAndMetadata,
+    dataset_cleansed: list[CleansedDataset],
     data_dictionary: DataDictionariesAndMetadata,
     question: str,
 ) -> RunAnalysisRequest:
     analysis_request = RunAnalysisRequest(
-        data=dataset_cleansed.datasets,
+        data=dataset_cleansed,
         dictionary=data_dictionary.dictionaries,
         question=question,
     )

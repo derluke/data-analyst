@@ -107,17 +107,6 @@ class CleansedDataset(AnalystDataset):
     cleaning_report: CleansingReport
 
 
-class CleanseReportMetadata(BaseModel):
-    total_datasets: int
-    timestamp: str
-    version: str = "1.0"
-
-
-class CleansedDatasetsAndMetadata(BaseModel):
-    datasets: list[CleansedDataset]
-    metadata: CleanseReportMetadata
-
-
 class DataDictionaryColumn(BaseModel):
     data_type: str
     column: str

@@ -66,7 +66,7 @@ def convert_datetime_series(series: pd.Series[Any]) -> pd.Series[Any]:
     """
     try:
         # Convert to datetime
-        result = pd.to_datetime(series, infer_datetime_format=True, errors="coerce")
+        result = pd.to_datetime(series, errors="coerce")
         # Convert to ISO format strings
         return result.dt.strftime("%Y-%m-%dT%H:%M:%S")
     except Exception as e:

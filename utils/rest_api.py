@@ -42,7 +42,7 @@ from utils.schema import (
     BusinessAnalysisRequest,
     BusinessAnalysisResult,
     ChatRequest,
-    CleansedDatasetsAndMetadata,
+    CleansedDataset,
     DatabaseAnalysisRequest,
     DatabaseAnalysisResult,
     DataDictionariesAndMetadata,
@@ -142,7 +142,7 @@ async def get_snowflake_data_endpoint(
 @app.post("/cleanse_dataframes")
 async def cleanse_dataframes_endpoint(
     datasets: list[AnalystDataset],
-) -> CleansedDatasetsAndMetadata:
+) -> list[CleansedDataset]:
     return await cleanse_dataframes(datasets)
 
 
