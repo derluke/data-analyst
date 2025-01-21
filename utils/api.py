@@ -68,6 +68,7 @@ from utils.resources import LLMDeployment
 from utils.schema import (
     AiCatalogDataset,
     AnalysisError,
+    AnalystDataset,
     BusinessAnalysisGeneration,
     BusinessAnalysisMetadata,
     BusinessAnalysisRequest,
@@ -79,12 +80,13 @@ from utils.schema import (
     ChartPerformance,
     ChartValidationError,
     ChatRequest,
+    CleansedDataset,
+    CleansedDatasetsAndMetadata,
     CleanseReportMetadata,
-    CleanseResult,
     CleansingReport,
-    Code,
+    CodeGeneration,
     CodeValidator,
-    DatabaseAnalysisCode,
+    DatabaseAnalysisCodeGeneration,
     DatabaseAnalysisMetadata,
     DatabaseAnalysisRequest,
     DatabaseAnalysisResult,
@@ -92,21 +94,19 @@ from utils.schema import (
     DataDictionary,
     DataDictionaryColumn,
     DataDictionaryMetadata,
-    DatasetInput,
-    DatasetOutput,
-    DictionaryResult,
-    EnhancedUserMessageForChat,
+    DictionaryGeneration,
+    EnhancedQuestionGeneration,
     MemoryUsage,
-    QuestionList,
+    QuestionListGeneration,
     QuestionSuggestionMetadata,
-    QuestionSuggestions,
-    QuestionValidationResult,
+    QuestionSuggestionsAndMetadata,
     RunAnalysisRequest,
     RunAnalysisResult,
     RunAnanlysisResultMetadata,
     RunChartsRequest,
     RunChartsResult,
     RunChartsResultMetadata,
+    ValidatedQuestion,
     ValidationMessage,
 )
 
@@ -279,7 +279,7 @@ def list_catalog_datasets(limit: int = 100) -> List[AiCatalogDataset]:
 
 
 @cache
-def download_catalog_datasets(*args: Any) -> list[DatasetInput]:
+def download_catalog_datasets(*args: Any) -> list[AnalystDataset]:
     """Load selected datasets as pandas DataFrames
 
     Args:
@@ -298,14 +298,14 @@ def download_catalog_datasets(*args: Any) -> list[DatasetInput]:
             f"The requested AI Catalog datasets must total <= {int(MAX_AI_CATALOG_DATASET_SIZE)} bytes"
         )
 
-    result_datasets: list[DatasetInput] = []
+    result_datasets: list[AnalystDataset] = []
     for dataset in datasets:
         try:
             df_records = cast(
                 list[dict[str, Any]],
                 dataset.get_as_dataframe().to_dict(orient="records"),
             )
-            result_datasets.append(DatasetInput(name=dataset.name, data=df_records))
+            result_datasets.append(AnalystDataset(name=dataset.name, data=df_records))
             logger.info(f"Successfully downloaded {dataset.name}")
         except Exception as e:
             logger.error(f"Failed to read dataset {dataset.name}: {str(e)}")
@@ -379,8 +379,8 @@ def _process_column_batch(
         )
 
     # Get descriptions from OpenAI
-    completion: DictionaryResult = client.chat.completions.create(
-        response_model=DictionaryResult,
+    completion: DictionaryGeneration = client.chat.completions.create(
+        response_model=DictionaryGeneration,
         model="gpt-4o-mini",
         messages=messages,
     )
@@ -400,7 +400,7 @@ def _process_column_batch(
         return {col: "No valid description available" for col in columns}
 
 
-def _process_dataset(dataset: DatasetInput | DatasetOutput) -> DataDictionary:
+def _process_dataset(dataset: AnalystDataset) -> DataDictionary:
     """Process a single dataset with parallel column batch processing"""
     try:
         batch_start = datetime.now()
@@ -493,7 +493,7 @@ def _get_memory_usage() -> MemoryUsage:
 
 def _validate_question_feasibility(
     question: str, available_columns: List[str]
-) -> QuestionValidationResult:
+) -> ValidatedQuestion:
     """Validate if a question can be answered with available data
 
     Checks if common data elements mentioned in the question exist in columns
@@ -518,7 +518,7 @@ def _validate_question_feasibility(
         else "Question may require unavailable data"
     )
 
-    return QuestionValidationResult(
+    return ValidatedQuestion(
         question=question,
         is_valid=is_valid,
         available_columns=found_columns,
@@ -529,7 +529,7 @@ def _validate_question_feasibility(
 
 async def _generate_question_suggestions(
     dictionary: pd.DataFrame, max_columns: int = 40
-) -> QuestionSuggestions:
+) -> QuestionSuggestionsAndMetadata:
     """Generate and validate suggested analysis questions
 
     Args:
@@ -577,14 +577,14 @@ async def _generate_question_suggestions(
         ),
     ]
 
-    completion: QuestionList = client.chat.completions.create(
-        response_model=QuestionList,
+    completion: QuestionListGeneration = client.chat.completions.create(
+        response_model=QuestionListGeneration,
         model="gpt-4o-mini",
         messages=messages,
     )
 
     available_columns = dictionary["column"].tolist()
-    validated_questions: list[QuestionValidationResult] = []
+    validated_questions: list[ValidatedQuestion] = []
 
     for question in completion.questions:
         validated_questions.append(
@@ -599,7 +599,9 @@ async def _generate_question_suggestions(
         valid_questions=sum(1 for q in validated_questions if q.is_valid),
     )
 
-    return QuestionSuggestions(questions=validated_questions, metadata=metadata)
+    return QuestionSuggestionsAndMetadata(
+        questions=validated_questions, metadata=metadata
+    )
 
 
 # TODO: duplicated in schema
@@ -695,8 +697,8 @@ async def _create_charts(
                 )
 
             # Get response based on model mode
-            response: Code = client.chat.completions.create(
-                response_model=Code,
+            response: CodeGeneration = client.chat.completions.create(
+                response_model=CodeGeneration,
                 model="gpt-4o",
                 temperature=0,
                 messages=messages,
@@ -819,12 +821,11 @@ async def _generate_python_analysis_code(
     all_descriptions = []
     all_data_types = []
 
-    for dataset_name, dictionary_list in request.dictionary.items():
-        for entry in dictionary_list:
-            if isinstance(entry, dict) and "column" in entry:
-                all_columns.append(f"{dataset_name}.{entry['column']}")
-                all_descriptions.append(entry.get("description", ""))
-                all_data_types.append(entry.get("data_type", ""))
+    for dictionary in request.dictionary:
+        for entry in dictionary.dictionary:
+            all_columns.append(f"{dictionary.name}.{entry.column}")
+            all_descriptions.append(entry.description)
+            all_data_types.append(entry.data_type)
 
     # Create dictionary format for prompt
     dictionary_data = {
@@ -837,12 +838,12 @@ async def _generate_python_analysis_code(
     all_samples = []
     all_shapes = []
 
-    for dataset_name, dataset in request.data.items():
-        df = pd.DataFrame(dataset)
-        all_shapes.append(f"{dataset_name}: {df.shape[0]} rows x {df.shape[1]} columns")
+    for dataset in request.data:
+        df = dataset.to_df()
+        all_shapes.append(f"{dataset.name}: {df.shape[0]} rows x {df.shape[1]} columns")
         # Limit sample to 10 rows
         sample_df = df.head(10)
-        all_samples.append(f"{dataset_name}:\n{sample_df.to_string()}")
+        all_samples.append(f"{dataset.name}:\n{sample_df.to_string()}")
 
     shape_info = "\n".join(all_shapes)
     sample_data = "\n\n".join(all_samples)
@@ -887,8 +888,8 @@ async def _generate_python_analysis_code(
             ]
         )
 
-    completion: Code = client.chat.completions.create(
-        response_model=Code,
+    completion: CodeGeneration = client.chat.completions.create(
+        response_model=CodeGeneration,
         model="gpt-4o",
         temperature=0.1,
         messages=messages,
@@ -898,12 +899,14 @@ async def _generate_python_analysis_code(
 
 
 @cache
-async def cleanse_dataframes(datasets: list[DatasetInput]) -> CleanseResult:
+async def cleanse_dataframes(
+    datasets: list[AnalystDataset],
+) -> CleansedDatasetsAndMetadata:
     """Clean and standardize multiple pandas DataFrames."""
     cleaned_datasets = []
 
     for dataset in datasets:
-        df = pd.DataFrame(dataset.data)
+        df = dataset.to_df()
         if df.empty:
             raise ValueError(f"Dataset {dataset.name} is empty")
 
@@ -967,14 +970,14 @@ async def cleanse_dataframes(datasets: list[DatasetInput]) -> CleanseResult:
                 report.errors.append(f"Error processing column {col}: {str(e)}")
 
         cleaned_datasets.append(
-            DatasetOutput(
+            CleansedDataset(
                 name=dataset.name,
                 data=df.replace({pd.NaT: None}).to_dict("records"),
                 cleaning_report=report,
             )
         )
 
-    return CleanseResult(
+    return CleansedDatasetsAndMetadata(
         datasets=cleaned_datasets,
         metadata=CleanseReportMetadata(
             total_datasets=len(datasets),
@@ -985,7 +988,7 @@ async def cleanse_dataframes(datasets: list[DatasetInput]) -> CleanseResult:
 
 
 async def get_dictionary(
-    datasets: Sequence[DatasetInput | DatasetOutput],
+    datasets: Sequence[AnalystDataset],
 ) -> DataDictionariesAndMetadata:
     """
     Generate data dictionary for multiple datasets.
@@ -1025,7 +1028,6 @@ async def get_dictionary(
                 try:
                     result = future.result()
                     results.append(result)
-                    metadata.batch_times.append(result.batch_time)
                     logger.info(
                         f"Processed dataset {dataset_name} with {len(result.dictionary)} entries"
                     )
@@ -1033,14 +1035,7 @@ async def get_dictionary(
                     error_msg = f"Error processing dataset {dataset_name}: {str(e)}"
                     logger.error(error_msg)
                     metadata.errors.append(error_msg)
-                    results.append(
-                        DataDictionary(
-                            name=dataset_name,
-                            dictionary=[],
-                            cache_hit=False,
-                            batch_time=0,
-                        )
-                    )
+                    results.append(DataDictionary(name=dataset_name, dictionary=[]))
 
         metadata.processing_end = datetime.now().isoformat()
         metadata.total_time = (
@@ -1059,7 +1054,9 @@ async def get_dictionary(
         raise
 
 
-async def suggest_questions(datasets: list[DatasetInput]) -> QuestionSuggestions:
+async def suggest_questions(
+    datasets: list[AnalystDataset],
+) -> QuestionSuggestionsAndMetadata:
     """
     Generate and validate suggested analysis questions.
 
@@ -1117,8 +1114,8 @@ async def rephrase_message(messages: ChatRequest) -> dict[str, Any]:
         ),
     ]
 
-    completion: EnhancedUserMessageForChat = client.chat.completions.create(
-        response_model=EnhancedUserMessageForChat,
+    completion: EnhancedQuestionGeneration = client.chat.completions.create(
+        response_model=EnhancedQuestionGeneration,
         model="gpt-4o",
         messages=prompt_messages,
     )
@@ -1132,7 +1129,7 @@ async def run_charts(request: RunChartsRequest) -> RunChartsResult:
     """
     # TODO: this needs a refactor, does duplicative transformations, loop appears broken, etc.
     # Convert JSON to DataFrame
-    df = pd.DataFrame(request.data)
+    df = request.data.to_df()
     if df.empty:
         raise ValueError("Input DataFrame cannot be empty")
 
@@ -1227,7 +1224,7 @@ async def get_business_analysis(
     """
     try:
         # Convert JSON data to DataFrame for analysis
-        df = pd.DataFrame(request.data)
+        df = request.data.to_df()
 
         # Get first 1000 rows as CSV with quoted values for context
         df_csv = df.head(750).to_csv(index=False, quoting=1)
@@ -1246,7 +1243,7 @@ async def get_business_analysis(
             ),
             ChatCompletionUserMessageParam(
                 role="user",
-                content=f"Data Dictionary:\n{json.dumps(request.dictionary)}",
+                content=f"Data Dictionary:\n{request.dictionary.model_dump_json()}",
             ),
         ]
 
@@ -1291,12 +1288,12 @@ async def _run_analysis(
     )
 
     dataframes: dict[str, pd.DataFrame] = {}
-    for dataset_name, dataset_records in request.data.items():
-        if dataset_records:
-            df = pd.DataFrame(dataset_records)
-            dataframes[dataset_name] = df
+    for dataset in request.data:
+        if dataset.data:
+            df = dataset.to_df()
+            dataframes[dataset.name] = df
         else:
-            dataframes[dataset_name] = pd.DataFrame()
+            dataframes[dataset.name] = pd.DataFrame()
 
     # Create namespace for execution
     namespace = {"pd": pd, "np": np, "dfs": dataframes}
@@ -1367,7 +1364,7 @@ async def run_analysis(
 
 async def _get_database_analysis_code(
     request: DatabaseAnalysisRequest,
-) -> DatabaseAnalysisCode:
+) -> DatabaseAnalysisCodeGeneration:
     """
     Generate Snowflake SQL analysis code based on data samples and question.
 
@@ -1379,29 +1376,13 @@ async def _get_database_analysis_code(
     """
     try:
         # Convert dictionary data structure to list of columns for all tables
-        all_tables_info = []
-
-        for table_name, dictionary_list in request.dictionary.items():
-            table_info = {
-                "table_name": table_name,
-                "columns": [],
-                "descriptions": [],
-                "data_types": [],
-            }
-
-            for entry in dictionary_list:
-                if isinstance(entry, dict):
-                    table_info["columns"].append(entry.get("column", ""))
-                    table_info["descriptions"].append(entry.get("description", ""))
-                    table_info["data_types"].append(entry.get("data_type", ""))
-
-            all_tables_info.append(table_info)
+        all_tables_info = [d.model_dump(mode="json") for d in request.dictionary]
 
         # Get sample data for all tables
         all_samples = []
-        for table_name, sample_data in request.data.items():
-            df = pd.DataFrame(sample_data)
-            sample_str = f"Table: {table_name}\n{df.head(10).to_string()}"
+        for table in request.data:
+            df = table.to_df()
+            sample_str = f"Table: {table.name}\n{df.head(10).to_string()}"
             all_samples.append(sample_str)
 
         # Create messages for OpenAI
@@ -1436,7 +1417,7 @@ async def _get_database_analysis_code(
 
         # Get response from OpenAI
         completion = client.chat.completions.create(
-            response_model=DatabaseAnalysisCode,
+            response_model=DatabaseAnalysisCodeGeneration,
             model="gpt-4o",
             temperature=0.1,
             messages=messages,
@@ -1480,11 +1461,12 @@ async def run_database_analysis(
                 results, query_metadata = Database.execute_query(
                     query=sql_code, timeout=timeout
                 )
+                results = cast(list[dict[str, Any]], results)
                 return DatabaseAnalysisResult(
                     status="success",
                     code=sql_code,
                     description=code_result.description,
-                    data=results,
+                    data=AnalystDataset(name="analysis_result", data=results),
                     metadata=DatabaseAnalysisMetadata(
                         attempts=attempts,
                         execution_time=time.time() - start_time,
@@ -1493,7 +1475,7 @@ async def run_database_analysis(
                         query_metadata=query_metadata,
                         tables_analyzed=len(request.data),
                         total_sample_rows=sum(
-                            len(samples) for samples in request.data.values()
+                            len(samples.to_df()) for samples in request.data
                         ),
                     ),
                 )

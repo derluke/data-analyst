@@ -16,20 +16,16 @@ from typing import Any
 
 import pytest
 
-from utils.api import (
-    InvalidGeneratedCode,
-    MaxReflectionAttempts,
-    reflect_code_generation_errors,
-)
-
 
 @pytest.fixture
-def f_always_fails(pulumi_up: Any):
+def f_always_fails(pulumi_up: Any) -> Any:
+    from utils.api import InvalidGeneratedCode
+
     received_args = []
     received_kwargs = {}
-    retries = []
+    retries: list[int] = []
 
-    async def _f(*args, **kwargs):
+    async def _f(*args: Any, **kwargs: Any) -> Any:
         if not len(retries):
             for arg in args:
                 received_args.append(arg)
@@ -44,12 +40,14 @@ def f_always_fails(pulumi_up: Any):
 
 
 @pytest.fixture
-def f_passes_on_second(pulumi_up: Any):
+def f_passes_on_second(pulumi_up: Any) -> Any:
+    from utils.api import InvalidGeneratedCode
+
     received_args = []
     received_kwargs = {}
-    retries = []
+    retries: list[int] = []
 
-    async def _f(*args, **kwargs):
+    async def _f(*args: Any, **kwargs: Any) -> Any:
         if not len(retries):
             for arg in args:
                 received_args.append(arg)
@@ -67,7 +65,9 @@ def f_passes_on_second(pulumi_up: Any):
 
 
 @pytest.mark.asyncio
-async def test_max_retries(pulumi_up: Any, f_always_fails: Any):
+async def test_max_retries(pulumi_up: Any, f_always_fails: Any) -> Any:
+    from utils.api import MaxReflectionAttempts, reflect_code_generation_errors
+
     f, retries, received_args, received_kwargs = f_always_fails
     decorated = reflect_code_generation_errors(max_attempts=3)(f)
     with pytest.raises(MaxReflectionAttempts):
@@ -80,7 +80,9 @@ async def test_max_retries(pulumi_up: Any, f_always_fails: Any):
 
 
 @pytest.mark.asyncio
-async def test_success(pulumi_up: Any, f_passes_on_second: Any):
+async def test_success(pulumi_up: Any, f_passes_on_second: Any) -> Any:
+    from utils.api import reflect_code_generation_errors
+
     f, retries, received_args, received_kwargs = f_passes_on_second
     decorated = reflect_code_generation_errors(max_attempts=3)(f)
     result = await decorated(1, 2, three=3, four=4)

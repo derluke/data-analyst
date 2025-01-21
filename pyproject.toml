@@ -100,7 +100,6 @@ exclude = """(?x)(
     | venv/
     | .venv/
     | .cache
-    | tests/
     | e2e/
   )"""
 python_version = "3.11"
@@ -108,7 +107,7 @@ python_version = "3.11"
 [tool.pytest.ini_options]
 norecursedirs = "tests/e2e"
 asyncio_default_fixture_loop_scope = "module"
-ilterwarnings = ["ignore::DeprecationWarning::"]
+filterwarnings = ["ignore::DeprecationWarning::"]
 
 [tool.uv]
 constraint-dependencies = ["kaleido!=0.2.1.post1"]

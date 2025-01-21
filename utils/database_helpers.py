@@ -39,9 +39,9 @@ from utils.credentials import (
 )
 from utils.prompts import SYSTEM_PROMPT_BIGQUERY, SYSTEM_PROMPT_SNOWFLAKE
 from utils.schema import (
+    AnalystDataset,
     AppInfra,
     DatabaseExecutionMetadata,
-    DatasetInput,
 )
 
 logger = logging.getLogger("DataAnalystFrontend")
@@ -87,7 +87,7 @@ class DatabaseOperator(ABC, Generic[T]):
     @abstractmethod
     def get_data(
         self, *table_names: str, sample_size: int = 5000, timeout: int | None = None
-    ) -> list[DatasetInput]:
+    ) -> list[AnalystDataset]:
         return []
 
     @abstractmethod
@@ -123,7 +123,7 @@ class NoDatabaseOperator(DatabaseOperator[NoDatabaseCredentialArgs]):
 
     def get_data(
         self, *table_names: str, sample_size: int = 5000, timeout: int | None = 300
-    ) -> list[DatasetInput]:
+    ) -> list[AnalystDataset]:
         return []
 
     def get_system_prompt(self) -> ChatCompletionSystemMessageParam:
@@ -328,7 +328,7 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
     @functools.lru_cache(maxsize=8)
     def get_data(
         self, *table_names: str, sample_size: int = 5000, timeout: int | None = None
-    ) -> list[DatasetInput]:
+    ) -> list[AnalystDataset]:
         """Load selected tables from Snowflake as pandas DataFrames
 
         Args:
@@ -384,7 +384,7 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
                             f"Successfully loaded table {table}: {len(df)} rows, {len(df.columns)} columns"
                         )
                         data = cast(list[dict[str, Any]], df.to_dict("records"))
-                        dataframes.append(DatasetInput(name=table, data=data))
+                        dataframes.append(AnalystDataset(name=table, data=data))
 
                     except Exception as e:
                         logger.error(f"Error loading table {table}: {str(e)}")
@@ -506,7 +506,7 @@ class BigQueryOperator(DatabaseOperator[BigQueryCredentialArgs]):
     @functools.lru_cache(maxsize=8)
     def get_data(
         self, *table_names: str, sample_size: int = 5000, timeout: int | None = None
-    ) -> list[DatasetInput]:
+    ) -> list[AnalystDataset]:
         timeout = timeout if timeout is not None else self.default_timeout
 
         dataframes = []
@@ -548,7 +548,7 @@ class BigQueryOperator(DatabaseOperator[BigQueryCredentialArgs]):
                             f"Successfully loaded table {table}: {len(df)} rows, {len(df.columns)} columns"
                         )
                         data = cast(list[dict[str, Any]], df.to_dict("records"))
-                        dataframes.append(DatasetInput(name=table, data=data))
+                        dataframes.append(AnalystDataset(name=table, data=data))
 
                     except Exception as e:
                         logger.error(f"Error loading table {table}: {str(e)}")

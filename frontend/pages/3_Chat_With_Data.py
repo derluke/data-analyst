@@ -46,14 +46,14 @@ from utils.api import (
 )
 from utils.schema import (
     AnalystChatMessage,
+    AnalystDataset,
     BusinessAnalysisRequest,
     BusinessAnalysisResult,
     ChatRequest,
+    CleansedDataset,
     DatabaseAnalysisRequest,
     DatabaseAnalysisResult,
     DataDictionary,
-    DatasetInput,
-    DatasetOutput,
     RunAnalysisRequest,
     RunAnalysisResult,
     RunChartsRequest,
@@ -76,6 +76,7 @@ if "initialized" not in st.session_state:
     st.session_state.chat_messages = []
     st.session_state.chat_input_key = 0
     st.session_state.debug_mode = True
+    st.session_state.data_source = None
 elif "chat_messages" not in st.session_state:
     st.session_state.chat_messages = []
 elif "chat_input_key" not in st.session_state:
@@ -321,12 +322,12 @@ def log_error_details(error: Exception, context: Dict[str, Any]) -> None:
 async def rephrase_message_and_analysis(
     question: str, chat_messages: list[ChatCompletionMessageParam]
 ) -> None:
+    st.session_state.datasets = cast(list[AnalystDataset], st.session_state.datasets)
     st.session_state.chat_messages = cast(
         list[AnalystChatMessage], st.session_state.chat_messages
     )
-    st.session_state.datasets = cast(list[DatasetInput], st.session_state.datasets)
     st.session_state.cleansed_data = cast(
-        list[DatasetOutput], st.session_state.cleansed_data
+        list[CleansedDataset], st.session_state.cleansed_data
     )
     st.session_state.data_dictionaries = cast(
         list[DataDictionary], st.session_state.data_dictionaries
@@ -369,45 +370,18 @@ async def rephrase_message_and_analysis(
                 try:
                     if st.session_state.data_source == "database":
                         # Convert DataFrames to dictionary format
-                        data_dict = {}
-                        for ds in st.session_state.datasets:
-                            # Convert DataFrame to records format and ensure each record is a dictionary
-                            records = ds.data
-                            data_dict[ds.name] = records
-
-                        # Convert data dictionary to proper format
-                        dict_data = {}
-                        for dictionary in st.session_state.data_dictionaries:
-                            dict_data[dictionary.name] = {
-                                "columns": [d.column for d in dictionary.dictionary],
-                                "descriptions": [
-                                    d.description for d in dictionary.dictionary
-                                ],
-                                "data_types": [
-                                    d.data_type for d in dictionary.dictionary
-                                ],
-                            }
-
                         sf_analysis_request = DatabaseAnalysisRequest(
-                            data=data_dict,
-                            dictionary=dict_data,
+                            data=st.session_state.cleansed_data,
+                            dictionary=st.session_state.data_dictionaries,
                             question=chat_response.get("enhanced_question", question),
                         )
                         analysis_result = await run_database_analysis(
                             sf_analysis_request
                         )
                     else:
-                        formatted_data = {}
-                        for ds in st.session_state.datasets:
-                            formatted_data[ds.name] = ds.data
-                        dict_data = {}
-                        for dictionary in st.session_state.data_dictionaries:
-                            dict_data[dictionary.name] = dictionary.model_dump()[
-                                "dictionary"
-                            ]
                         analysis_request = RunAnalysisRequest(
-                            data=formatted_data,
-                            dictionary=dict_data,
+                            data=st.session_state.cleansed_data,
+                            dictionary=st.session_state.data_dictionaries,
                             question=chat_response.get("enhanced_question", question),
                         )
                         analysis_result = await run_analysis(analysis_request)
@@ -428,11 +402,11 @@ async def rephrase_message_and_analysis(
                                 st.code(analysis_result.code, language=language)
                         if analysis_result.data:
                             with st.expander("Analysis Results", expanded=True):
-                                if isinstance(analysis_result.data, list):
-                                    df = pd.DataFrame(analysis_result.data)
-                                    st.dataframe(df, use_container_width=True)
-                                else:
-                                    st.write(analysis_result["data"])
+                                st.dataframe(
+                                    analysis_result.data.to_df(),
+                                    use_container_width=True,
+                                )
+
                 except Exception as e:
                     error_context.update({"component": "analysis"})
                     log_error_details(e, error_context)
@@ -440,28 +414,15 @@ async def rephrase_message_and_analysis(
             # Process charts and business analysis concurrently
             if analysis_result and analysis_result.data:
                 try:
-                    chart_df = (
-                        pd.DataFrame(analysis_result.data)
-                        if isinstance(analysis_result.data, list)
-                        else pd.DataFrame([analysis_result.data])
-                    )
-
                     # Prepare requests
                     chart_request = RunChartsRequest(
-                        data=chart_df.to_dict("records"),
+                        data=analysis_result.data,
                         question=chat_response.get("enhanced_question", question),
                     )
 
                     business_request = BusinessAnalysisRequest(
-                        data=chart_df.to_dict("records"),
-                        dictionary=[
-                            {
-                                "column": col,
-                                "description": "Analysis result column",
-                                "data_type": str(chart_df[col].dtype),
-                            }
-                            for col in chart_df.columns
-                        ],
+                        data=analysis_result.data,
+                        dictionary=DataDictionary.from_df(analysis_result.data.to_df()),
                         question=chat_response.get("enhanced_question", question),
                     )
 

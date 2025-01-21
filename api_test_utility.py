@@ -40,9 +40,9 @@ from utils.rest_api import (  # type: ignore[attr-defined]
     suggest_questions,
 )
 from utils.schema import (
+    AnalystDataset,
     BusinessAnalysisRequest,
     ChatRequest,
-    DatasetInput,
     RunAnalysisRequest,
     RunChartsRequest,
 )
@@ -136,7 +136,7 @@ def load_dataframes(files: list[str]) -> list[dict[str, Any]]:
     return datasets
 
 
-async def cleanse_datasets(datasets: list[DatasetInput]) -> dict[str, Any] | None:
+async def cleanse_datasets(datasets: list[AnalystDataset]) -> dict[str, Any] | None:
     """Use API function directly to cleanse datasets"""
     try:
         start_time = time.time()
@@ -175,7 +175,7 @@ async def main() -> None:
 
     # Load dataframes
     console.print("\n[bold]Loading selected files...[/bold]")
-    datasets = [DatasetInput(**df) for df in load_dataframes(selected_files)]
+    datasets = [AnalystDataset(**df) for df in load_dataframes(selected_files)]
 
     if not datasets:
         console.print("[red]No datasets were successfully loaded. Exiting...[/red]")
@@ -260,7 +260,7 @@ async def main() -> None:
             transient=True,
         ) as progress:
             task = progress.add_task("Creating data dictionary...", total=None)
-            datasets = [DatasetInput(**dataset) for dataset in result["datasets"]]
+            datasets = [AnalystDataset(**dataset) for dataset in result["datasets"]]
 
             # Add more debug logging
             console.print(

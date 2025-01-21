@@ -21,11 +21,13 @@ import pytest
 import pytest_asyncio
 
 from utils.schema import (
+    AnalystDataset,
     BusinessAnalysisRequest,
     BusinessAnalysisResult,
-    CleanseResult,
+    CleansedDatasetsAndMetadata,
     DataDictionariesAndMetadata,
-    DatasetInput,
+    DataDictionary,
+    DataDictionaryColumn,
     RunAnalysisRequest,
     RunAnalysisResult,
     RunChartsRequest,
@@ -34,24 +36,24 @@ from utils.schema import (
 
 
 @pytest.fixture(scope="module")
-def dataset_loaded(url_diabetes: str) -> DatasetInput:
+def dataset_loaded(url_diabetes: str) -> AnalystDataset:
     df = pd.read_csv(url_diabetes)
     # Replace non-JSON compliant values
     df = df.replace([float("inf"), -float("inf")], None)  # Replace infinity with None
     df = df.where(pd.notnull(df), None)  # Replace NaN with None
 
     # Create dataset dictionary
-    dataset = DatasetInput(
+    dataset = AnalystDataset(
         name=os.path.splitext(os.path.basename(url_diabetes))[0],
-        data=df.to_dict("records"),
+        data=df,
     )
     return dataset
 
 
 @pytest_asyncio.fixture(scope="module")
 async def dataset_cleansed(
-    pulumi_up: Any, dataset_loaded: DatasetInput
-) -> CleanseResult:
+    pulumi_up: Any, dataset_loaded: AnalystDataset
+) -> CleansedDatasetsAndMetadata:
     from utils.api import (
         cleanse_dataframes,
     )
@@ -60,13 +62,13 @@ async def dataset_cleansed(
     return result
 
 
-def test_dataset_is_cleansed(dataset_cleansed: CleanseResult) -> None:
+def test_dataset_is_cleansed(dataset_cleansed: CleansedDatasetsAndMetadata) -> None:
     assert dataset_cleansed.metadata.total_datasets == 1
 
 
 @pytest_asyncio.fixture(scope="module")
 async def data_dictionary(
-    pulumi_up: Any, dataset_loaded: DatasetInput
+    pulumi_up: Any, dataset_loaded: AnalystDataset
 ) -> DataDictionariesAndMetadata:
     from utils.api import (
         get_dictionary,
@@ -84,16 +86,13 @@ def question() -> str:
 @pytest.fixture
 def run_analysis_request(
     pulumi_up: Any,
-    dataset_cleansed: CleanseResult,
+    dataset_cleansed: CleansedDatasetsAndMetadata,
     data_dictionary: DataDictionariesAndMetadata,
     question: str,
 ) -> RunAnalysisRequest:
     analysis_request = RunAnalysisRequest(
-        data={ds.name: ds.data for ds in dataset_cleansed.datasets},
-        dictionary={
-            d["name"]: d["dictionary"]
-            for d in data_dictionary.model_dump()["dictionaries"]
-        },
+        data=dataset_cleansed.datasets,
+        dictionary=data_dictionary.dictionaries,
         question=question,
     )
     return analysis_request
@@ -133,17 +132,20 @@ def chart_request(
 def business_request(
     pulumi_up: Any, run_analysis_result_canned: RunAnalysisResult, question: str
 ) -> BusinessAnalysisRequest:
-    df = pd.DataFrame.from_records(run_analysis_result_canned.data)
+    assert run_analysis_result_canned.data is not None
     business_request = BusinessAnalysisRequest(
         data=run_analysis_result_canned.data,
-        dictionary=[
-            {
-                "column": col,
-                "description": "Analysis result column",
-                "data_type": str(df[col].dtype),
-            }
-            for col in df.columns
-        ],
+        dictionary=DataDictionary(
+            name="analysis_result",
+            dictionary=[
+                DataDictionaryColumn(
+                    column=col,
+                    description="Analysis result column",
+                    data_type=str(run_analysis_result_canned.data.to_df()[col].dtype),
+                )
+                for col in run_analysis_result_canned.data.to_df().columns
+            ],
+        ),
         question=question,
     )
     return business_request
@@ -158,10 +160,11 @@ async def test_run_analysis(
     )
 
     run_analysis_result = await run_analysis(run_analysis_request)
-    df = pd.DataFrame.from_records(run_analysis_result.data)
+
     assert run_analysis_result.code is not None
     assert len(run_analysis_result.code) > 1
-    assert run_analysis_result.data
+    assert run_analysis_result.data is not None
+    df = run_analysis_result.data.to_df()
     assert df.shape[0] > 0
     assert run_analysis_result.status == "success"
 

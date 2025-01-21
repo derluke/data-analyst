@@ -40,10 +40,10 @@ from utils.api import (
 )
 from utils.database_helpers import Database, app_infra
 from utils.schema import (
-    CleanseResult,
+    AnalystDataset,
+    CleansedDataset,
+    CleansedDatasetsAndMetadata,
     DataDictionariesAndMetadata,
-    DatasetInput,
-    DatasetOutput,
 )
 
 warnings.filterwarnings("ignore")
@@ -66,7 +66,7 @@ if "initialized" not in st.session_state:
 
 
 # Modify process_data to handle coroutine reuse
-def process_data_cached(_datasets: list[DatasetInput]) -> CleanseResult:
+def process_data_cached(_datasets: list[AnalystDataset]) -> CleansedDatasetsAndMetadata:
     """
     Wrapper function to handle async processing with caching
     """
@@ -74,7 +74,7 @@ def process_data_cached(_datasets: list[DatasetInput]) -> CleanseResult:
 
 
 def generate_dictionaries(
-    _cleansed_data: list[DatasetOutput],
+    _cleansed_data: list[CleansedDataset],
 ) -> DataDictionariesAndMetadata:
     """
     Wrapper function to handle async dictionary generation
@@ -82,7 +82,7 @@ def generate_dictionaries(
     return asyncio.run(get_dictionary(_cleansed_data))
 
 
-def process_uploaded_file(file: UploadedFile) -> list[DatasetInput]:
+def process_uploaded_file(file: UploadedFile) -> list[AnalystDataset]:
     """Process a single uploaded file and return a list of (dataset_name, dataframe) tuples
 
     Args:
@@ -99,7 +99,7 @@ def process_uploaded_file(file: UploadedFile) -> list[DatasetInput]:
             df = pd.read_csv(file)
             dataset_name = os.path.splitext(file.name)[0]
             data = cast(list[dict[str, Any]], df.to_dict(orient="records"))
-            results.append(DatasetInput(name=dataset_name, data=data))
+            results.append(AnalystDataset(name=dataset_name, data=data))
             logger.info(
                 f"Loaded CSV {dataset_name}: {len(df)} rows, {len(df.columns)} columns"
             )
@@ -118,7 +118,7 @@ def process_uploaded_file(file: UploadedFile) -> list[DatasetInput]:
                     else base_name
                 )
                 data = cast(list[dict[str, Any]], df.to_dict(orient="records"))
-                results.append(DatasetInput(name=dataset_name, data=data))
+                results.append(AnalystDataset(name=dataset_name, data=data))
                 logger.info(
                     f"Loaded Excel sheet {dataset_name}: {len(df)} rows, {len(df.columns)} columns"
                 )
@@ -142,13 +142,11 @@ def clear_data_callback() -> None:
     st.session_state.data_source = None  # Reset data source flag
 
 
-def process_data_and_update_state(datasets: list[DatasetInput]) -> None:
+def process_data_and_update_state(datasets: list[AnalystDataset]) -> None:
     st.session_state.datasets.extend(datasets)
 
     for ds in datasets:
-        st.success(
-            f"✓ {ds.name}: {len(ds.data)} rows, {len(ds.data[0].keys())} columns"
-        )
+        st.success(f"✓ {ds.name}: {len(ds.to_df())} rows, {len(ds.columns)} columns")
 
     # Process the new data
     logger.info("Starting data processing")

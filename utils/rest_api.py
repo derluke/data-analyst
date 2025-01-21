@@ -38,15 +38,15 @@ from utils.api import (
 from utils.database_helpers import Database
 from utils.schema import (
     AiCatalogDataset,
+    AnalystDataset,
     BusinessAnalysisRequest,
     BusinessAnalysisResult,
     ChatRequest,
-    CleanseResult,
+    CleansedDatasetsAndMetadata,
     DatabaseAnalysisRequest,
     DatabaseAnalysisResult,
     DataDictionariesAndMetadata,
-    DatasetInput,
-    QuestionSuggestions,
+    QuestionSuggestionsAndMetadata,
     RunAnalysisRequest,
     RunAnalysisResult,
     RunChartsRequest,
@@ -141,22 +141,22 @@ async def get_snowflake_data_endpoint(
 
 @app.post("/cleanse_dataframes")
 async def cleanse_dataframes_endpoint(
-    datasets: list[DatasetInput],
-) -> CleanseResult:
+    datasets: list[AnalystDataset],
+) -> CleansedDatasetsAndMetadata:
     return await cleanse_dataframes(datasets)
 
 
 @app.post("/get_dictionary")
 async def get_dictionary_endpoint(
-    datasets: list[DatasetInput],
+    datasets: list[AnalystDataset],
 ) -> DataDictionariesAndMetadata:
     return await get_dictionary(datasets)
 
 
 @app.post("/suggest_questions")
 async def suggest_questions_endpoint(
-    datasets: list[DatasetInput],
-) -> QuestionSuggestions:
+    datasets: list[AnalystDataset],
+) -> QuestionSuggestionsAndMetadata:
     return await suggest_questions(datasets)
 
 

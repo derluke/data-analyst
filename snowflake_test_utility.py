@@ -37,9 +37,9 @@ from utils.rest_api import (  # type: ignore[attr-defined]
     suggest_questions,
 )
 from utils.schema import (
+    AnalystDataset,
     ChatRequest,
     DatabaseAnalysisRequest,
-    DatasetInput,
 )
 
 console = Console()
@@ -307,7 +307,9 @@ async def main() -> None:
             try:
                 # Prepare request for get_dictionary
                 datasets = [
-                    DatasetInput(name=table, data=tables_metadata[table]["sample_data"])
+                    AnalystDataset(
+                        name=table, data=tables_metadata[table]["sample_data"]
+                    )
                     for table in selected_tables
                 ]
 
