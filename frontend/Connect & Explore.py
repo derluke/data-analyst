@@ -27,6 +27,7 @@ sys.path.append("..")
 
 from app_settings import (
     PAGE_ICON,
+    apply_custom_css,
     get_database_loader_message,
     get_database_logo,
     get_page_logo,
@@ -233,9 +234,7 @@ st.set_page_config(page_title="Connect Data", page_icon=PAGE_ICON, layout="wide"
 
 
 # Custom CSS
-with open("./style.css") as f:
-    css = f.read()
-    st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+apply_custom_css()
 
 # Sidebar for data upload and processing
 with st.sidebar:

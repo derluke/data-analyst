@@ -35,7 +35,7 @@ sys.path.append("..")
 
 
 # Import FastAPI functions directly
-from app_settings import PAGE_ICON, get_page_logo
+from app_settings import PAGE_ICON, apply_custom_css, get_page_logo
 
 from utils.api import (
     get_business_analysis,
@@ -92,22 +92,7 @@ st.set_page_config(
 )
 
 # Custom CSS
-st.markdown(
-    """
-    <style>
-    .main {
-        padding: 0rem 1rem;
-    }
-    .stProgress > div > div > div > div {
-        background-color: #1c83e1;
-    }
-    .stDownloadButton button {
-        width: 100%;
-    }
-    </style>
-""",
-    unsafe_allow_html=True,
-)
+apply_custom_css()
 
 
 def clear_chat() -> None:

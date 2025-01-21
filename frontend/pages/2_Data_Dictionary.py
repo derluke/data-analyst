@@ -20,7 +20,7 @@ import pandas as pd
 import streamlit as st
 
 sys.path.append("..")
-from app_settings import PAGE_ICON, get_page_logo
+from app_settings import PAGE_ICON, apply_custom_css, get_page_logo
 
 from utils.schema import DataDictionary
 
@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 # Page config
 st.set_page_config(page_title="Data Dictionary", page_icon=PAGE_ICON, layout="wide")
+
+# Custom CSS
+apply_custom_css()
 
 st.image(get_page_logo(), width=200)
 st.title("Dictionary")

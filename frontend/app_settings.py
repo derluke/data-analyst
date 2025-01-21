@@ -43,3 +43,9 @@ def get_database_loader_message(app_infra: AppInfra) -> str:
     elif app_infra.database == "bigquery":
         return "Load Datasets from BigQuery"
     return "No database available"
+
+
+def apply_custom_css() -> None:
+    with open("./style.css") as f:
+        css = f.read()
+        st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
