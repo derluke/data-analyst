@@ -47,6 +47,7 @@ from utils.schema import (
 logger = logging.getLogger("DataAnalystFrontend")
 
 T = TypeVar("T")
+_DEFAULT_DB_QUERY_TIMEOUT = 300
 
 
 @dataclass
@@ -66,7 +67,7 @@ class NoDatabaseCredentialArgs:
 
 class DatabaseOperator(ABC, Generic[T]):
     @abstractmethod
-    def __init__(self, credentials: T): ...
+    def __init__(self, credentials: T, default_timeout: int): ...
 
     @abstractmethod
     @contextmanager
@@ -74,20 +75,18 @@ class DatabaseOperator(ABC, Generic[T]):
 
     @abstractmethod
     def execute_query(
-        self,
-        query: str,
-        timeout: int = 300,
+        self, query: str, timeout: int | None = None
     ) -> tuple[
         (list[tuple[Any, ...]] | list[dict[str, Any]]), DatabaseExecutionMetadata
     ]: ...
 
     @abstractmethod
-    def get_tables(self) -> list[str]:
+    def get_tables(self, timeout: int | None = None) -> list[str]:
         return []
 
     @abstractmethod
     def get_data(
-        self, *table_names: str, sample_size: int = 5000
+        self, *table_names: str, sample_size: int = 5000, timeout: int | None = None
     ) -> list[DatasetInput]:
         return []
 
@@ -97,7 +96,11 @@ class DatabaseOperator(ABC, Generic[T]):
 
 
 class NoDatabaseOperator(DatabaseOperator[NoDatabaseCredentialArgs]):
-    def __init__(self, credentials: NoDatabaseCredentials):
+    def __init__(
+        self,
+        credentials: NoDatabaseCredentials,
+        default_timeout: int = _DEFAULT_DB_QUERY_TIMEOUT,
+    ):
         self._credentials = credentials
 
     @contextmanager
@@ -107,7 +110,7 @@ class NoDatabaseOperator(DatabaseOperator[NoDatabaseCredentialArgs]):
     def execute_query(
         self,
         query: str,
-        timeout: int = 300,
+        timeout: int | None = 300,
     ) -> tuple[
         (list[tuple[Any, ...]] | list[dict[str, Any]]), DatabaseExecutionMetadata
     ]:
@@ -115,11 +118,11 @@ class NoDatabaseOperator(DatabaseOperator[NoDatabaseCredentialArgs]):
             query_id="", row_count=0, execution_time=0, db_schema=""
         )
 
-    def get_tables(self) -> list[str]:
+    def get_tables(self, timeout: int | None = 300) -> list[str]:
         return []
 
     def get_data(
-        self, *table_names: str, sample_size: int = 5000
+        self, *table_names: str, sample_size: int = 5000, timeout: int | None = 300
     ) -> list[DatasetInput]:
         return []
 
@@ -128,8 +131,13 @@ class NoDatabaseOperator(DatabaseOperator[NoDatabaseCredentialArgs]):
 
 
 class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
-    def __init__(self, credentials: SnowflakeCredentials):
+    def __init__(
+        self,
+        credentials: SnowflakeCredentials,
+        default_timeout: int = _DEFAULT_DB_QUERY_TIMEOUT,
+    ):
         self._credentials = credentials
+        self.default_timeout = default_timeout
 
     def _get_private_key(self) -> bytes | None:
         key_path = self._credentials.snowflake_key_path
@@ -187,9 +195,7 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
         connection.close()
 
     def execute_query(
-        self,
-        query: str,
-        timeout: int = 300,
+        self, query: str, timeout: int | None = None
     ) -> tuple[
         (list[tuple[Any, ...]] | list[dict[str, Any]]), DatabaseExecutionMetadata
     ]:
@@ -203,7 +209,7 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
         Returns:
             Tuple of (results, metadata)
         """
-
+        timeout = timeout if timeout is not None else self.default_timeout
         conn: snowflake.connector.SnowflakeConnection
         try:
             with self.create_connection() as conn:
@@ -249,8 +255,9 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
             raise Exception(f"Query execution failed: {str(e)}")
 
     @functools.lru_cache(maxsize=1)
-    def get_tables(self) -> list[str]:
+    def get_tables(self, timeout: int | None = None) -> list[str]:
         """Fetch list of tables from Snowflake schema"""
+        timeout = timeout if timeout is not None else self.default_timeout
 
         conn: snowflake.connector.SnowflakeConnection
         try:
@@ -259,7 +266,11 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
                     # Log current session info
                     logger.info("Checking current session settings...")
                     cursor.execute(
-                        "SELECT CURRENT_DATABASE(), CURRENT_SCHEMA(), CURRENT_ROLE(), CURRENT_WAREHOUSE()"
+                        f"ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = {timeout}"
+                    )
+
+                    cursor.execute(
+                        "SELECT CURRENT_DATABASE(), CURRENT_SCHEMA(), CURRENT_ROLE(), CURRENT_WAREHOUSE()",
                     )
                     current_settings = cursor.fetchone()
                     logger.info(
@@ -272,7 +283,7 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
                         SELECT COUNT(*) 
                         FROM {self._credentials.database}.INFORMATION_SCHEMA.SCHEMATA 
                         WHERE SCHEMA_NAME = '{self._credentials.db_schema}'
-                    """
+                    """,
                     )
                     schema_exists = cursor.fetchone()[0]  # type: ignore[index]
                     logger.info(f"Schema exists check: {schema_exists > 0}")
@@ -316,7 +327,7 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
 
     @functools.lru_cache(maxsize=8)
     def get_data(
-        self, *table_names: str, sample_size: int = 5000
+        self, *table_names: str, sample_size: int = 5000, timeout: int | None = None
     ) -> list[DatasetInput]:
         """Load selected tables from Snowflake as pandas DataFrames
 
@@ -327,6 +338,8 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
         Returns:
         - Dictionary of table names to list of records
         """
+
+        timeout = timeout if timeout is not None else self.default_timeout
 
         conn: snowflake.connector.SnowflakeConnection
 
@@ -339,7 +352,9 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
                     try:
                         qualified_table = f"{self._credentials.database}.{self._credentials.db_schema}.{table}"
                         logger.info(f"Fetching data from table: {qualified_table}")
-
+                        cursor.execute(
+                            f"ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = {timeout}"
+                        )
                         cursor.execute(
                             f"""
                             SELECT * FROM {qualified_table}
@@ -397,10 +412,15 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
 
 
 class BigQueryOperator(DatabaseOperator[BigQueryCredentialArgs]):
-    def __init__(self, credentials: GoogleCredentials):
+    def __init__(
+        self,
+        credentials: GoogleCredentials,
+        default_timeout: int = _DEFAULT_DB_QUERY_TIMEOUT,
+    ):
         self._credentials = credentials
         self._credentials.db_schema = self._credentials.db_schema
         self._database = credentials.service_account_key["project_id"]
+        self.default_timeout = default_timeout
 
     @contextmanager
     def create_connection(self) -> Generator[bigquery.Client]:
@@ -410,25 +430,25 @@ class BigQueryOperator(DatabaseOperator[BigQueryCredentialArgs]):
             GoogleCredentials().service_account_key,
             scopes=["https://www.googleapis.com/auth/cloud-platform"],
         )
-        client = bigquery.Client(credentials=google_credentials)
+        client = bigquery.Client(
+            credentials=google_credentials,
+        )
 
         yield client
 
         client.close()  # type: ignore
 
     def execute_query(
-        self,
-        query: str,
-        timeout: int = 300,
+        self, query: str, timeout: int | None = None
     ) -> tuple[
         (list[tuple[Any, ...]] | list[dict[str, Any]]), DatabaseExecutionMetadata
     ]:
-        # TODO: Set timeout
         conn: bigquery.Client
+        timeout = timeout if timeout is not None else self.default_timeout
         try:
             with self.create_connection() as conn:
                 start_time = time.time()
-                results = conn.query(query)
+                results = conn.query(query, timeout=timeout)
 
                 sql_result: pd.DataFrame = results.to_dataframe()
 
@@ -455,8 +475,9 @@ class BigQueryOperator(DatabaseOperator[BigQueryCredentialArgs]):
             raise Exception(f"Query execution failed: {str(e)}")
 
     @functools.lru_cache(maxsize=1)
-    def get_tables(self) -> list[str]:
+    def get_tables(self, timeout: int | None = None) -> list[str]:
         """Fetch list of tables from BigQuery schema"""
+        timeout = timeout if timeout is not None else self.default_timeout
 
         conn: bigquery.Client
 
@@ -464,7 +485,9 @@ class BigQueryOperator(DatabaseOperator[BigQueryCredentialArgs]):
             with self.create_connection() as conn:
                 tables = [
                     i.table_id
-                    for i in conn.list_tables(str(self._credentials.db_schema))
+                    for i in conn.list_tables(
+                        str(self._credentials.db_schema), timeout=timeout
+                    )
                 ]
 
                 # Log detailed results
@@ -482,8 +505,10 @@ class BigQueryOperator(DatabaseOperator[BigQueryCredentialArgs]):
 
     @functools.lru_cache(maxsize=8)
     def get_data(
-        self, *table_names: str, sample_size: int = 5000
+        self, *table_names: str, sample_size: int = 5000, timeout: int | None = None
     ) -> list[DatasetInput]:
+        timeout = timeout if timeout is not None else self.default_timeout
+
         dataframes = []
 
         conn: bigquery.Client
@@ -501,7 +526,8 @@ class BigQueryOperator(DatabaseOperator[BigQueryCredentialArgs]):
                             f"""
                             SELECT * FROM `{qualified_table}`
                             LIMIT {sample_size}
-                        """
+                        """,
+                            timeout=timeout,
                         ).to_dataframe()
 
                         # Convert date/datetime columns to string format
