@@ -498,40 +498,21 @@ class CodeValidator:
     ALLOWED_MODULES = {"pandas", "numpy", "scipy", "statsmodels", "sklearn"}
 
     @staticmethod
-    def validate_imports(code: str) -> tuple[bool, str]:
+    def validate_imports(code: str) -> None:
         """Check if code only imports allowed modules"""
-        try:
-            tree = ast.parse(code)
-            imports: list[str] = []
+        tree = ast.parse(code)
+        imports: list[str] = []
 
-            for node in ast.walk(tree):
-                if isinstance(node, (ast.Import, ast.ImportFrom)):
-                    if isinstance(node, ast.Import):
-                        imports.extend(n.name.split(".")[0] for n in node.names)
-                    elif node.module is not None:
-                        imports.append(node.module.split(".")[0])
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                if isinstance(node, ast.Import):
+                    imports.extend(n.name.split(".")[0] for n in node.names)
+                elif node.module is not None:
+                    imports.append(node.module.split(".")[0])
 
-            illegal_imports = set(imports) - CodeValidator.ALLOWED_MODULES
-            if illegal_imports:
-                return False, f"Illegal imports detected: {illegal_imports}"
-
-            return True, "Validation passed"
-
-        except SyntaxError as e:
-            return False, f"Syntax error in code: {str(e)}"
-        except Exception as e:
-            return False, f"Validation error: {str(e)}"
-
-
-class CodeGenerationResult(BaseModel):
-    """Container for code generation results"""
-
-    code: str
-    description: str
-    validation: ValidationMessage
-    metadata: dict[str, Any]
-    attempts: int
-    validation_errors: list[str]
+        illegal_imports = set(imports) - CodeValidator.ALLOWED_MODULES
+        if illegal_imports:
+            raise ImportError(f"Illegal imports detected: {illegal_imports}")
 
 
 class QuestionList(BaseModel):

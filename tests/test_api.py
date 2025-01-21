@@ -193,3 +193,6 @@ async def test_run_business_analysis(
     assert len(run_business_result.bottom_line) > 1
     assert len(run_business_result.additional_insights) > 1
     assert len(run_business_result.follow_up_questions) > 0
+
+
+# TODO: add tests of reflection in run_analysis once test_api refactored/cleaned up

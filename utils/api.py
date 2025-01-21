@@ -83,7 +83,6 @@ from utils.schema import (
     CleanseResult,
     CleansingReport,
     Code,
-    CodeGenerationResult,
     CodeValidator,
     DatabaseAnalysisCode,
     DatabaseAnalysisMetadata,
@@ -193,9 +192,22 @@ class InvalidGeneratedCode(Exception):
         self.exception = exception
 
 
+class MaxReflectionAttempts(Exception):
+    """Raised after final attempt to self-correct LLM code generation"""
+
+    def __init__(
+        self, *args: Any, exception_history: list[InvalidGeneratedCode] | None = None
+    ):
+        super().__init__(*args)
+        self.exception_history = exception_history
+
+
+U = TypeVar("U")
+
+
 def reflect_code_generation_errors(
-    max_retries: int,
-) -> Callable[[Callable[..., Awaitable[Any]]], Callable[..., Awaitable[Any]]]:
+    max_attempts: int,
+) -> Callable[[Callable[..., Awaitable[U]]], Callable[..., Awaitable[U]]]:
     """Reflect LLM code generation errors for self-correction
 
     Exceptions raised by invalid code will be injected back into the
@@ -206,27 +218,27 @@ def reflect_code_generation_errors(
     """
 
     def _outer_wrapper(
-        f: Callable[..., Awaitable[Any]],
-    ) -> Callable[..., Awaitable[Any]]:
+        f: Callable[..., Awaitable[U]],
+    ) -> Callable[..., Awaitable[U]]:
         @functools.wraps(f)
-        async def _inner_wrapper(*args: Any, **kwargs: Any) -> Any:
+        async def _inner_wrapper(*args: Any, **kwargs: Any) -> U:
             attempts = 1
             exception_history: list[InvalidGeneratedCode] = []
             kwargs["exception_history"] = exception_history
-            while attempts <= max_retries:
+            while attempts <= max_attempts:
                 try:
                     return await f(*args, **kwargs)
                 except InvalidGeneratedCode as e:
                     msg = type(e.exception).__name__ + f": {str(e.exception)}"
                     logger.info(
-                        "LLM generated code raised {msg}\nGenerated code:\n{e.code}"
+                        f"LLM generated code raised {msg}\nGenerated code:\n{e.code}"
                     )
                     exception_history.append(e)
                 attempts += 1
 
-            msg = "{f.__name__} failed to generate valid code after {max_retries} attempts"
+            msg = f"{f.__name__} failed to generate valid code after {max_attempts} attempts"
             logger.error(msg)
-            raise RuntimeError(msg)
+            raise MaxReflectionAttempts(msg, exception_history=exception_history)
 
         return _inner_wrapper
 
@@ -790,8 +802,8 @@ async def _create_charts(
 
 
 async def _generate_python_analysis_code(
-    request: RunAnalysisRequest, validation_error: dict[str, str] = {}
-) -> dict[str, str]:
+    request: RunAnalysisRequest, validation_error: InvalidGeneratedCode | None = None
+) -> str:
     """
     Generate Python analysis code based on JSON data and question.
 
@@ -800,7 +812,7 @@ async def _generate_python_analysis_code(
     - validation_errors: Past validation errors to include in prompt
 
     Returns:
-    - Dictionary containing generated code and description
+    - Generated code
     """
     # Convert dictionary data structure to list of columns for all datasets
     all_columns = []
@@ -857,15 +869,16 @@ async def _generate_python_analysis_code(
 
     # Add error context if available
     if validation_error:
+        msg = type(validation_error).__name__ + f": {str(validation_error)}"
         messages.extend(
             [
                 ChatCompletionUserMessageParam(
                     role="user",
-                    content=f"Previous attempt failed with error: {validation_error['error_message']}",
+                    content=f"Previous attempt failed with error: {msg}",
                 ),
                 ChatCompletionUserMessageParam(
                     role="user",
-                    content=f"Failed code: {validation_error['failed_code']}",
+                    content=f"Failed code: {validation_error.code}",
                 ),
                 ChatCompletionUserMessageParam(
                     role="user",
@@ -881,66 +894,7 @@ async def _generate_python_analysis_code(
         messages=messages,
     )
 
-    return completion.model_dump()
-
-
-async def _generate_analysis_code(
-    request: RunAnalysisRequest, max_attempts: int = 10
-) -> CodeGenerationResult:
-    """Generate and validate analysis code with retry logic
-
-    Args:
-        request: RunAnalysisRequest containing data and question
-        max_attempts: Maximum number of retry attempts for validation failures
-
-    Returns:
-        CodeGenerationResult containing generated code and metadata
-    """
-    attempts = 0
-    validation_errors: list[str] = []
-    validation_error: dict[str, str] = {}
-
-    while attempts < max_attempts:
-        attempts += 1
-        try:
-            # Get code from OpenAI
-            code_response = await _generate_python_analysis_code(
-                request, validation_error
-            )
-
-            # Validate the generated code
-            is_valid, validation_message = CodeValidator.validate_imports(
-                code_response["code"]
-            )
-
-            if is_valid:
-                return CodeGenerationResult(
-                    code=code_response["code"],
-                    description=code_response["description"],
-                    validation=ValidationMessage(
-                        is_valid=True, message=validation_message
-                    ),
-                    metadata={
-                        "timestamp": datetime.now().isoformat(),
-                        "question": request.question,
-                        "attempts": attempts,
-                        "validation_history": validation_errors,
-                    },
-                    attempts=attempts,
-                    validation_errors=validation_errors,
-                )
-
-            # If validation failed, add error to history and retry
-            validation_errors.append(validation_message)
-            validation_error["error_message"] = validation_message
-            validation_error["failed_code"] = code_response["code"]
-
-        except Exception as e:
-            msg = type(e).__name__ + f": {str(e)}"
-            validation_errors.append(msg)
-
-    # If we get here, we've exhausted our attempts
-    raise RuntimeError(f"Failed to generate valid code after {max_attempts} attempts")
+    return cast(str, completion.model_dump()["code"])
 
 
 @cache
@@ -1321,138 +1275,94 @@ async def get_business_analysis(
         raise
 
 
-async def run_analysis(request: RunAnalysisRequest) -> RunAnalysisResult:
-    """
-    Execute analysis workflow on datasets.
-
-    Contains integration and retry logic
-    """
-    # TODO: should align to the run_charts refactor
-    max_attempts = 3
-    attempts = 0
-    error_history: list[AnalysisError] = []
-
-    # Input validation
+@reflect_code_generation_errors(max_attempts=3)
+async def _run_analysis(
+    request: RunAnalysisRequest,
+    exception_history: list[InvalidGeneratedCode] | None = None,
+) -> RunAnalysisResult:
     if not request.data:
         raise ValueError("Input data cannot be empty")
 
+    if exception_history is None:
+        exception_history = []
+
+    code = await _generate_python_analysis_code(
+        request, next(iter(exception_history), None)
+    )
+
+    dataframes: dict[str, pd.DataFrame] = {}
+    for dataset_name, dataset_records in request.data.items():
+        if dataset_records:
+            df = pd.DataFrame(dataset_records)
+            dataframes[dataset_name] = df
+        else:
+            dataframes[dataset_name] = pd.DataFrame()
+
+    # Create namespace for execution
+    namespace = {"pd": pd, "np": np, "dfs": dataframes}
+    # Capture stdout and stderr
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    # Execute the code
     try:
-        # Convert JSON to DataFrames dictionary
-        dataframes: dict[str, pd.DataFrame] = {}
-        for dataset_name, dataset_records in request.data.items():
-            if dataset_records:
-                df = pd.DataFrame(dataset_records)
-                dataframes[dataset_name] = df
-            else:
-                dataframes[dataset_name] = pd.DataFrame()
+        CodeValidator.validate_imports(code)
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            exec(code, namespace)
 
-        while True:  # Changed from while attempts < max_attempts
-            attempts += 1
-
-            try:
-                # Update request with error context if available
-                if error_history:
-                    request.error_message = error_history[-1].error
-                    request.failed_code = error_history[-1].code
-
-                # Generate code
-                code_result = await _generate_analysis_code(request, max_attempts=4)
-
-                # Validate the generated code
-                if not code_result.validation.is_valid:
-                    error_history.append(
-                        AnalysisError(
-                            attempt=attempts,
-                            error=code_result.validation.message,
-                            error_type="validation_error",
-                            code=code_result.code,
-                            timestamp=datetime.now().isoformat(),
-                            memory_usage=_get_memory_usage(),
-                        )
-                    )
-                    continue
-
-                # Create namespace for execution
-                namespace = {"pd": pd, "np": np, "dfs": dataframes}
-
-                # Capture stdout and stderr
-                stdout = io.StringIO()
-                stderr = io.StringIO()
-
-                # Execute the code
-                with redirect_stdout(stdout), redirect_stderr(stderr):
-                    exec(code_result.code, namespace)
-
-                    if "analyze_data" not in namespace:
-                        raise ValueError(
-                            "Generated code did not define analyze_data function"
-                        )
-
-                    if not isinstance(namespace["analyze_data"], FunctionType):
-                        raise ValueError("analyze_data is not a function")
-
-                    result = namespace["analyze_data"](dataframes)
-
-                    if not isinstance(result, (pd.DataFrame, list, dict)):
-                        result = pd.DataFrame(result)
-                    if isinstance(result, pd.DataFrame):
-                        result = result.to_dict("records")
-
-                # If we get here, execution was successful - explicit return
-                return RunAnalysisResult(
-                    status="success",
-                    code=code_result.code,
-                    data=result,
-                    metadata=RunAnanlysisResultMetadata(
-                        timestamp=datetime.now().isoformat(),
-                        attempts=attempts,
-                        error_history=error_history,
-                        stdout=stdout.getvalue(),
-                        stderr=stderr.getvalue(),
-                        datasets_analyzed=len(dataframes),
-                        total_rows_analyzed=sum(
-                            len(df) for df in dataframes.values() if not df.empty
-                        ),
-                        total_columns_analyzed=sum(
-                            len(df.columns)
-                            for df in dataframes.values()
-                            if not df.empty
-                        ),
-                    ),
+            if "analyze_data" not in namespace:
+                raise NameError(
+                    "Generated code did not define a valid `analyze_data` function"
                 )
 
-            except Exception as e:
-                error_history.append(
-                    AnalysisError(
-                        attempt=attempts,
-                        error=str(e),
-                        error_type=type(e).__name__,
-                        code=code_result.code if "code_result" in locals() else None,
-                        stdout=stdout.getvalue() if "stdout" in locals() else "",
-                        stderr=stderr.getvalue() if "stderr" in locals() else "",
-                        timestamp=datetime.now().isoformat(),
-                        memory_usage=_get_memory_usage(),
-                    )
-                )
+            if not isinstance(namespace["analyze_data"], FunctionType):
+                raise TypeError("`analyze_data` must be a function")
 
-                if attempts >= max_attempts:
-                    # Explicit return for failure case
-                    return RunAnalysisResult(
-                        status="failed",
-                        suggestions="Consider reformulating the question or checking data quality",
-                        metadata=RunAnanlysisResultMetadata(
-                            timestamp=datetime.now().isoformat(),
-                            attempts=attempts,
-                            error_history=error_history,
-                        ),
-                    )
-                # If not max attempts, continue the loop
-                continue
+            result = namespace["analyze_data"](dataframes)
 
+            if not isinstance(result, (pd.DataFrame, list, dict)):
+                result = pd.DataFrame(result)
+            if isinstance(result, pd.DataFrame):
+                result = result.to_dict("records")
     except Exception as e:
-        msg = type(e).__name__ + f": {str(e)}"
-        logger.error(f"Error in run_analysis: {msg}")
-        raise
+        raise InvalidGeneratedCode(code=code, exception=e)
+    return RunAnalysisResult(
+        status="success",
+        code=code,
+        data=result,
+        metadata=RunAnanlysisResultMetadata(
+            timestamp=datetime.now().isoformat(),
+            attempts=len(exception_history) + 1,
+            error_history=[],  # TODO: fix if needed in final interface
+            stdout=stdout.getvalue(),
+            stderr=stderr.getvalue(),
+            datasets_analyzed=len(dataframes),
+            total_rows_analyzed=sum(
+                len(df) for df in dataframes.values() if not df.empty
+            ),
+            total_columns_analyzed=sum(
+                len(df.columns) for df in dataframes.values() if not df.empty
+            ),
+        ),
+    )
+
+
+async def run_analysis(
+    request: RunAnalysisRequest,
+) -> RunAnalysisResult:
+    """Execute analysis workflow on datasets."""
+    try:
+        return await _run_analysis(request)
+    except MaxReflectionAttempts:
+        return RunAnalysisResult(
+            status="failed",
+            suggestions="Consider reformulating the question or checking data quality",
+            metadata=RunAnanlysisResultMetadata(
+                timestamp=datetime.now().isoformat(),
+                attempts=0,  # TODO: fix if needed in final interface
+                error_history=[],  # TODO: fix if needed in final interface
+            ),
+        )
 
 
 async def _get_database_analysis_code(
