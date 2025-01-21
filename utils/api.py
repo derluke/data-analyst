@@ -136,7 +136,8 @@ except ValidationError as e:
         "If running in DataRobot, verify your runtime parameters have been set correctly."
     ) from e
 
-MODEL_MODE = "openai"
+ALTERNATIVE_LLM_BIG = "gpt-4o"
+ALTERNATIVE_LLM_SMALL = "gpt-4o-mini"
 DICTIONARY_BATCH_SIZE = 10
 MAX_AI_CATALOG_DATASET_SIZE = 400e6  # aligns to 400MB set in streamlit config.toml
 DISK_CACHE_LIMIT_BYTES = 512e6
@@ -381,7 +382,7 @@ def _process_column_batch(
     # Get descriptions from OpenAI
     completion: DictionaryGeneration = client.chat.completions.create(
         response_model=DictionaryGeneration,
-        model="gpt-4o-mini",
+        model=ALTERNATIVE_LLM_SMALL,
         messages=messages,
     )
     # response = json.loads(completion.choices[0].message.content)
@@ -579,7 +580,7 @@ async def _generate_question_suggestions(
 
     completion: QuestionListGeneration = client.chat.completions.create(
         response_model=QuestionListGeneration,
-        model="gpt-4o-mini",
+        model=ALTERNATIVE_LLM_SMALL,
         messages=messages,
     )
 
@@ -699,7 +700,7 @@ async def _create_charts(
             # Get response based on model mode
             response: CodeGeneration = client.chat.completions.create(
                 response_model=CodeGeneration,
-                model="gpt-4o",
+                model=ALTERNATIVE_LLM_BIG,
                 temperature=0,
                 messages=messages,
             )
@@ -890,7 +891,7 @@ async def _generate_python_analysis_code(
 
     completion: CodeGeneration = client.chat.completions.create(
         response_model=CodeGeneration,
-        model="gpt-4o",
+        model=ALTERNATIVE_LLM_BIG,
         temperature=0.1,
         messages=messages,
     )
@@ -1116,7 +1117,7 @@ async def rephrase_message(messages: ChatRequest) -> dict[str, Any]:
 
     completion: EnhancedQuestionGeneration = client.chat.completions.create(
         response_model=EnhancedQuestionGeneration,
-        model="gpt-4o",
+        model=ALTERNATIVE_LLM_BIG,
         messages=prompt_messages,
     )
 
@@ -1249,7 +1250,7 @@ async def get_business_analysis(
 
         completion: BusinessAnalysisGeneration = client.chat.completions.create(
             response_model=BusinessAnalysisGeneration,
-            model="gpt-4o",
+            model=ALTERNATIVE_LLM_BIG,
             temperature=0.1,
             messages=messages,
         )
@@ -1418,7 +1419,7 @@ async def _get_database_analysis_code(
         # Get response from OpenAI
         completion = client.chat.completions.create(
             response_model=DatabaseAnalysisCodeGeneration,
-            model="gpt-4o",
+            model=ALTERNATIVE_LLM_BIG,
             temperature=0.1,
             messages=messages,
         )
