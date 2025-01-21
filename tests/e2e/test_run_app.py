@@ -16,9 +16,51 @@ import pytest
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 
-from tests.e2e.utils import (
-    wait_for_element_to_be_visible,
-)
+from tests.e2e.utils import click_element, wait_for_element_to_be_visible
+
+
+def load_from_database(browser: webdriver.Chrome, dataset: str) -> None:
+    click_element(
+        browser, By.CSS_SELECTOR, 'div[data-testid="stExpander"]:nth-of-type(3)'
+    )
+
+    assert wait_for_element_to_be_visible(
+        browser,
+        By.XPATH,
+        "//p[contains(text(), 'Load Datasets from Snowflake')]",
+    )
+
+    click_element(
+        browser,
+        By.XPATH,
+        "(//div[contains(text(), 'Choose an option')])[2]",
+    )
+
+    click_element(
+        browser,
+        By.XPATH,
+        f"//div[contains(text(), '{dataset}')]",
+    )
+
+    # click on another element to close the dropdown
+    click_element(
+        browser,
+        By.XPATH,
+        "//p[contains(text(), 'Select datasets from AI Catalog')]",
+    )
+
+    click_element(
+        browser,
+        By.XPATH,
+        "//p[contains(text(), 'Load Selected Tables')]",
+    )
+
+    assert wait_for_element_to_be_visible(
+        browser,
+        By.XPATH,
+        "//p[contains(text(), '✅ Data processed and dictionaries generated successfully!')]",
+        60,
+    )
 
 
 @pytest.mark.usefixtures("check_if_logged_in")
@@ -28,4 +70,47 @@ def test_app_loaded(browser: webdriver.Chrome, get_app_url: str) -> None:
         browser,
         By.XPATH,
         "//p[contains(text(), 'Upload and process your data using the sidebar to get started')]",
+        60,
+    )
+
+
+@pytest.mark.usefixtures("check_if_logged_in")
+def test_load_from_database(browser: webdriver.Chrome, get_app_url: str) -> None:
+    browser.get(get_app_url)
+    load_from_database(browser, "LENDING_CLUB_PROFILE")
+
+    assert wait_for_element_to_be_visible(
+        browser, By.XPATH, "//p[contains(text(), 'View Cleaning Report')]", 60
+    )
+
+
+@pytest.mark.usefixtures("check_if_logged_in")
+def test_data_dictionary_loaded(browser: webdriver.Chrome, get_app_url: str) -> None:
+    browser.get(get_app_url)
+    load_from_database(browser, "LENDING_CLUB_PROFILE")
+
+    click_element(
+        browser,
+        By.XPATH,
+        "//span[contains(text(), 'Data Dictionary')]",
+    )
+
+    assert wait_for_element_to_be_visible(
+        browser, By.XPATH, "//p[contains(text(), 'Download Data Dictionary')]"
+    )
+
+
+@pytest.mark.usefixtures("check_if_logged_in")
+def test_chat_page_loaded(browser: webdriver.Chrome, get_app_url: str) -> None:
+    browser.get(get_app_url)
+    load_from_database(browser, "LENDING_CLUB_PROFILE")
+
+    click_element(
+        browser,
+        By.XPATH,
+        "//span[contains(text(), 'Chat With Data')]",
+    )
+
+    assert wait_for_element_to_be_visible(
+        browser, By.CSS_SELECTOR, 'textarea[data-testid="stChatInputTextArea"]'
     )

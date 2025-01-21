@@ -46,6 +46,7 @@ def click_element(
     :param value: Locator value
     :param timeout: Maximum time to wait for the element
     """
+    wait_for_element_to_be_clickable(browser, by, value)
     element = find_element(browser, by, value, timeout)
     element.click()
 
