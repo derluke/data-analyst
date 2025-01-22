@@ -16,7 +16,21 @@ import pytest
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 
-from tests.e2e.utils import click_element, wait_for_element_to_be_visible
+from tests.e2e.utils import (
+    click_element,
+    download_file,
+    find_element,
+    wait_for_element_to_be_visible,
+)
+
+
+def assert_data_processed(browser) -> None:
+    assert wait_for_element_to_be_visible(
+        browser,
+        By.XPATH,
+        "//p[contains(text(), '✅ Data processed and dictionaries generated successfully!')]",
+        120,
+    )
 
 
 def load_from_database(browser: webdriver.Chrome, dataset: str) -> None:
@@ -55,12 +69,7 @@ def load_from_database(browser: webdriver.Chrome, dataset: str) -> None:
         "//p[contains(text(), 'Load Selected Tables')]",
     )
 
-    assert wait_for_element_to_be_visible(
-        browser,
-        By.XPATH,
-        "//p[contains(text(), '✅ Data processed and dictionaries generated successfully!')]",
-        60,
-    )
+    assert_data_processed(browser)
 
 
 @pytest.mark.usefixtures("check_if_logged_in")
@@ -113,4 +122,66 @@ def test_chat_page_loaded(browser: webdriver.Chrome, get_app_url: str) -> None:
 
     assert wait_for_element_to_be_visible(
         browser, By.CSS_SELECTOR, 'textarea[data-testid="stChatInputTextArea"]'
+    )
+
+
+@pytest.mark.usefixtures("check_if_logged_in")
+def test_file_upload(browser: webdriver.Chrome, get_app_url: str) -> None:
+    ten_k_diabetes_20 = download_file(
+        browser,
+        "https://s3.amazonaws.com/datarobot_public_datasets/10k_diabetes_20.csv",
+    )
+    browser.get(get_app_url)
+
+    file_input = find_element(
+        browser, By.CSS_SELECTOR, 'input[data-testid="stFileUploaderDropzoneInput"]'
+    )
+    file_input.send_keys(str(ten_k_diabetes_20))
+
+    assert_data_processed(browser)
+
+    click_element(
+        browser,
+        By.XPATH,
+        "//span[contains(text(), 'Data Dictionary')]",
+    )
+
+    assert wait_for_element_to_be_visible(
+        browser, By.XPATH, "//p[contains(text(), 'Download Data Dictionary')]"
+    )
+
+    click_element(
+        browser,
+        By.XPATH,
+        "//span[contains(text(), 'Chat With Data')]",
+    )
+
+    chat_input = wait_for_element_to_be_visible(
+        browser, By.CSS_SELECTOR, 'textarea[data-testid="stChatInputTextArea"]'
+    )
+
+    chat_input.send_keys("What is the most common medical specialty of the physician?")
+
+    click_element(
+        browser, By.CSS_SELECTOR, 'button[data-testid="stChatInputSubmitButton"]'
+    )
+
+    assert wait_for_element_to_be_visible(
+        browser, By.XPATH, "//p[contains(text(), 'Bottom Line')]", 60
+    )
+
+    assert wait_for_element_to_be_visible(
+        browser, By.XPATH, "//p[contains(text(), 'Analysis Code')]", 60
+    )
+
+    assert wait_for_element_to_be_visible(
+        browser, By.XPATH, "//p[contains(text(), 'Analysis Results')]", 60
+    )
+
+    assert wait_for_element_to_be_visible(
+        browser, By.XPATH, "//p[contains(text(), 'Additional Insights')]", 60
+    )
+
+    assert wait_for_element_to_be_visible(
+        browser, By.XPATH, "//p[contains(text(), 'Follow-up Questions')]", 60
     )

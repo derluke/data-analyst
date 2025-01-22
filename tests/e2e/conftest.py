@@ -26,7 +26,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from tests.e2e.utils import str_to_bool
+from tests.e2e.utils import DOWNLOADS_FOLDER, str_to_bool
 
 username = os.environ.get("APP_USERNAME", "")
 password = os.environ.get("APP_PASSWORD", "")
@@ -35,6 +35,7 @@ host = os.environ.get("DR_HOST", "").rstrip("/")
 app_url = os.environ.get("APP_URL", None)
 chrome_binary_location = os.environ.get("CHROME_BINARY_LOCATION", None)
 chromedriver_binary_location = os.environ.get("CHROMEDRIVER_BINARY_LOCATION", None)
+
 
 # Define the login URL and the URL to test after login
 login_url = f"{host}/sign-in"
@@ -53,6 +54,9 @@ def browser() -> webdriver.Chrome:  # type: ignore
     options = Options()
     if chrome_binary_location:
         options.binary_location = chrome_binary_location
+
+    prefs = {"download.default_directory": str(DOWNLOADS_FOLDER)}
+    options.add_experimental_option("prefs", prefs)
     service = Service(chromedriver_binary_location)
 
     if not run_visual:

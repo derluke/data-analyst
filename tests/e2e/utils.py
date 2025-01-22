@@ -12,10 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import time
+from pathlib import Path
+
 from selenium import webdriver
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+
+DOWNLOADS_FOLDER = Path(__file__).resolve().parent.absolute() / "downloads"
 
 
 def find_element(
@@ -122,3 +127,22 @@ def str_to_bool(s: str) -> bool:
     if s.lower() in ["true", "yes", "1"]:
         return True
     return False
+
+
+def download_file(browser, url, timeout=60) -> Path:
+    file_name = url.split("/")[-1]
+    downloaded_file_path = DOWNLOADS_FOLDER / file_name
+    if not downloaded_file_path.is_file():
+        browser.get(url)
+        wait_for_download(downloaded_file_path, timeout)
+
+    return downloaded_file_path
+
+
+def wait_for_download(file_path, timeout=60) -> bool:
+    start_time = time.time()
+    if not file_path.is_file():
+        if time.time() - start_time > timeout:
+            raise TimeoutError(f"Download timeout: {file_path}")
+        time.sleep(1)
+    return True
