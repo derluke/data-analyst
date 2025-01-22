@@ -313,8 +313,7 @@ async def main() -> None:
                     for table in selected_tables
                 ]
 
-                _dictionary_result = await get_dictionary(datasets)
-                dictionary_result = _dictionary_result.model_dump()
+                dictionary_result = await get_dictionary(datasets)
                 progress.update(task, completed=True)
 
                 # Display dictionary results
@@ -333,26 +332,24 @@ async def main() -> None:
 
                 # Format dictionary result for display
                 formatted_dict: dict[str, Any] = {}
-                for dict_entry in dictionary_result.get("dictionaries", []):
-                    table_name = dict_entry["name"]
-                    for col_info in dict_entry.get("dictionary", []):
+                for dict_entry in dictionary_result:
+                    table_name = dict_entry.name
+                    for col_info in dict_entry.dictionary:
                         dict_table.add_row(
                             table_name,
-                            col_info.get("column", ""),
-                            col_info.get("data_type", ""),
-                            col_info.get("description", ""),
+                            col_info.column,
+                            col_info.data_type,
+                            col_info.description,
                         )
                         # Also store in formatted dict for later use
                         if table_name not in formatted_dict:
                             formatted_dict[table_name] = {}
-                        formatted_dict[table_name][col_info.get("column", "")] = (
-                            col_info
-                        )
+                        formatted_dict[table_name][col_info.column] = col_info
 
                 console.print(dict_table)
 
                 # Store formatted dictionary for later use
-                dictionary_result = formatted_dict
+                dictionary_result = formatted_dict  # type: ignore
 
             except Exception as e:
                 progress.update(task, completed=True)

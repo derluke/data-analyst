@@ -137,20 +137,6 @@ class DataDictionary(BaseModel):
         )
 
 
-class DataDictionaryMetadata(BaseModel):
-    total_datasets: int
-    processing_start: str
-    batch_times: list[float]
-    errors: list[str]
-    processing_end: str | None = None
-    total_time: float | None = None
-
-
-class DataDictionariesAndMetadata(BaseModel):
-    metadata: DataDictionaryMetadata
-    dictionaries: list[DataDictionary]
-
-
 class DictionaryGeneration(BaseModel):
     """Validates LLM responses for data dictionary generation
 

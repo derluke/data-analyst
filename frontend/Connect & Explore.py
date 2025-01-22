@@ -43,7 +43,7 @@ from utils.database_helpers import Database, app_infra
 from utils.schema import (
     AnalystDataset,
     CleansedDataset,
-    DataDictionariesAndMetadata,
+    DataDictionary,
 )
 
 warnings.filterwarnings("ignore")
@@ -75,7 +75,7 @@ def process_data_cached(_datasets: list[AnalystDataset]) -> list[CleansedDataset
 
 def generate_dictionaries(
     _cleansed_data: list[CleansedDataset],
-) -> DataDictionariesAndMetadata:
+) -> list[DataDictionary]:
     """
     Wrapper function to handle async dictionary generation
     """
@@ -161,7 +161,7 @@ def process_data_and_update_state(datasets: list[AnalystDataset]) -> None:
 
     # Generate data dictionaries
     try:
-        new_dictionaries = generate_dictionaries(cleansed_datasets).dictionaries
+        new_dictionaries = generate_dictionaries(cleansed_datasets)
         st.session_state.data_dictionaries = st.session_state.data_dictionaries + [
             d
             for d in new_dictionaries

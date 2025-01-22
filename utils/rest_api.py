@@ -45,7 +45,7 @@ from utils.schema import (
     CleansedDataset,
     DatabaseAnalysisRequest,
     DatabaseAnalysisResult,
-    DataDictionariesAndMetadata,
+    DataDictionary,
     RunAnalysisRequest,
     RunAnalysisResult,
     RunChartsRequest,
@@ -149,7 +149,7 @@ async def cleanse_dataframes_endpoint(
 @app.post("/get_dictionary")
 async def get_dictionary_endpoint(
     datasets: list[AnalystDataset],
-) -> DataDictionariesAndMetadata:
+) -> list[DataDictionary]:
     return await get_dictionary(datasets)
 
 

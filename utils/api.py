@@ -25,7 +25,6 @@ import re
 import sys
 import tempfile
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime
 from types import FunctionType
@@ -88,10 +87,8 @@ from utils.schema import (
     DatabaseAnalysisMetadata,
     DatabaseAnalysisRequest,
     DatabaseAnalysisResult,
-    DataDictionariesAndMetadata,
     DataDictionary,
     DataDictionaryColumn,
-    DataDictionaryMetadata,
     DictionaryGeneration,
     EnhancedQuestionGeneration,
     MemoryUsage,
@@ -310,9 +307,9 @@ def download_catalog_datasets(*args: Any) -> list[AnalystDataset]:
     return result_datasets
 
 
-def _process_column_batch(
-    columns: List[str], df: pd.DataFrame, batch_size: int = 5
-) -> Dict[str, str]:
+async def _get_dictionary_batch(
+    columns: list[str], df: pd.DataFrame, batch_size: int = 5
+) -> list[DataDictionaryColumn]:
     """Process a batch of columns to get their descriptions"""
 
     # Get sample data and stats for just these columns
@@ -388,22 +385,32 @@ def _process_column_batch(
         descriptions = completion.to_dict()
 
         # Only return descriptions for requested columns
-        return {
-            col: descriptions.get(col, "No description available") for col in columns
-        }
+        return [
+            DataDictionaryColumn(
+                column=col,
+                description=descriptions.get(col, "No description available"),
+                data_type=str(df[col].dtype),
+            )
+            for col in columns
+        ]
 
     except ValueError as e:
         logger.error(f"Invalid dictionary response: {str(e)}")
-        return {col: "No valid description available" for col in columns}
+        return [
+            DataDictionaryColumn(
+                column=col,
+                description="No valid description available",
+                data_type=str(df[col].dtype),
+            )
+            for col in columns
+        ]
 
 
-def _process_dataset(dataset: AnalystDataset) -> DataDictionary:
+async def _get_dictionary(dataset: AnalystDataset) -> DataDictionary:
     """Process a single dataset with parallel column batch processing"""
     try:
-        batch_start = datetime.now()
-
         # Convert JSON to DataFrame
-        df = pd.DataFrame(dataset.data)
+        df = dataset.to_df()
 
         # Add debug logging
         logger.info(f"Processing dataset {dataset.name} with shape {df.shape}")
@@ -414,8 +421,6 @@ def _process_dataset(dataset: AnalystDataset) -> DataDictionary:
             return DataDictionary(
                 name=dataset.name,
                 dictionary=[],
-                cache_hit=False,
-                batch_time=0,
             )
 
         # Split columns into batches
@@ -427,49 +432,21 @@ def _process_dataset(dataset: AnalystDataset) -> DataDictionary:
             f"Created {len(column_batches)} batches for {len(df.columns)} columns"
         )
 
-        # Process column batches using ThreadPoolExecutor
-        batch_results = {}  # Change to dictionary to maintain column-description mapping
-        with ThreadPoolExecutor() as executor:
-            batch_futures = {
-                executor.submit(
-                    _process_column_batch, batch, df, DICTIONARY_BATCH_SIZE
-                ): batch
-                for batch in column_batches
-            }
-
-            # Collect results as they complete
-            for future in as_completed(batch_futures):
-                try:
-                    result = future.result()
-                    # Assuming process_column_batch returns a dictionary mapping columns to descriptions
-                    batch_results.update(
-                        result
-                    )  # Merge results maintaining column mapping
-                except Exception as e:
-                    logger.error(f"Error processing batch: {str(e)}")
-                    continue
-
-        # Combine results
-        dictionary = [
-            DataDictionaryColumn(
-                data_type=str(df[col].dtype),
-                column=col,
-                description=batch_results.get(col, "No description available"),
-            )
-            for col in df.columns
+        tasks = [
+            _get_dictionary_batch(batch, df, DICTIONARY_BATCH_SIZE)
+            for batch in column_batches
         ]
+
+        results = await asyncio.gather(*tasks)
+        dictionary = sum(results, [])
 
         logger.info(
             f"Created dictionary with {len(dictionary)} entries for dataset {dataset.name}"
         )
 
-        batch_time = (datetime.now() - batch_start).total_seconds()
-
         return DataDictionary(
             name=dataset.name,
             dictionary=dictionary,
-            cache_hit=False,
-            batch_time=batch_time,
         )
 
     except Exception as e:
@@ -892,7 +869,7 @@ async def _generate_python_analysis_code(
         messages=messages,
     )
 
-    return cast(str, completion.model_dump()["code"])
+    return completion.code
 
 
 @cache
@@ -978,7 +955,7 @@ async def cleanse_dataframes(
 
 async def get_dictionary(
     datasets: Sequence[AnalystDataset],
-) -> DataDictionariesAndMetadata:
+) -> list[DataDictionary]:
     """
     Generate data dictionary for multiple datasets.
 
@@ -992,50 +969,13 @@ async def get_dictionary(
         # Add debug logging
         logger.info(f"Received dictionary request with {len(datasets)} datasets")
 
-        metadata = DataDictionaryMetadata(
-            total_datasets=len(datasets),
-            processing_start=datetime.now().isoformat(),
-            batch_times=[],
-            errors=[],
-        )
+        tasks = [_get_dictionary(dataset) for dataset in datasets]
 
+        results = await asyncio.gather(*tasks)
         # Process datasets using ThreadPoolExecutor instead of ProcessPoolExecutor
-        with ThreadPoolExecutor() as executor:
-            # Map datasets to futures
-            dataset_futures = {
-                executor.submit(_process_dataset, dataset): dataset.name
-                for dataset in datasets
-            }
-
-            # Add debug logging
-            logger.info(f"Created {len(dataset_futures)} dataset futures")
-
-            # Collect results as they complete
-            results = []
-            for future in as_completed(dataset_futures):
-                dataset_name = dataset_futures[future]
-                try:
-                    result = future.result()
-                    results.append(result)
-                    logger.info(
-                        f"Processed dataset {dataset_name} with {len(result.dictionary)} entries"
-                    )
-                except Exception as e:
-                    error_msg = f"Error processing dataset {dataset_name}: {str(e)}"
-                    logger.error(error_msg)
-                    metadata.errors.append(error_msg)
-                    results.append(DataDictionary(name=dataset_name, dictionary=[]))
-
-        metadata.processing_end = datetime.now().isoformat()
-        metadata.total_time = (
-            datetime.fromisoformat(metadata.processing_end)
-            - datetime.fromisoformat(metadata.processing_start)
-        ).total_seconds()
-
-        response = DataDictionariesAndMetadata(metadata=metadata, dictionaries=results)
 
         logger.info(f"Returning dictionary response with {len(results)} results")
-        return response
+        return results
 
     except Exception as e:
         msg = type(e).__name__ + f": {str(e)}"

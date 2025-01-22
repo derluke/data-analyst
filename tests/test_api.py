@@ -25,7 +25,6 @@ from utils.schema import (
     BusinessAnalysisRequest,
     BusinessAnalysisResult,
     CleansedDataset,
-    DataDictionariesAndMetadata,
     DataDictionary,
     DataDictionaryColumn,
     RunAnalysisRequest,
@@ -69,7 +68,7 @@ def test_dataset_is_cleansed(dataset_cleansed: list[CleansedDataset]) -> None:
 @pytest_asyncio.fixture(scope="module")
 async def data_dictionary(
     pulumi_up: Any, dataset_loaded: AnalystDataset
-) -> DataDictionariesAndMetadata:
+) -> list[DataDictionary]:
     from utils.api import (
         get_dictionary,
     )
@@ -87,12 +86,12 @@ def question() -> str:
 def run_analysis_request(
     pulumi_up: Any,
     dataset_cleansed: list[CleansedDataset],
-    data_dictionary: DataDictionariesAndMetadata,
+    data_dictionary: list[DataDictionary],
     question: str,
 ) -> RunAnalysisRequest:
     analysis_request = RunAnalysisRequest(
         data=dataset_cleansed,
-        dictionary=data_dictionary.dictionaries,
+        dictionary=data_dictionary,
         question=question,
     )
     return analysis_request
