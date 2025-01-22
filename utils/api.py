@@ -1212,8 +1212,10 @@ async def _run_analysis(
 
             if not isinstance(result, (pd.DataFrame, list, dict)):
                 result = pd.DataFrame(result)
+
     except Exception as e:
         raise InvalidGeneratedCode(code=code, exception=e)
+
     return RunAnalysisResult(
         status="success",
         code=code,

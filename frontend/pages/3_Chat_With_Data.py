@@ -21,7 +21,7 @@ import time
 import traceback
 import warnings
 from datetime import datetime
-from typing import Any, Callable, Coroutine, Dict, TypeVar, cast
+from typing import Any, Callable, Coroutine, TypeVar, cast
 
 import pandas as pd
 import streamlit as st
@@ -283,7 +283,7 @@ run_database_analysis = log_api_call(run_database_analysis)
 
 
 # Add enhanced error logging function
-def log_error_details(error: Exception, context: Dict[str, Any]) -> None:
+def log_error_details(error: Exception, context: dict[str, Any]) -> None:
     """Log detailed error information with context
 
     Args:
@@ -393,8 +393,14 @@ async def rephrase_message_and_analysis(
                                 )
 
                 except Exception as e:
+                    st.error(
+                        "Error running initial analysis. "
+                        "Try rephrasing the question and "
+                        f"running again: {str(e)}"
+                    )
                     error_context.update({"component": "analysis"})
                     log_error_details(e, error_context)
+                    st.stop()
 
             # Process charts and business analysis concurrently
             if analysis_result and analysis_result.data:
@@ -426,7 +432,6 @@ async def rephrase_message_and_analysis(
                         for coro in asyncio.as_completed(tasks):
                             try:
                                 result = await coro
-                                # result = result.model_dump()
 
                                 # Determine which task completed by checking the result structure
                                 if isinstance(result, RunChartsResult) and (
@@ -514,6 +519,115 @@ async def rephrase_message_and_analysis(
         st.error(f"Error processing chat and analysis: {str(e)}")
 
 
+def render_conversation_history(chat_messages: list[AnalystChatMessage]) -> None:
+    def render_bottom_line(
+        business_analysis_component: BusinessAnalysisResult | None,
+    ) -> None:
+        with st.expander("Bottom Line", expanded=True):
+            if business_analysis_component:
+                bottom_line = business_analysis_component.bottom_line
+                st.markdown(
+                    bottom_line.replace("$", "\\$")
+                    if bottom_line != ""
+                    else "No bottom line available"
+                )
+            else:
+                st.markdown("No bottom line available")
+
+    def render_analysis(
+        analysis_component: RunAnalysisResult | DatabaseAnalysisResult | None,
+    ) -> None:
+        language = (
+            "sql" if st.session_state.get("data_source") == "snowflake" else "python"
+        )
+        analysis_container = st.container()
+        with analysis_container:
+            with st.expander("Analysis Results", expanded=True):
+                if analysis_component:
+                    if analysis_component.data:
+                        analysis_data: AnalystDataset = analysis_component.data
+                        df = pd.DataFrame(analysis_data.data)
+                        st.dataframe(df, use_container_width=True)
+                    else:
+                        st.markdown("Analysis results not available")
+                else:
+                    st.markdown("Analysis results not available")
+
+            with st.expander("Analysis Code", expanded=False):
+                if analysis_component:
+                    if analysis_component.code:
+                        st.code(analysis_component.code, language=language)
+                    else:
+                        st.markdown("Analysis code not available")
+                else:
+                    st.markdown("Analysis code not available")
+
+    def render_charts(charts_component: RunChartsResult | None) -> None:
+        with st.expander("Charts", expanded=True):
+            if charts_component:
+                st.plotly_chart(
+                    charts_component.fig1,
+                    use_container_width=True,
+                    key=f"fig1_{i}",
+                )
+                st.plotly_chart(
+                    charts_component.fig2,
+                    use_container_width=True,
+                    key=f"fig2_{i}",
+                )
+            else:
+                st.markdown("No charts available")
+
+    def render_additional_insights(
+        business_analysis_component: BusinessAnalysisResult | None,
+    ) -> None:
+        with st.expander("Additional Insights", expanded=True):
+            if business_analysis_component:
+                st.markdown(
+                    business_analysis_component.additional_insights.replace("$", "\\$")
+                )
+            else:
+                st.markdown("No additional insights available")
+
+    def render_follow_up_questions(
+        business_analysis_component: BusinessAnalysisResult | None,
+    ) -> None:
+        with st.expander("Follow-up Questions", expanded=True):
+            if business_analysis_component:
+                questions = business_analysis_component.follow_up_questions
+                for q in questions:
+                    st.markdown(f"- {q}".replace("$", r"\$"))
+                if not len(questions):
+                    st.markdown("No follow-up questions available")
+            else:
+                st.markdown("No follow-up questions available")
+
+    for i, message in enumerate(chat_messages):
+        # Set avatar based on role
+        avatar = "bot.jpg" if message.role == "assistant" else "you.jpg"
+        analysis_component, business_analysis_component, charts_component = (
+            None,
+            None,
+            None,
+        )
+        for component in message.components:
+            if isinstance(component, (RunAnalysisResult, DatabaseAnalysisResult)):
+                analysis_component = component
+            elif isinstance(component, BusinessAnalysisResult):
+                business_analysis_component = component
+            elif isinstance(component, RunChartsResult):
+                charts_component = component
+
+        with st.chat_message(message.role, avatar=avatar):
+            st.markdown(message.content)
+            if message.role == "assistant":
+                render_bottom_line(business_analysis_component)
+                render_analysis(analysis_component)
+                render_charts(charts_component)
+                render_additional_insights(business_analysis_component)
+                render_follow_up_questions(business_analysis_component)
+
+
 # Main page content (Chat Interface)
 st.image(get_page_logo(), width=200)
 st.session_state.chat_messages = cast(
@@ -522,110 +636,7 @@ st.session_state.chat_messages = cast(
 if not st.session_state.cleansed_data:
     st.info("Please upload and process data using the sidebar before starting the chat")
 else:
-    # Display chat history
-    for i, message in enumerate(st.session_state.chat_messages):
-        # Set avatar based on role
-        avatar = "bot.jpg" if message.role == "assistant" else "you.jpg"
-
-        with st.chat_message(message.role, avatar=avatar):
-            st.markdown(message.content)
-
-            # Add components in the same structure as the original response
-            if len(message.components) > 0:
-                # Find business analysis component
-                business_analysis: BusinessAnalysisResult | None = next(
-                    (
-                        comp
-                        for comp in message.components
-                        if isinstance(comp, BusinessAnalysisResult)
-                    ),
-                    None,
-                )
-                # Display business analysis components
-                with st.expander("Bottom Line", expanded=True):
-                    if business_analysis is not None:
-                        bottom_line = business_analysis.bottom_line or ""
-                    else:
-                        bottom_line = ""  # Default to empty string if no business analysis is found
-                    st.markdown(
-                        bottom_line.replace("$", "\\$")
-                        if bottom_line
-                        else "No bottom line available"
-                    )
-
-                # Display analysis results
-                # TODO: fix empty analysis result & code after follow up
-                with st.expander("Analysis Results", expanded=True):
-                    analysis_component: RunAnalysisResult | None = next(
-                        (
-                            comp
-                            for comp in message.components
-                            if isinstance(comp, RunAnalysisResult)
-                        ),
-                        None,
-                    )
-                    if analysis_component is not None:
-                        if analysis_component.code:
-                            st.code(analysis_component.code, language="python")
-
-                        analysis_data = analysis_component.data or None
-                        if analysis_data is not None:
-                            if isinstance(analysis_data, list):
-                                df = pd.DataFrame(analysis_data)
-                                st.dataframe(df, use_container_width=True)
-                            else:
-                                st.write(analysis_data)
-                    else:
-                        st.markdown("No analysis results available")
-
-                # Display charts
-                with st.expander("Charts", expanded=True):
-                    charts_component: RunChartsResult | None = next(
-                        (
-                            comp
-                            for comp in message.components
-                            if isinstance(comp, RunChartsResult)
-                        ),
-                        None,
-                    )
-                    if charts_component is not None:
-                        if charts_component.fig1:
-                            st.plotly_chart(
-                                charts_component.fig1,
-                                use_container_width=True,
-                                key=f"fig1_{i}",
-                            )
-                        if charts_component.fig2:
-                            st.plotly_chart(
-                                charts_component.fig2,
-                                use_container_width=True,
-                                key=f"fig2_{i}",
-                            )
-                    else:
-                        st.markdown("No charts available")
-
-                # Display additional insights
-                with st.expander("Additional Insights", expanded=True):
-                    if business_analysis is not None:
-                        insights = business_analysis.additional_insights or ""
-                        st.markdown(
-                            insights.replace("$", "\\$")
-                            if insights
-                            else "No additional insights available"
-                        )
-                    else:
-                        st.markdown("No additional insights available")
-
-                # Display follow-up questions
-                with st.expander("Follow-up Questions", expanded=True):
-                    if business_analysis is not None:
-                        questions = business_analysis.follow_up_questions or []
-                        if questions:
-                            for q in questions:
-                                st.markdown(f"- {q}".replace("$", r"\$"))
-                    else:
-                        st.markdown("No follow-up questions available")
-
+    render_conversation_history(st.session_state.chat_messages)
     # Chat input
     if question := st.chat_input("Ask a question about your data"):
         valid_messages: list[ChatCompletionMessageParam] = [

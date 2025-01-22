@@ -14,4 +14,4 @@
 
 from typing import Literal
 
-DATABASE_CONNECTION_TYPE: Literal["bigquery", "snowflake"] = "snowflake"
+DATABASE_CONNECTION_TYPE: Literal["bigquery", "snowflake", "no_database"] = "snowflake"

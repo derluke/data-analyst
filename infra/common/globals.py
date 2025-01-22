@@ -111,6 +111,9 @@ class GlobalLLM:
     AZURE_OPENAI_GPT_4_O = LLMConfig(
         name="azure-openai-gpt-4-o", credential_type="azure"
     )
+    AZURE_OPENAI_GPT_4_O_MINI = LLMConfig(
+        name="azure-openai-gpt-4-o-mini", credential_type="azure"
+    )
     # AWS Models
     AMAZON_TITAN = LLMConfig(name="amazon-titan", credential_type="aws")
     ANTHROPIC_CLAUDE_2 = LLMConfig(name="anthropic-claude-2", credential_type="aws")
