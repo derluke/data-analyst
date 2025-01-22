@@ -22,7 +22,6 @@ import uuid
 from typing import Callable
 
 import datarobot as dr
-import pandas as pd
 import pytest
 from dotenv import dotenv_values
 from openai import OpenAI
@@ -188,39 +187,6 @@ def chat_with_retry(
             else:
                 # If it's a different ServerError, re-raise it
                 raise
-
-
-@pytest.fixture
-def make_prediction(dr_client):
-    def predict_function(input_json, deployment_id):
-        deployment = dr.Deployment.get(deployment_id)
-        predict_df = pd.DataFrame(input_json)
-        while True:
-            try:
-                prediction = chat_with_retry(
-                    deployment, data_frame=predict_df
-                ).dataframe
-                break
-            except dr.errors.ServerError as e:
-                if "Inference server is starting" in str(e):
-                    continue
-
-        return prediction.to_dict(orient="records")[0]
-
-    return predict_function
-
-
-@pytest.fixture
-def get_response():
-    def _get_response(request, deployment):
-        input_df = pd.DataFrame([request.model_dump()])
-        result_df, response_headers = chat_with_retry(deployment, input_df)
-        result_df.columns = result_df.columns.str.replace(
-            "_(PREDICTION|OUTPUT)$", "", regex=True
-        )
-        return result_df.iloc[0].to_dict()
-
-    return _get_response
 
 
 @pytest.fixture

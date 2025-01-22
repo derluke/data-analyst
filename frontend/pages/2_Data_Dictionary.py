@@ -96,7 +96,8 @@ else:
 
 # Add helpful tips
 with st.sidebar:
-    st.markdown("""
+    st.markdown(
+        """
     ### Using the Data Dictionary
     
     The data dictionary provides detailed information about each column in your datasets:
@@ -109,4 +110,5 @@ with st.sidebar:
     - Edit descriptions directly in the table
     - Download the dictionary as CSV
     - Use the information to better understand your data
-    """)
+    """
+    )

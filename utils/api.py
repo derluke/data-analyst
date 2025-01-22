@@ -378,7 +378,6 @@ async def _get_dictionary_batch(
         model=ALTERNATIVE_LLM_SMALL,
         messages=messages,
     )
-    # response = json.loads(completion.choices[0].message.content)
 
     try:
         # Convert to dictionary format
