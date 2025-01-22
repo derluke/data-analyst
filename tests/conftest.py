@@ -17,16 +17,14 @@
 import logging
 import os
 import subprocess
-import time
 import uuid
 from typing import Callable
 
 import datarobot as dr
 import pytest
 from dotenv import dotenv_values
-from openai import OpenAI
 
-from utils.resources import ChatAgentDeployment, LLMDeployment
+from utils.resources import LLMDeployment
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -139,54 +137,6 @@ def pulumi_up(
 @pytest.fixture
 def dr_client(session_env_vars):
     return dr.Client()
-
-
-@pytest.fixture
-def chat_client():
-    chat_agent_deployment_id = ChatAgentDeployment().id
-    deployment_chat_base_url = (
-        dr.Client().endpoint + f"/deployments/{chat_agent_deployment_id}/"
-    )
-
-    return OpenAI(
-        api_key=dr.Client().token, base_url=deployment_chat_base_url
-    ).chat.completions.create
-
-
-def chat_with_retry(
-    chat_client: OpenAI,
-    deployment_name: str,
-    messages: list[dict[str, str]],
-    max_wait_seconds: int = 300,
-    retry_interval_seconds: int = 5,
-    use_json_response_format: bool = False,
-):
-    start_time = time.time()
-    chat_kwargs = {
-        "model": deployment_name,
-        "messages": messages,
-        "stream": False,
-    }
-    if use_json_response_format:
-        chat_kwargs["response_format"] = {"type": "json_object"}
-    while True:
-        try:
-            response = chat_client.chat.completions.create(**chat_kwargs)
-            return response
-        except dr.errors.ServerError as e:
-            if "Inference server is starting" in str(e):
-                elapsed_time = time.time() - start_time
-                if elapsed_time > max_wait_seconds:
-                    raise TimeoutError(
-                        f"Server did not start within {max_wait_seconds} seconds"
-                    )
-                logger.info(
-                    f"Server is starting. Retrying in {retry_interval_seconds} seconds..."
-                )
-                time.sleep(retry_interval_seconds)
-            else:
-                # If it's a different ServerError, re-raise it
-                raise
 
 
 @pytest.fixture

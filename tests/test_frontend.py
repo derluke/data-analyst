@@ -40,15 +40,6 @@ def cd(new_dir: Path) -> Any:
 
 
 @pytest.fixture
-def output_path() -> Any:
-    output_dir = Path("../tests/output")
-    if not output_dir.exists():
-        output_dir.mkdir(parents=True, exist_ok=True)
-    yield output_dir
-    # shutil.rmtree(output_dir)
-
-
-@pytest.fixture
 def application(
     pulumi_up: Any,
     subprocess_runner: Callable[[list[str]], subprocess.CompletedProcess[str]],
