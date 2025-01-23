@@ -179,6 +179,7 @@ async def test_run_charts_analysis(
     run_charts_result = await run_charts(chart_request)
     assert isinstance(run_charts_result.fig1, go.Figure)
     assert isinstance(run_charts_result.fig2, go.Figure)
+    assert run_charts_result.code is not None
     assert len(run_charts_result.code) > 1
 
 

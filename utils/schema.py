@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import ast
 import json
 from typing import Annotated, Any, Literal, cast
 
@@ -52,14 +51,6 @@ class AiCatalogDataset(BaseModel):
     size: str
 
 
-class ChatAgentDeploymentSettings(BaseModel):
-    target_feature_name: str = "content"
-    prompt_feature_name: str = "promptText"
-    request_timeout: int = 60
-    max_retries: int = 1
-    temperature: int = 0
-
-
 def _convert_to_records(v: Any) -> list[dict[str, Any]]:
     if isinstance(v, pd.DataFrame):
         return cast(list[dict[str, Any]], v.to_dict("records"))
@@ -71,10 +62,13 @@ def _convert_to_records(v: Any) -> list[dict[str, Any]]:
 class AnalystDataset(BaseModel):
     name: str
     data: Annotated[list[dict[str, Any]], BeforeValidator(_convert_to_records)]
-    columns: list[str] = Field(default=list())
+    columns: list[str] = Field(default_factory=list)
 
     def __init__(
-        self, name: str, data: list[dict[str, Any]] | pd.DataFrame, **kwargs: Any
+        self,
+        data: list[dict[str, Any]] | pd.DataFrame,
+        name: str = "analysis_data",
+        **kwargs: Any,
     ):
         if "columns" in kwargs:
             columns = kwargs.pop("columns")
@@ -217,12 +211,9 @@ class RunAnalysisRequest(BaseModel):
     failed_code: str | None = None
 
 
-class RunAnanlysisResultMetadata(BaseModel):
+class RunAnalysisResultMetadata(BaseModel):
     timestamp: str
     attempts: int
-    error_history: list[AnalysisError]
-    stdout: str | None = None
-    stderr: str | None = None
     datasets_analyzed: int | None = None
     total_rows_analyzed: int | None = None
     total_columns_analyzed: int | None = None
@@ -230,22 +221,15 @@ class RunAnanlysisResultMetadata(BaseModel):
 
 class RunAnalysisResult(BaseModel):
     status: str
-    metadata: DatabaseAnalysisMetadata | RunAnanlysisResultMetadata
+    metadata: DatabaseAnalysisMetadata | RunAnalysisResultMetadata
     data: AnalystDataset | None = None
     code: str | None = None
     suggestions: str | None = None
 
 
-class ChartGenerationResult(BaseModel):
+class ChartGenerationExecutionResult(BaseModel):
     fig1: go.Figure
     fig2: go.Figure
-    code: str
-    validation: ValidationMessage
-    metadata: ChartGenerationMetadata
-    attempts: int
-    validation_errors: list[ChartValidationError]
-    execution_errors: list[ChartExecutionError]
-    code_history: list[ChartCodeHistory]
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -267,11 +251,10 @@ class RunChartsRequest(BaseModel):
 
 
 class RunChartsResult(BaseModel):
-    fig1: go.Figure
-    fig2: go.Figure
-    fig1_base_64: str | None
-    fig2_base_64: str | None
-    code: str
+    status: str
+    fig1: go.Figure | None = None
+    fig2: go.Figure | None = None
+    code: str | None = None
     metadata: RunChartsResultMetadata
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -335,29 +318,6 @@ class ChatRequest(BaseModel):
     messages: list[ChatCompletionMessageParam] = Field(min_length=1)
 
 
-class CodeValidator:
-    """Validates Python code for safety and correctness"""
-
-    ALLOWED_MODULES = {"pandas", "numpy", "scipy", "statsmodels", "sklearn"}
-
-    @staticmethod
-    def validate_imports(code: str) -> None:
-        """Check if code only imports allowed modules"""
-        tree = ast.parse(code)
-        imports: list[str] = []
-
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.Import, ast.ImportFrom)):
-                if isinstance(node, ast.Import):
-                    imports.extend(n.name.split(".")[0] for n in node.names)
-                elif node.module is not None:
-                    imports.append(node.module.split(".")[0])
-
-        illegal_imports = set(imports) - CodeValidator.ALLOWED_MODULES
-        if illegal_imports:
-            raise ImportError(f"Illegal imports detected: {illegal_imports}")
-
-
 class QuestionListGeneration(BaseModel):
     """Container for list of questions"""
 
@@ -415,7 +375,7 @@ class DatabaseAnalysisMetadata(BaseModel):
 
 class AnalysisResult(BaseModel):
     status: str
-    metadata: DatabaseAnalysisMetadata | RunAnanlysisResultMetadata
+    metadata: DatabaseAnalysisMetadata | RunAnalysisResultMetadata
     data: AnalystDataset | None = None
     code: str | None = None
     suggestions: str | None = None
@@ -451,58 +411,9 @@ class AnalysisError(BaseModel):
     code: str | None = None
 
 
-class ChartValidationError(BaseModel):
-    attempt: int
-    error: str
-    timestamp: str
-    code: str | None = None
-
-
-class ValidationMessage(BaseModel):
-    is_valid: bool
-    message: str
-
-
-class ChartExecutionError(BaseModel):
-    attempt: int
-    error_type: str
-    error_message: str
-    timestamp: str
-    stdout: str | None = None
-    stderr: str | None = None
-    code: str | None = None
-
-
-class ChartCodeHistory(BaseModel):
-    attempt: int
-    code: str
-    timestamp: str
-
-
-class ChartGenerationMetadata(BaseModel):
-    timestamp: str
-    question: str
-    stdout: str
-    stderr: str
-
-
-class ChartPerformance(BaseModel):
-    total_time: float
-    memory_usage: MemoryUsage
-
-
 class RunChartsResultMetadata(BaseModel):
     timestamp: str
-    question: str
-    stdout: str
-    stderr: str
-    dataframe_metadata: dict[str, Any]
-    validation: ValidationMessage
     attempts: int
-    validation_errors: list[ChartValidationError]
-    execution_errors: list[ChartExecutionError]
-    code_history: list[ChartCodeHistory]
-    performance: ChartPerformance
 
 
 class EnhancedQuestionGeneration(BaseModel):

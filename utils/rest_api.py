@@ -76,8 +76,6 @@ app = FastAPI(
     debug=True,  # Stack traces will be exposed for 500 responses
 )
 
-MODEL_MODE = "openai"  # "openai", "gemini", anthropic
-
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,

@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import asyncio
-import io
 import json
 import logging
 import sys
@@ -169,20 +168,6 @@ def format_json(obj: Any) -> str:
         )
     except Exception as e:
         return f"Error formatting JSON: {str(e)}\nOriginal object: {str(obj)}"
-
-
-def format_dataframe_info(df: pd.DataFrame, name: str) -> str:
-    buffer = io.StringIO()
-    df.info(buf=buffer)
-    return f"""
-DataFrame: {name}
-Shape: {df.shape}
-Columns: {", ".join(df.columns)}
-Info:
-{buffer.getvalue()}
-Sample (first 5 rows):
-{df.head().to_string()}
-"""
 
 
 T = TypeVar("T")

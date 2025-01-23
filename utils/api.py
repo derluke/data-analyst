@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import ast
 import asyncio
-import base64
 import functools
 import io
 import json
@@ -25,9 +24,10 @@ import re
 import sys
 import tempfile
 import time
+import traceback
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime
-from types import FunctionType
+from types import FunctionType, ModuleType
 from typing import (
     Any,
     Awaitable,
@@ -36,6 +36,7 @@ from typing import (
     List,
     Sequence,
     Tuple,
+    Type,
     TypeVar,
     cast,
 )
@@ -56,7 +57,7 @@ from openai.types.chat.chat_completion_user_message_param import (
     ChatCompletionUserMessageParam,
 )
 from plotly.subplots import make_subplots
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 sys.path.append("..")
 
@@ -72,17 +73,11 @@ from utils.schema import (
     BusinessAnalysisMetadata,
     BusinessAnalysisRequest,
     BusinessAnalysisResult,
-    ChartCodeHistory,
-    ChartExecutionError,
-    ChartGenerationMetadata,
-    ChartGenerationResult,
-    ChartPerformance,
-    ChartValidationError,
+    ChartGenerationExecutionResult,
     ChatRequest,
     CleansedDataset,
     CleansingReport,
     CodeGeneration,
-    CodeValidator,
     DatabaseAnalysisCodeGeneration,
     DatabaseAnalysisMetadata,
     DatabaseAnalysisRequest,
@@ -95,12 +90,11 @@ from utils.schema import (
     QuestionListGeneration,
     RunAnalysisRequest,
     RunAnalysisResult,
-    RunAnanlysisResultMetadata,
+    RunAnalysisResultMetadata,
     RunChartsRequest,
     RunChartsResult,
     RunChartsResultMetadata,
     ValidatedQuestion,
-    ValidationMessage,
 )
 
 logger = logging.getLogger("DataAnalystFrontend")
@@ -179,11 +173,30 @@ class InvalidGeneratedCode(Exception):
     """Raised when LLM generated code is found to be invalid."""
 
     def __init__(
-        self, *args: Any, code: str | None = None, exception: Exception | None = None
+        self,
+        *args: Any,
+        code: str | None = None,
+        exception: Exception | None = None,
+        stdout: str | None = None,
+        stderr: str | None = None,
+        traceback_str: str | None = None,
     ):
         super().__init__(*args)
         self.code = code
         self.exception = exception
+        self.stdout = stdout
+        self.stderr = stderr
+        self.traceback_str = traceback_str
+
+    def __str__(self) -> str:
+        parts = [super().__str__()]
+        if self.traceback_str:
+            parts.append(f"\nTraceback:\n{self.traceback_str}")
+        if self.stdout and self.stdout.strip():
+            parts.append(f"\nStdout:\n{self.stdout}")
+        if self.stderr and self.stderr.strip():
+            parts.append(f"\nStderr:\n{self.stderr}")
+        return "\n".join(parts)
 
 
 class MaxReflectionAttempts(Exception):
@@ -577,9 +590,22 @@ async def suggest_questions(
     return validated_questions
 
 
-# TODO: duplicated in schema
-def _validate_chart_code(code: str) -> Tuple[bool, str]:
-    """Validate chart generation code for safety and correctness"""
+def validate_python_code(
+    code: str,
+    expected_function: str,
+    allowed_modules: set[str],
+) -> Tuple[bool, str]:
+    """
+    Validate Python code for safety and correctness.
+
+    Args:
+        code: The Python code to validate
+        expected_function: Name of the function that should be defined
+        allowed_modules: Set of module names that are allowed to be imported
+
+    Returns:
+        Tuple of (is_valid: bool, message: str)
+    """
     try:
         tree = ast.parse(code)
         imports: list[str] = []
@@ -592,18 +618,17 @@ def _validate_chart_code(code: str) -> Tuple[bool, str]:
                 elif node.module is not None:
                     imports.append(node.module.split(".")[0])
 
-        allowed_modules = {"pandas", "numpy", "plotly", "scipy"}
         illegal_imports = set(imports) - allowed_modules
         if illegal_imports:
             return False, f"Illegal imports detected: {illegal_imports}"
 
-        # Verify create_charts function exists
-        has_create_charts = any(
-            isinstance(node, ast.FunctionDef) and node.name == "create_charts"
+        # Verify expected function exists
+        has_function = any(
+            isinstance(node, ast.FunctionDef) and node.name == expected_function
             for node in ast.walk(tree)
         )
-        if not has_create_charts:
-            return False, "Missing create_charts function"
+        if not has_function:
+            return False, f"Missing {expected_function} function"
 
         return True, "Validation passed"
 
@@ -613,167 +638,99 @@ def _validate_chart_code(code: str) -> Tuple[bool, str]:
         return False, f"Validation error: {str(e)}"
 
 
-def _figure_to_base64(fig: go.Figure) -> str | None:
-    """Convert Plotly figure to base64 encoded PNG"""
+O = TypeVar("O", bound=BaseModel)  # noqa: E741
+
+
+def execute_python(
+    modules: Dict[str, ModuleType],
+    functions: Dict[str, Callable[..., Any]],
+    expected_function: str,
+    code: str,
+    input_data: Any,
+    output_type: Type[O],
+    allowed_modules: set[str] | None = None,
+) -> O:
+    """
+    Executes Python code in a given namespace and checks if the expected function is defined.
+    Raises InvalidGeneratedCode if the code is invalid or execution fails.
+    """
+    if allowed_modules is None:
+        allowed_modules = set(modules.keys())
+
+    namespace = {**modules, **functions}
+
     try:
-        if not isinstance(fig, go.Figure):
-            raise ValueError(f"Expected plotly.graph_objects.Figure, got {type(fig)}")
-        img_bytes = fig.to_image(format="png")
-        return base64.b64encode(img_bytes).decode("utf-8")
-    except Exception as e:
-        logger.error(f"Failed to convert figure to base64: {str(e)}")
-        return None
+        is_valid, validation_message = validate_python_code(
+            code, expected_function, allowed_modules
+        )
+        if not is_valid:
+            raise ValueError(validation_message)
 
-
-async def _create_charts(
-    df: pd.DataFrame,
-    question: str,
-    metadata: Dict[str, Any],
-    error_message: str | None = None,
-    failed_code: str | None = None,
-    max_attempts: int = 3,
-) -> ChartGenerationResult:
-    """Generate and validate chart code with retry logic"""
-    attempts = 0
-    validation_errors: list[ChartValidationError] = []
-    execution_errors: list[ChartExecutionError] = []
-    code_history: list[ChartCodeHistory] = []
-
-    while attempts < max_attempts:
-        attempts += 1
+        stdout = io.StringIO()
+        stderr = io.StringIO()
 
         try:
-            # Create messages for OpenAI
-            messages: list[ChatCompletionMessageParam] = [
-                ChatCompletionSystemMessageParam(
-                    role="system",
-                    content=prompts.SYSTEM_PROMPT_PLOTLY_CHART,
-                ),
-                ChatCompletionUserMessageParam(
-                    role="user", content=f"Question: {question}"
-                ),
-                ChatCompletionUserMessageParam(
-                    role="user", content=f"Data Metadata:\n{json.dumps(metadata)}"
-                ),
-                ChatCompletionUserMessageParam(
-                    role="user", content=f"Data top 25 rows:\n{df.head(25).to_string()}"
-                ),
-            ]
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                exec(code, namespace)
 
-            # Add error context if available
-            if error_message and failed_code:
-                messages.extend(
-                    [
-                        {"role": "user", "content": f"Previous error: {error_message}"},
-                        {"role": "user", "content": f"Failed code:\n{failed_code}"},
-                    ]
-                )
-
-            # Get response based on model mode
-            response: CodeGeneration = client.chat.completions.create(
-                response_model=CodeGeneration,
-                model=ALTERNATIVE_LLM_BIG,
-                temperature=0,
-                messages=messages,
-            )
-
-            code = response.code
-
-            # Track code history
-            code_history.append(
-                ChartCodeHistory(
-                    attempt=attempts,
-                    code=code,
-                    timestamp=datetime.now().isoformat(),
-                )
-            )
-
-            # Validate the generated code
-            is_valid, validation_message = _validate_chart_code(code)
-
-            if not is_valid:
-                validation_errors.append(
-                    ChartValidationError(
-                        attempt=attempts,
-                        error=validation_message,
+                if not isinstance(namespace[expected_function], FunctionType):
+                    raise InvalidGeneratedCode(
+                        f"{expected_function} is not a valid function in the provided code.",
                         code=code,
-                        timestamp=datetime.now().isoformat(),
-                    )
-                )
-                continue
-
-            try:
-                # Create namespace for execution with single dataframe
-                namespace = {
-                    "pd": pd,
-                    "np": np,
-                    "df": df,  # Pass single dataframe instead of dictionary
-                    "go": go,
-                    "make_subplots": make_subplots,
-                }
-
-                # Execute the code with stdout/stderr capture
-                stdout = io.StringIO()
-                stderr = io.StringIO()
-
-                with redirect_stdout(stdout), redirect_stderr(stderr):
-                    exec(code, namespace)
-                    fig1, fig2 = namespace["create_charts"](df)  # Pass single dataframe
-                return ChartGenerationResult(
-                    fig1=fig1,
-                    fig2=fig2,
-                    code=code,
-                    validation=ValidationMessage(
-                        is_valid=True, message=validation_message
-                    ),
-                    metadata=ChartGenerationMetadata(
-                        timestamp=datetime.now().isoformat(),
-                        question=question,
                         stdout=stdout.getvalue(),
                         stderr=stderr.getvalue(),
-                    ),
-                    attempts=attempts,
-                    validation_errors=validation_errors,
-                    execution_errors=execution_errors,
-                    code_history=code_history,
-                )
+                    )
 
-            except Exception as exec_error:
-                logger.error(f"Execution error: {str(exec_error)}")
-                execution_errors.append(
-                    ChartExecutionError(
-                        attempt=attempts,
-                        error_type=type(exec_error).__name__,
-                        error_message=str(exec_error),
+                func = cast(Callable[[Any], Any], namespace[expected_function])
+                try:
+                    result = func(input_data)
+                except Exception as e:
+                    raise InvalidGeneratedCode(
+                        f"Function {expected_function} raised an error during execution: {str(e)}",
                         code=code,
-                        stdout=stdout.getvalue() if "stdout" in locals() else "",
-                        stderr=stderr.getvalue() if "stderr" in locals() else "",
-                        timestamp=datetime.now().isoformat(),
-                    )
-                )
-
-                if attempts == max_attempts:
-                    raise ValueError(
-                        f"Failed to execute charts after {max_attempts} attempts. Last error: {str(exec_error)}"
+                        exception=e,
+                        stdout=stdout.getvalue(),
+                        stderr=stderr.getvalue(),
+                        traceback_str=traceback.format_exc(),
                     )
 
-        except Exception as e:
-            execution_errors.append(
-                ChartExecutionError(
-                    attempt=attempts,
-                    error_type=type(e).__name__,
-                    error_message=str(e),
-                    code=code if "code" in locals() else None,
-                    timestamp=datetime.now().isoformat(),
-                )
+                if not isinstance(result, dict) and not isinstance(result, output_type):
+                    raise InvalidGeneratedCode(
+                        f"Expected {output_type.__name__}, got {type(result).__name__}",
+                        code=code,
+                        stdout=stdout.getvalue(),
+                        stderr=stderr.getvalue(),
+                    )
+
+                if isinstance(result, dict):
+                    try:
+                        return output_type(**result)
+                    except Exception as e:
+                        raise InvalidGeneratedCode(
+                            "Failed to convert dictionary to Pydantic model",
+                            code=code,
+                            exception=e,
+                        )
+                return result
+
+        except (SyntaxError, ValueError) as e:
+            raise InvalidGeneratedCode(
+                str(e),
+                code=code,
+                exception=e,
+                stdout=stdout.getvalue(),
+                stderr=stderr.getvalue(),
+                traceback_str=traceback.format_exc(),
             )
-
-            if attempts == max_attempts:
-                raise ValueError(
-                    f"Failed to generate valid charts after {max_attempts} attempts: {str(e)}"
-                )
-
-    raise ValueError(f"Failed to generate valid charts after {max_attempts} attempts")
+    except Exception as e:
+        if isinstance(e, InvalidGeneratedCode):
+            raise
+        raise InvalidGeneratedCode(
+            f"Unexpected error during code execution: {str(e)}",
+            code=code,
+            exception=e,
+            traceback_str=traceback.format_exc(),
+        )
 
 
 async def _generate_python_analysis_code(
@@ -1016,91 +973,122 @@ async def rephrase_message(messages: ChatRequest) -> dict[str, Any]:
     return completion.model_dump()
 
 
-async def run_charts(request: RunChartsRequest) -> RunChartsResult:
-    """
-    Generate and execute chart code with validation.
-    """
-    # TODO: this needs a refactor, does duplicative transformations, loop appears broken, etc.
-    # Convert JSON to DataFrame
+async def _generate_charts_analysis_code(
+    request: RunChartsRequest, validation_error: InvalidGeneratedCode | None = None
+) -> str:
     df = request.data.to_df()
-    if df.empty:
-        raise ValueError("Input DataFrame cannot be empty")
-
+    question = request.question
     dataframe_metadata = {
-        "metadata_shape": list(df.shape),
-        "metadata_describe": json.loads(df.describe(include="all").to_json()),
-        "metadata_dtypes": json.loads(df.dtypes.astype(str).to_json()),
+        "shape": {"rows": int(df.shape[0]), "columns": int(df.shape[1])},
+        "statistics": df.describe(include="all").to_dict(),
+        "dtypes": df.dtypes.astype(str).to_dict(),
     }
-    dataframe_metadata_clone = dataframe_metadata.copy()
-    max_attempts = 3
-    attempt = 0
-    last_error = None
-    last_failed_code = None
-
-    while True:  # Changed to while True with explicit breaks
-        try:
-            # Generate charts with retry logic
-            result = await _create_charts(
-                df=df,
-                question=request.question,
-                metadata=dataframe_metadata_clone,
-                error_message=last_error,
-                failed_code=last_failed_code,
-            )
-            fig1_base64 = _figure_to_base64(result.fig1) if result.fig1 else None
-            fig2_base64 = _figure_to_base64(result.fig2) if result.fig2 else None
-
-            # Explicit return here
-            return RunChartsResult(
-                fig1=result.fig1,
-                fig2=result.fig2,
-                fig1_base_64=fig1_base64,
-                fig2_base_64=fig2_base64,
-                code=result.code,
-                metadata=RunChartsResultMetadata(
-                    timestamp=result.metadata.timestamp,
-                    question=result.metadata.question,
-                    stdout=result.metadata.stdout,
-                    stderr=result.metadata.stderr,
-                    dataframe_metadata=dataframe_metadata,
-                    validation=result.validation,
-                    attempts=result.attempts,
-                    validation_errors=result.validation_errors,
-                    execution_errors=result.execution_errors,
-                    code_history=result.code_history,
-                    performance=ChartPerformance(
-                        memory_usage=_get_memory_usage(),
-                        total_time=(
-                            datetime.fromisoformat(result.metadata.timestamp)
-                            - datetime.fromisoformat(result.code_history[0].timestamp)
-                        ).total_seconds(),
-                    ),
+    messages: list[ChatCompletionMessageParam] = [
+        ChatCompletionSystemMessageParam(
+            role="system",
+            content=prompts.SYSTEM_PROMPT_PLOTLY_CHART,
+        ),
+        ChatCompletionUserMessageParam(role="user", content=f"Question: {question}"),
+        ChatCompletionUserMessageParam(
+            role="user", content=f"Data Metadata:\n{json.dumps(dataframe_metadata)}"
+        ),
+        ChatCompletionUserMessageParam(
+            role="user", content=f"Data top 25 rows:\n{df.head(25).to_string()}"
+        ),
+    ]
+    if validation_error:
+        msg = type(validation_error).__name__ + f": {str(validation_error)}"
+        messages.extend(
+            [
+                ChatCompletionUserMessageParam(
+                    role="user",
+                    content=f"Previous attempt failed with error: {msg}",
                 ),
-            )
+                ChatCompletionUserMessageParam(
+                    role="user",
+                    content=f"Failed code: {validation_error.code}",
+                ),
+                ChatCompletionUserMessageParam(
+                    role="user",
+                    content="Please generate new code that avoids this error.",
+                ),
+            ]
+        )
 
-        except Exception as e:
-            attempt += 1
-            last_error = str(e)
-            last_failed_code = result.code if "result" in locals() else None
+    # Get response based on model mode
+    response: CodeGeneration = client.chat.completions.create(
+        response_model=CodeGeneration,
+        model=ALTERNATIVE_LLM_BIG,
+        temperature=0,
+        messages=messages,
+    )
+    return response.code
 
-            if attempt >= max_attempts:
-                error_context = {
-                    "error_type": type(e).__name__,
-                    "error_message": str(e),
-                    "validation_errors": (
-                        result.validation_errors if "result" in locals() else []
-                    ),
-                    "execution_errors": (
-                        result.execution_errors if "result" in locals() else []
-                    ),
-                    "code_history": result.code_history if "result" in locals() else [],
-                    "attempts": attempt,
-                    "timestamp": datetime.now().isoformat(),
-                }
-                raise RuntimeError(str(error_context))
 
-            # Always raise the exception
-            raise e
+@reflect_code_generation_errors(max_attempts=3)
+async def _run_charts(
+    request: RunChartsRequest,
+    exception_history: list[InvalidGeneratedCode] | None = None,
+) -> RunChartsResult:
+    """Generate and validate chart code with retry logic"""
+    # Create messages for OpenAI
+    if not request.data:
+        raise ValueError("Input data cannot be empty")
+
+    df = request.data.to_df()
+    if exception_history is None:
+        exception_history = []
+
+    code = await _generate_charts_analysis_code(
+        request, next(iter(exception_history), None)
+    )
+    try:
+        result = execute_python(
+            modules={
+                "pd": pd,
+                "np": np,
+                "go": go,
+            },
+            functions={
+                "make_subplots": make_subplots,
+            },
+            expected_function="create_charts",
+            code=code,
+            input_data=df,
+            output_type=ChartGenerationExecutionResult,
+            allowed_modules={"pandas", "numpy", "plotly", "scipy"},
+        )
+    except InvalidGeneratedCode:
+        raise
+    except Exception as e:
+        raise InvalidGeneratedCode(code=code, exception=e)
+    return RunChartsResult(
+        status="success",
+        code=code,
+        fig1=result.fig1,
+        fig2=result.fig2,
+        metadata=RunChartsResultMetadata(
+            timestamp=datetime.now().isoformat(),
+            attempts=len(exception_history) + 1,
+        ),
+    )
+
+
+async def run_charts(
+    request: RunChartsRequest,
+) -> RunChartsResult:
+    """Execute analysis workflow on datasets."""
+    try:
+        chart_result = await _run_charts(request)
+        return chart_result
+    except MaxReflectionAttempts:
+        return RunChartsResult(
+            status="failed",
+            metadata=RunChartsResultMetadata(
+                timestamp=datetime.now().isoformat(),
+                attempts=0,
+            ),
+        )
 
 
 async def get_business_analysis(
@@ -1179,7 +1167,6 @@ async def _run_analysis(
     code = await _generate_python_analysis_code(
         request, next(iter(exception_history), None)
     )
-
     dataframes: dict[str, pd.DataFrame] = {}
     for dataset in request.data:
         if dataset.data:
@@ -1188,44 +1175,31 @@ async def _run_analysis(
         else:
             dataframes[dataset.name] = pd.DataFrame()
 
-    # Create namespace for execution
-    namespace = {"pd": pd, "np": np, "dfs": dataframes}
-    # Capture stdout and stderr
-    stdout = io.StringIO()
-    stderr = io.StringIO()
-
-    # Execute the code
     try:
-        CodeValidator.validate_imports(code)
-        with redirect_stdout(stdout), redirect_stderr(stderr):
-            exec(code, namespace)
-
-            if "analyze_data" not in namespace:
-                raise NameError(
-                    "Generated code did not define a valid `analyze_data` function"
-                )
-
-            if not isinstance(namespace["analyze_data"], FunctionType):
-                raise TypeError("`analyze_data` must be a function")
-
-            result = namespace["analyze_data"](dataframes)
-
-            if not isinstance(result, (pd.DataFrame, list, dict)):
-                result = pd.DataFrame(result)
-
+        result = execute_python(
+            modules={
+                "pd": pd,
+                "np": np,
+            },
+            functions={},
+            expected_function="analyze_data",
+            code=code,
+            input_data=dataframes,
+            output_type=AnalystDataset,
+            allowed_modules={"pandas", "numpy", "scipy"},
+        )
+    except InvalidGeneratedCode:
+        raise
     except Exception as e:
         raise InvalidGeneratedCode(code=code, exception=e)
 
     return RunAnalysisResult(
         status="success",
         code=code,
-        data=AnalystDataset(name="analysis_result", data=result),
-        metadata=RunAnanlysisResultMetadata(
+        data=result,
+        metadata=RunAnalysisResultMetadata(
             timestamp=datetime.now().isoformat(),
             attempts=len(exception_history) + 1,
-            error_history=[],  # TODO: fix if needed in final interface
-            stdout=stdout.getvalue(),
-            stderr=stderr.getvalue(),
             datasets_analyzed=len(dataframes),
             total_rows_analyzed=sum(
                 len(df) for df in dataframes.values() if not df.empty
@@ -1247,7 +1221,7 @@ async def run_analysis(
         return RunAnalysisResult(
             status="failed",
             suggestions="Consider reformulating the question or checking data quality",
-            metadata=RunAnanlysisResultMetadata(
+            metadata=RunAnalysisResultMetadata(
                 timestamp=datetime.now().isoformat(),
                 attempts=0,  # TODO: fix if needed in final interface
                 error_history=[],  # TODO: fix if needed in final interface

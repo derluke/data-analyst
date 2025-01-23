@@ -133,7 +133,7 @@ The user will provide:
 YOUR RESPONSE:
 Your response shall only contain a Python function called analyze_data(dfs) that takes a dictionary of dataframes as input and returns the relevant data as a single dataframe.
 Your response shall be formatted as JSON with the following fields:
-1) code: A string of python code that will execute and return a single pandas dataframe.
+1) code: A string of python code that will execute and return a single pandas dataframe wrapped in a dictionary with key "data".
 2) description: A brief description of how the code works, and how the results can be interpreted to answer the question.
 
 For example:
@@ -152,7 +152,7 @@ def analyze_data(dfs):
     # Join/merge datasets if needed
     # Compute metrics and aggregations
     
-    return result_df
+    return {"data": result_df}
 
 NECESSARY CONSIDERATIONS:
 - The input dfs is a dictionary of pandas DataFrames where keys are dataset names
@@ -293,7 +293,7 @@ Respond with JSON with the following fields:
 FUNCTION REQUIREMENTS:
 Name: create_charts()
 Input: A pandas DataFrame containing the data relevant to the question
-Output: Two plotly.graph_objects.Figure objects
+Output: A dictionary containing two plotly.graph_objects.Figure objects
 Import required libraries within the function.
 
 EXAMPLE CODE STRUCTURE:
@@ -305,7 +305,10 @@ def create_charts(df):
     # Your visualization code here
     # Create two complementary visualizations
     
-    return fig1, fig2
+    return return {
+        "fig1": fig1,
+        "fig2": fig2
+    }
 
 NECESSARY CONSIDERATIONS:
 The input df is a pandas DataFrame that is described by the included metadata
