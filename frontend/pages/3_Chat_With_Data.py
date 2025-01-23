@@ -34,7 +34,7 @@ sys.path.append("..")
 
 
 # Import FastAPI functions directly
-from app_settings import PAGE_ICON, apply_custom_css, get_page_logo
+from app_settings import PAGE_ICON, DataSource, apply_custom_css, get_page_logo
 
 from utils.api import (
     get_business_analysis,
@@ -338,7 +338,7 @@ async def rephrase_message_and_analysis(
             analysis_result: DatabaseAnalysisResult | RunAnalysisResult
             with st.spinner("Running analysis..."):
                 try:
-                    if st.session_state.data_source == "database":
+                    if st.session_state.data_source == DataSource.DATABASE:
                         # Convert DataFrames to dictionary format
                         sf_analysis_request = DatabaseAnalysisRequest(
                             data=st.session_state.cleansed_data,
@@ -366,7 +366,8 @@ async def rephrase_message_and_analysis(
                                 # Use SQL language highlighting for database mode
                                 language = (
                                     "sql"
-                                    if st.session_state.get("data_source") == "database"
+                                    if st.session_state.get("data_source")
+                                    == DataSource.DATABASE
                                     else "python"
                                 )
                                 st.code(analysis_result.code, language=language)
@@ -523,7 +524,9 @@ def render_conversation_history(chat_messages: list[AnalystChatMessage]) -> None
         analysis_component: RunAnalysisResult | DatabaseAnalysisResult | None,
     ) -> None:
         language = (
-            "sql" if st.session_state.get("data_source") == "snowflake" else "python"
+            "sql"
+            if st.session_state.get("data_source") == DataSource.DATABASE
+            else "python"
         )
         analysis_container = st.container()
         with analysis_container:

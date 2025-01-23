@@ -27,6 +27,7 @@ sys.path.append("..")
 
 from app_settings import (
     PAGE_ICON,
+    DataSource,
     apply_custom_css,
     get_database_loader_message,
     get_database_logo,
@@ -63,6 +64,8 @@ if "initialized" not in st.session_state:
     st.session_state.cleansed_data = []
     st.session_state.data_dictionaries = []
     st.session_state.data_source = None
+    st.session_state.file_uploader_key = 0
+    st.session_state.processed_file_ids = []
 
 
 # Modify process_data to handle coroutine reuse
@@ -140,9 +143,23 @@ def clear_data_callback() -> None:
     st.session_state.data_dictionaries = []
     st.session_state.selected_catalog_datasets = []  # Also clear catalog selection
     st.session_state.data_source = None  # Reset data source flag
+    st.session_state.processed_file_ids = []
+    st.session_state.file_uploader_key += 1  # Used to clear file_uploader on st.rerun()
+    st.rerun()
 
 
 def process_data_and_update_state(datasets: list[AnalystDataset]) -> None:
+    new_dataset_names = [ds.name for ds in datasets]
+
+    # Remove existing datasets with the same name
+    st.session_state.datasets = [
+        ds for ds in st.session_state.datasets if ds.name not in new_dataset_names
+    ]
+    st.session_state.cleansed_data = [
+        ds for ds in st.session_state.cleansed_data if ds.name not in new_dataset_names
+    ]
+
+    # Add the new (or updated) datasets to the session state
     st.session_state.datasets.extend(datasets)
 
     for ds in datasets:
@@ -162,7 +179,7 @@ def process_data_and_update_state(datasets: list[AnalystDataset]) -> None:
     # Generate data dictionaries
     try:
         new_dictionaries = generate_dictionaries(cleansed_datasets)
-        st.session_state.data_dictionaries = st.session_state.data_dictionaries + [
+        st.session_state.data_dictionaries += [
             d
             for d in new_dictionaries
             if d.name not in [d.name for d in st.session_state.data_dictionaries]
@@ -186,7 +203,7 @@ def catalog_download_callback() -> None:
         "selected_catalog_datasets" in st.session_state
         and st.session_state.selected_catalog_datasets
     ):
-        st.session_state.data_source = "catalog"
+        st.session_state.data_source = DataSource.CATALOG
         with st.sidebar:  # Use sidebar context
             with st.spinner("Loading selected datasets..."):
                 selected_ids = [
@@ -200,7 +217,7 @@ def catalog_download_callback() -> None:
 def load_from_database_callback() -> None:
     """Callback function for Database table download"""
     # Set flag to indicate data source is a database
-    st.session_state.data_source = "database"
+    st.session_state.data_source = DataSource.DATABASE
     if (
         "selected_schema_tables" in st.session_state
         and st.session_state.selected_schema_tables
@@ -219,13 +236,15 @@ def load_from_database_callback() -> None:
 def uploaded_file_callback(uploaded_files: list[UploadedFile]) -> None:
     """Callback function for file uploads"""
     # Set flag to indicate data source is a file
-    st.session_state.data_source = "file"
+    st.session_state.data_source = DataSource.FILE
 
     with st.spinner("Loading and processing files..."):
         # Process uploaded files
         for file in uploaded_files:
-            dataset_results = process_uploaded_file(file)
-            process_data_and_update_state(dataset_results)
+            if file.file_id not in st.session_state.processed_file_ids:
+                dataset_results = process_uploaded_file(file)
+                process_data_and_update_state(dataset_results)
+                st.session_state.processed_file_ids.append(file.file_id)
 
 
 # Page config
@@ -251,7 +270,8 @@ with st.sidebar:
             "Select 1 or multiple files",
             type=["csv", "xlsx", "xls"],
             accept_multiple_files=True,
-            disabled=st.session_state.data_source == "database",
+            disabled=st.session_state.data_source == DataSource.DATABASE,
+            key=st.session_state.file_uploader_key,
         )
         if uploaded_files:
             uploaded_file_callback(uploaded_files)
@@ -271,14 +291,14 @@ with st.sidebar:
                 format_func=lambda x: f"{x['name']} ({x['size']})",
                 help="You can select multiple datasets",
                 key="selected_catalog_datasets",
-                disabled=st.session_state.data_source == "database",
+                disabled=st.session_state.data_source == DataSource.DATABASE,
             )
 
             # Form submit button
             submit_button = st.form_submit_button(
                 "Load Datasets",
                 on_click=catalog_download_callback,
-                disabled=st.session_state.data_source == "database",
+                disabled=st.session_state.data_source == DataSource.DATABASE,
             )
 
             # Process form submission
@@ -302,7 +322,7 @@ with st.sidebar:
                 help="You can select multiple tables",
                 key="selected_schema_tables",
                 disabled=st.session_state.data_source is not None
-                and st.session_state.data_source != "database",
+                and st.session_state.data_source != DataSource.DATABASE,
             )
 
             # Form submit button
@@ -311,7 +331,7 @@ with st.sidebar:
                 use_container_width=False,
                 on_click=load_from_database_callback,
                 disabled=st.session_state.data_source is not None
-                and st.session_state.data_source != "database",
+                and st.session_state.data_source != DataSource.DATABASE,
             )
 
             if submit_button and not selected_schema_tables:
