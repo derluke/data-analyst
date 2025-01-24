@@ -14,29 +14,17 @@
 
 from __future__ import annotations
 
-import ast
 import asyncio
 import functools
-import io
 import json
 import logging
 import re
 import sys
 import tempfile
-import time
-import traceback
-from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime
-from types import FunctionType, ModuleType
 from typing import (
     Any,
-    Awaitable,
-    Callable,
-    Dict,
-    List,
     Sequence,
-    Tuple,
-    Type,
     TypeVar,
     cast,
 )
@@ -46,7 +34,6 @@ import instructor
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import psutil
 from joblib import Memory
 from openai import OpenAI
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
@@ -57,43 +44,44 @@ from openai.types.chat.chat_completion_user_message_param import (
     ChatCompletionUserMessageParam,
 )
 from plotly.subplots import make_subplots
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 sys.path.append("..")
 
 from utils import prompts
+from utils.code_execution import (
+    InvalidGeneratedCode,
+    MaxReflectionAttempts,
+    execute_python,
+    reflect_code_generation_errors,
+)
 from utils.database_helpers import Database
 from utils.datetime_helpers import convert_datetime_series, is_date_column
 from utils.resources import LLMDeployment
 from utils.schema import (
     AiCatalogDataset,
-    AnalysisError,
     AnalystDataset,
     BusinessAnalysisGeneration,
-    BusinessAnalysisMetadata,
-    BusinessAnalysisRequest,
-    BusinessAnalysisResult,
     ChartGenerationExecutionResult,
     ChatRequest,
     CleansedDataset,
     CleansingReport,
     CodeGeneration,
     DatabaseAnalysisCodeGeneration,
-    DatabaseAnalysisMetadata,
-    DatabaseAnalysisRequest,
-    DatabaseAnalysisResult,
     DataDictionary,
     DataDictionaryColumn,
     DictionaryGeneration,
     EnhancedQuestionGeneration,
-    MemoryUsage,
     QuestionListGeneration,
     RunAnalysisRequest,
     RunAnalysisResult,
     RunAnalysisResultMetadata,
+    RunBusinessAnalysisMetadata,
+    RunBusinessAnalysisRequest,
+    RunBusinessAnalysisResult,
     RunChartsRequest,
     RunChartsResult,
-    RunChartsResultMetadata,
+    RunDatabaseAnalysisRequest,
     ValidatedQuestion,
 )
 
@@ -169,92 +157,9 @@ def cache(f: T) -> T:
         return cast(T, wrapper)
 
 
-class InvalidGeneratedCode(Exception):
-    """Raised when LLM generated code is found to be invalid."""
-
-    def __init__(
-        self,
-        *args: Any,
-        code: str | None = None,
-        exception: Exception | None = None,
-        stdout: str | None = None,
-        stderr: str | None = None,
-        traceback_str: str | None = None,
-    ):
-        super().__init__(*args)
-        self.code = code
-        self.exception = exception
-        self.stdout = stdout
-        self.stderr = stderr
-        self.traceback_str = traceback_str
-
-    def __str__(self) -> str:
-        parts = [super().__str__()]
-        if self.traceback_str:
-            parts.append(f"\nTraceback:\n{self.traceback_str}")
-        if self.stdout and self.stdout.strip():
-            parts.append(f"\nStdout:\n{self.stdout}")
-        if self.stderr and self.stderr.strip():
-            parts.append(f"\nStderr:\n{self.stderr}")
-        return "\n".join(parts)
-
-
-class MaxReflectionAttempts(Exception):
-    """Raised after final attempt to self-correct LLM code generation"""
-
-    def __init__(
-        self, *args: Any, exception_history: list[InvalidGeneratedCode] | None = None
-    ):
-        super().__init__(*args)
-        self.exception_history = exception_history
-
-
-U = TypeVar("U")
-
-
-def reflect_code_generation_errors(
-    max_attempts: int,
-) -> Callable[[Callable[..., Awaitable[U]]], Callable[..., Awaitable[U]]]:
-    """Reflect LLM code generation errors for self-correction
-
-    Exceptions raised by invalid code will be injected back into the
-    decorated function via the `exception_history` keyword argument.
-
-    `exception_history` contains a list of InvalidGeneratedCode
-    exceptions.
-    """
-
-    def _outer_wrapper(
-        f: Callable[..., Awaitable[U]],
-    ) -> Callable[..., Awaitable[U]]:
-        @functools.wraps(f)
-        async def _inner_wrapper(*args: Any, **kwargs: Any) -> U:
-            attempts = 1
-            exception_history: list[InvalidGeneratedCode] = []
-            kwargs["exception_history"] = exception_history
-            while attempts <= max_attempts:
-                try:
-                    return await f(*args, **kwargs)
-                except InvalidGeneratedCode as e:
-                    msg = type(e.exception).__name__ + f": {str(e.exception)}"
-                    logger.info(
-                        f"LLM generated code raised {msg}\nGenerated code:\n{e.code}"
-                    )
-                    exception_history.append(e)
-                attempts += 1
-
-            msg = f"{f.__name__} failed to generate valid code after {max_attempts} attempts"
-            logger.error(msg)
-            raise MaxReflectionAttempts(msg, exception_history=exception_history)
-
-        return _inner_wrapper
-
-    return _outer_wrapper
-
-
 # This can be large as we are not storing the actual datasets in memory, just metadata
 @functools.lru_cache(maxsize=32)
-def list_catalog_datasets(limit: int = 100) -> List[AiCatalogDataset]:
+def list_catalog_datasets(limit: int = 100) -> list[AiCatalogDataset]:
     """
     Fetch datasets from AI Catalog with specified limit
 
@@ -370,18 +275,16 @@ async def _get_dictionary_batch(
         ChatCompletionSystemMessageParam(
             role="system", content=prompts.SYSTEM_PROMPT_GET_DICTIONARY
         ),
+        ChatCompletionUserMessageParam(role="user", content=f"Data:\n{sample_data}\n"),
         ChatCompletionUserMessageParam(
-            role="user", content=f"Data: {json.dumps(sample_data)}"
-        ),
-        ChatCompletionUserMessageParam(
-            role="user", content=f"Statistical Summary: {json.dumps(numeric_summary)}"
+            role="user", content=f"Statistical Summary:\n{numeric_summary}\n"
         ),
     ]
 
     if categories:
         messages.append(
             ChatCompletionUserMessageParam(
-                role="user", content=f"Categorical Values: {json.dumps(categories)}"
+                role="user", content=f"Categorical Values:\n{categories}\n"
             )
         )
 
@@ -465,20 +368,8 @@ async def _get_dictionary(dataset: AnalystDataset) -> DataDictionary:
         raise Exception(f"Error processing dataset {dataset.name}: {str(e)}")
 
 
-# Add memory management helper
-def _get_memory_usage() -> MemoryUsage:
-    """Get current memory usage statistics"""
-    process = psutil.Process()
-    memory_info = process.memory_info()
-    return MemoryUsage(
-        rss=memory_info.rss / 1024 / 1024,  # RSS in MB
-        vms=memory_info.vms / 1024 / 1024,  # VMS in MB
-        percent=process.memory_percent(),
-    )
-
-
 def _validate_question_feasibility(
-    question: str, available_columns: List[str]
+    question: str, available_columns: list[str]
 ) -> ValidatedQuestion:
     """Validate if a question can be answered with available data
 
@@ -590,150 +481,59 @@ async def suggest_questions(
     return validated_questions
 
 
-def validate_python_code(
-    code: str,
-    expected_function: str,
-    allowed_modules: set[str],
-) -> Tuple[bool, str]:
-    """
-    Validate Python code for safety and correctness.
-
-    Args:
-        code: The Python code to validate
-        expected_function: Name of the function that should be defined
-        allowed_modules: Set of module names that are allowed to be imported
-
-    Returns:
-        Tuple of (is_valid: bool, message: str)
-    """
-    try:
-        tree = ast.parse(code)
-        imports: list[str] = []
-
-        # Check imports
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.Import, ast.ImportFrom)):
-                if isinstance(node, ast.Import):
-                    imports.extend(n.name.split(".")[0] for n in node.names)
-                elif node.module is not None:
-                    imports.append(node.module.split(".")[0])
-
-        illegal_imports = set(imports) - allowed_modules
-        if illegal_imports:
-            return False, f"Illegal imports detected: {illegal_imports}"
-
-        # Verify expected function exists
-        has_function = any(
-            isinstance(node, ast.FunctionDef) and node.name == expected_function
-            for node in ast.walk(tree)
-        )
-        if not has_function:
-            return False, f"Missing {expected_function} function"
-
-        return True, "Validation passed"
-
-    except SyntaxError as e:
-        return False, f"Syntax error in code: {str(e)}"
-    except Exception as e:
-        return False, f"Validation error: {str(e)}"
-
-
-O = TypeVar("O", bound=BaseModel)  # noqa: E741
-
-
-def execute_python(
-    modules: Dict[str, ModuleType],
-    functions: Dict[str, Callable[..., Any]],
-    expected_function: str,
-    code: str,
-    input_data: Any,
-    output_type: Type[O],
-    allowed_modules: set[str] | None = None,
-) -> O:
-    """
-    Executes Python code in a given namespace and checks if the expected function is defined.
-    Raises InvalidGeneratedCode if the code is invalid or execution fails.
-    """
-    if allowed_modules is None:
-        allowed_modules = set(modules.keys())
-
-    namespace = {**modules, **functions}
-
-    try:
-        is_valid, validation_message = validate_python_code(
-            code, expected_function, allowed_modules
-        )
-        if not is_valid:
-            raise ValueError(validation_message)
-
-        stdout = io.StringIO()
-        stderr = io.StringIO()
-
-        try:
-            with redirect_stdout(stdout), redirect_stderr(stderr):
-                exec(code, namespace)
-
-                if not isinstance(namespace[expected_function], FunctionType):
-                    raise InvalidGeneratedCode(
-                        f"{expected_function} is not a valid function in the provided code.",
-                        code=code,
-                        stdout=stdout.getvalue(),
-                        stderr=stderr.getvalue(),
-                    )
-
-                func = cast(Callable[[Any], Any], namespace[expected_function])
-                try:
-                    result = func(input_data)
-                except Exception as e:
-                    raise InvalidGeneratedCode(
-                        f"Function {expected_function} raised an error during execution: {str(e)}",
-                        code=code,
-                        exception=e,
-                        stdout=stdout.getvalue(),
-                        stderr=stderr.getvalue(),
-                        traceback_str=traceback.format_exc(),
-                    )
-
-                if not isinstance(result, dict) and not isinstance(result, output_type):
-                    raise InvalidGeneratedCode(
-                        f"Expected {output_type.__name__}, got {type(result).__name__}",
-                        code=code,
-                        stdout=stdout.getvalue(),
-                        stderr=stderr.getvalue(),
-                    )
-
-                if isinstance(result, dict):
-                    try:
-                        return output_type(**result)
-                    except Exception as e:
-                        raise InvalidGeneratedCode(
-                            "Failed to convert dictionary to Pydantic model",
-                            code=code,
-                            exception=e,
-                        )
-                return result
-
-        except (SyntaxError, ValueError) as e:
-            raise InvalidGeneratedCode(
-                str(e),
-                code=code,
-                exception=e,
-                stdout=stdout.getvalue(),
-                stderr=stderr.getvalue(),
-                traceback_str=traceback.format_exc(),
-            )
-    except Exception as e:
-        if isinstance(e, InvalidGeneratedCode):
-            raise
-        raise InvalidGeneratedCode(
-            f"Unexpected error during code execution: {str(e)}",
-            code=code,
-            exception=e,
-            traceback_str=traceback.format_exc(),
+async def _generate_run_charts_python_code(
+    request: RunChartsRequest, validation_error: InvalidGeneratedCode | None = None
+) -> str:
+    df = request.data.to_df()
+    question = request.question
+    dataframe_metadata = {
+        "shape": {"rows": int(df.shape[0]), "columns": int(df.shape[1])},
+        "statistics": df.describe(include="all").to_dict(),
+        "dtypes": df.dtypes.astype(str).to_dict(),
+    }
+    messages: list[ChatCompletionMessageParam] = [
+        ChatCompletionSystemMessageParam(
+            role="system",
+            content=prompts.SYSTEM_PROMPT_PLOTLY_CHART,
+        ),
+        ChatCompletionUserMessageParam(role="user", content=f"Question: {question}"),
+        ChatCompletionUserMessageParam(
+            role="user", content=f"Data Metadata:\n{dataframe_metadata}"
+        ),
+        ChatCompletionUserMessageParam(
+            role="user", content=f"Data top 25 rows:\n{df.head(25).to_string()}"
+        ),
+    ]
+    if validation_error:
+        msg = type(validation_error).__name__ + f": {str(validation_error)}"
+        messages.extend(
+            [
+                ChatCompletionUserMessageParam(
+                    role="user",
+                    content=f"Previous attempt failed with error: {msg}",
+                ),
+                ChatCompletionUserMessageParam(
+                    role="user",
+                    content=f"Failed code: {validation_error.code}",
+                ),
+                ChatCompletionUserMessageParam(
+                    role="user",
+                    content="Please generate new code that avoids this error.",
+                ),
+            ]
         )
 
+    # Get response based on model mode
+    response: CodeGeneration = client.chat.completions.create(
+        response_model=CodeGeneration,
+        model=ALTERNATIVE_LLM_BIG,
+        temperature=0,
+        messages=messages,
+    )
+    return response.code
 
-async def _generate_python_analysis_code(
+
+async def _generate_run_analysis_python_code(
     request: RunAnalysisRequest, validation_error: InvalidGeneratedCode | None = None
 ) -> str:
     """
@@ -939,7 +739,7 @@ async def get_dictionary(
         raise
 
 
-async def rephrase_message(messages: ChatRequest) -> dict[str, Any]:
+async def rephrase_message(messages: ChatRequest) -> str:
     """Process chat messages history and return a new question
 
     Args:
@@ -970,59 +770,7 @@ async def rephrase_message(messages: ChatRequest) -> dict[str, Any]:
         messages=prompt_messages,
     )
 
-    return completion.model_dump()
-
-
-async def _generate_charts_analysis_code(
-    request: RunChartsRequest, validation_error: InvalidGeneratedCode | None = None
-) -> str:
-    df = request.data.to_df()
-    question = request.question
-    dataframe_metadata = {
-        "shape": {"rows": int(df.shape[0]), "columns": int(df.shape[1])},
-        "statistics": df.describe(include="all").to_dict(),
-        "dtypes": df.dtypes.astype(str).to_dict(),
-    }
-    messages: list[ChatCompletionMessageParam] = [
-        ChatCompletionSystemMessageParam(
-            role="system",
-            content=prompts.SYSTEM_PROMPT_PLOTLY_CHART,
-        ),
-        ChatCompletionUserMessageParam(role="user", content=f"Question: {question}"),
-        ChatCompletionUserMessageParam(
-            role="user", content=f"Data Metadata:\n{json.dumps(dataframe_metadata)}"
-        ),
-        ChatCompletionUserMessageParam(
-            role="user", content=f"Data top 25 rows:\n{df.head(25).to_string()}"
-        ),
-    ]
-    if validation_error:
-        msg = type(validation_error).__name__ + f": {str(validation_error)}"
-        messages.extend(
-            [
-                ChatCompletionUserMessageParam(
-                    role="user",
-                    content=f"Previous attempt failed with error: {msg}",
-                ),
-                ChatCompletionUserMessageParam(
-                    role="user",
-                    content=f"Failed code: {validation_error.code}",
-                ),
-                ChatCompletionUserMessageParam(
-                    role="user",
-                    content="Please generate new code that avoids this error.",
-                ),
-            ]
-        )
-
-    # Get response based on model mode
-    response: CodeGeneration = client.chat.completions.create(
-        response_model=CodeGeneration,
-        model=ALTERNATIVE_LLM_BIG,
-        temperature=0,
-        messages=messages,
-    )
-    return response.code
+    return completion.enhanced_user_message
 
 
 @reflect_code_generation_errors(max_attempts=3)
@@ -1032,6 +780,8 @@ async def _run_charts(
 ) -> RunChartsResult:
     """Generate and validate chart code with retry logic"""
     # Create messages for OpenAI
+    start_time = datetime.now()
+
     if not request.data:
         raise ValueError("Input data cannot be empty")
 
@@ -1039,7 +789,7 @@ async def _run_charts(
     if exception_history is None:
         exception_history = []
 
-    code = await _generate_charts_analysis_code(
+    code = await _generate_run_charts_python_code(
         request, next(iter(exception_history), None)
     )
     try:
@@ -1062,13 +812,15 @@ async def _run_charts(
         raise
     except Exception as e:
         raise InvalidGeneratedCode(code=code, exception=e)
+
+    duration = datetime.now() - start_time
     return RunChartsResult(
         status="success",
         code=code,
-        fig1=result.fig1,
-        fig2=result.fig2,
-        metadata=RunChartsResultMetadata(
-            timestamp=datetime.now().isoformat(),
+        fig1_json=result.fig1.to_json(),
+        fig2_json=result.fig2.to_json(),
+        metadata=RunAnalysisResultMetadata(
+            duration=duration.total_seconds(),
             attempts=len(exception_history) + 1,
         ),
     )
@@ -1081,19 +833,19 @@ async def run_charts(
     try:
         chart_result = await _run_charts(request)
         return chart_result
-    except MaxReflectionAttempts:
+    except MaxReflectionAttempts as e:
         return RunChartsResult(
             status="failed",
-            metadata=RunChartsResultMetadata(
-                timestamp=datetime.now().isoformat(),
-                attempts=0,
+            metadata=RunAnalysisResultMetadata(
+                duration=e.duration,
+                attempts=len(e.exception_history) if e.exception_history else 0,
             ),
         )
 
 
 async def get_business_analysis(
-    request: BusinessAnalysisRequest,
-) -> BusinessAnalysisResult:
+    request: RunBusinessAnalysisRequest,
+) -> RunBusinessAnalysisResult:
     """
     Generate business analysis based on data and question.
 
@@ -1136,13 +888,13 @@ async def get_business_analysis(
         )
 
         # Ensure all response fields are present
-        metadata = BusinessAnalysisMetadata(
+        metadata = RunBusinessAnalysisMetadata(
             timestamp=datetime.now().isoformat(),
             question=request.question,
             rows_analyzed=len(df),
             columns_analyzed=len(df.columns),
         )
-        return BusinessAnalysisResult(
+        return RunBusinessAnalysisResult(
             **completion.model_dump(),
             metadata=metadata,
         )
@@ -1158,13 +910,14 @@ async def _run_analysis(
     request: RunAnalysisRequest,
     exception_history: list[InvalidGeneratedCode] | None = None,
 ) -> RunAnalysisResult:
+    start_time = datetime.now()
     if not request.data:
         raise ValueError("Input data cannot be empty")
 
     if exception_history is None:
         exception_history = []
 
-    code = await _generate_python_analysis_code(
+    code = await _generate_run_analysis_python_code(
         request, next(iter(exception_history), None)
     )
     dataframes: dict[str, pd.DataFrame] = {}
@@ -1193,12 +946,13 @@ async def _run_analysis(
     except Exception as e:
         raise InvalidGeneratedCode(code=code, exception=e)
 
+    duration = datetime.now() - start_time
     return RunAnalysisResult(
         status="success",
         code=code,
         data=result,
         metadata=RunAnalysisResultMetadata(
-            timestamp=datetime.now().isoformat(),
+            duration=duration.total_seconds(),
             attempts=len(exception_history) + 1,
             datasets_analyzed=len(dataframes),
             total_rows_analyzed=sum(
@@ -1217,21 +971,21 @@ async def run_analysis(
     """Execute analysis workflow on datasets."""
     try:
         return await _run_analysis(request)
-    except MaxReflectionAttempts:
+    except MaxReflectionAttempts as e:
         return RunAnalysisResult(
             status="failed",
             suggestions="Consider reformulating the question or checking data quality",
             metadata=RunAnalysisResultMetadata(
-                timestamp=datetime.now().isoformat(),
-                attempts=0,  # TODO: fix if needed in final interface
-                error_history=[],  # TODO: fix if needed in final interface
+                duration=e.duration,
+                attempts=len(e.exception_history) if e.exception_history else 0,
             ),
         )
 
 
-async def _get_database_analysis_code(
-    request: DatabaseAnalysisRequest,
-) -> DatabaseAnalysisCodeGeneration:
+async def _generate_database_analysis_code(
+    request: RunDatabaseAnalysisRequest,
+    validation_error: InvalidGeneratedCode | None = None,
+) -> str:
     """
     Generate Snowflake SQL analysis code based on data samples and question.
 
@@ -1241,161 +995,103 @@ async def _get_database_analysis_code(
     Returns:
     - Dictionary containing generated code and description
     """
-    try:
-        # Convert dictionary data structure to list of columns for all tables
-        all_tables_info = [d.model_dump(mode="json") for d in request.dictionary]
 
-        # Get sample data for all tables
-        all_samples = []
-        for table in request.data:
-            df = table.to_df()
-            sample_str = f"Table: {table.name}\n{df.head(10).to_string()}"
-            all_samples.append(sample_str)
+    # Convert dictionary data structure to list of columns for all tables
+    all_tables_info = [d.model_dump(mode="json") for d in request.dictionary]
 
-        # Create messages for OpenAI
-        messages: list[ChatCompletionMessageParam] = [
-            Database.get_system_prompt(),
-            ChatCompletionUserMessageParam(
-                content=f"Business Question: {request.question}",
-                role="user",
-            ),
-            ChatCompletionUserMessageParam(
-                content=f"Sample Data:\n{chr(10).join(all_samples)}", role="user"
-            ),
-            ChatCompletionUserMessageParam(
-                content=f"Data Dictionary:\n{json.dumps(all_tables_info)}", role="user"
-            ),
-        ]
+    # Get sample data for all tables
+    all_samples = []
+    for table in request.data:
+        df = table.to_df()
+        sample_str = f"Table: {table.name}\n{df.head(10).to_string()}"
+        all_samples.append(sample_str)
 
-        # Add error context if available
-        if request.error_message and request.failed_code:
-            messages.extend(
-                [
-                    {"role": "user", "content": "Previous attempt failed with error:"},
-                    {"role": "user", "content": request.error_message},
-                    {"role": "user", "content": "Failed code:"},
-                    {"role": "user", "content": request.failed_code},
-                    {
-                        "role": "user",
-                        "content": "Please generate new code that avoids this error.",
-                    },
-                ]
-            )
-
-        # Get response from OpenAI
-        completion = client.chat.completions.create(
-            response_model=DatabaseAnalysisCodeGeneration,
-            model=ALTERNATIVE_LLM_BIG,
-            temperature=0.1,
-            messages=messages,
+    # Create messages for OpenAI
+    messages: list[ChatCompletionMessageParam] = [
+        Database.get_system_prompt(),
+        ChatCompletionUserMessageParam(
+            content=f"Business Question: {request.question}",
+            role="user",
+        ),
+        ChatCompletionUserMessageParam(
+            content=f"Sample Data:\n{chr(10).join(all_samples)}", role="user"
+        ),
+        ChatCompletionUserMessageParam(
+            content=f"Data Dictionary:\n{json.dumps(all_tables_info)}", role="user"
+        ),
+    ]
+    if validation_error:
+        msg = type(validation_error).__name__ + f": {str(validation_error)}"
+        messages.extend(
+            [
+                ChatCompletionUserMessageParam(
+                    role="user",
+                    content=f"Previous attempt failed with error: {msg}",
+                ),
+                ChatCompletionUserMessageParam(
+                    role="user",
+                    content=f"Failed code: {validation_error.code}",
+                ),
+                ChatCompletionUserMessageParam(
+                    role="user",
+                    content="Please generate new code that avoids this error.",
+                ),
+            ]
         )
 
-        return completion
+    # Get response from OpenAI
+    completion = client.chat.completions.create(
+        response_model=DatabaseAnalysisCodeGeneration,
+        model=ALTERNATIVE_LLM_BIG,
+        temperature=0.1,
+        messages=messages,
+    )
 
-    except Exception as e:
-        msg = type(e).__name__ + f": {str(e)}"
-        logger.error(f"Error in _get_snowflake_analysis_code: {msg}")
+    return completion.code
+
+
+@reflect_code_generation_errors(max_attempts=3)
+async def _run_database_analysis(
+    request: RunDatabaseAnalysisRequest,
+    exception_history: list[InvalidGeneratedCode] | None = None,
+) -> RunAnalysisResult:
+    if not request.data:
+        raise ValueError("Input data cannot be empty")
+
+    if exception_history is None:
+        exception_history = []
+    sql_code = await _generate_database_analysis_code(
+        request, next(iter(exception_history), None)
+    )
+    try:
+        results, metadata = Database.execute_query(query=sql_code)
+        results = cast(list[dict[str, Any]], results)
+    except InvalidGeneratedCode:
         raise
+    except Exception as e:
+        raise InvalidGeneratedCode(code=sql_code, exception=e)
+    return RunAnalysisResult(
+        status="success",
+        code=sql_code,
+        data=AnalystDataset(
+            data=results,
+        ),
+        metadata=metadata,
+    )
 
 
 async def run_database_analysis(
-    request: DatabaseAnalysisRequest, max_attempts: int = 3, timeout: int = 300
-) -> DatabaseAnalysisResult:
-    """Execute Snowflake analysis with retry logic and error handling"""
-    attempts = 0
-    error_history: list[AnalysisError] = []
-    conn = None
-    last_generated_code = None
-    start_time = time.time()
-
-    if not request.data:
-        raise ValueError("Input data cannot be empty")
+    request: RunDatabaseAnalysisRequest,
+) -> RunAnalysisResult:
+    """Execute analysis workflow on datasets."""
     try:
-        while True:  # Changed from while attempts < max_attempts
-            attempts += 1
-
-            try:
-                # Update request with error context if available
-                if error_history:
-                    request.error_message = error_history[-1].error
-                    request.failed_code = error_history[-1].code
-
-                # Generate SQL code
-                code_result = await _get_database_analysis_code(request)
-                sql_code = code_result.code
-                last_generated_code = sql_code
-
-                results, query_metadata = Database.execute_query(
-                    query=sql_code, timeout=timeout
-                )
-                results = cast(list[dict[str, Any]], results)
-                return DatabaseAnalysisResult(
-                    status="success",
-                    code=sql_code,
-                    description=code_result.description,
-                    data=AnalystDataset(name="analysis_result", data=results),
-                    metadata=DatabaseAnalysisMetadata(
-                        attempts=attempts,
-                        execution_time=time.time() - start_time,
-                        error_history=error_history,
-                        memory_usage=_get_memory_usage(),
-                        query_metadata=query_metadata,
-                        tables_analyzed=len(request.data),
-                        total_sample_rows=sum(
-                            len(samples.to_df()) for samples in request.data
-                        ),
-                    ),
-                )
-
-            except Exception as e:
-                error_history.append(
-                    AnalysisError(
-                        attempt=attempts,
-                        error=str(e),
-                        error_type=type(e).__name__,
-                        code=sql_code if "sql_code" in locals() else None,
-                        timestamp=datetime.now().isoformat(),
-                        memory_usage=_get_memory_usage(),
-                    )
-                )
-
-                if attempts >= max_attempts:
-                    # Explicit return for max attempts reached
-                    return DatabaseAnalysisResult(
-                        status="failed",
-                        last_generated_code=last_generated_code,
-                        metadata=DatabaseAnalysisMetadata(
-                            attempts=attempts,
-                            error_history=error_history,
-                            execution_time=time.time() - start_time,
-                            memory_usage=_get_memory_usage(),
-                        ),
-                        suggestions="Consider reformulating the question or checking data access permissions",
-                    )
-
-                # Exponential backoff between attempts
-                time.sleep(min(2**attempts, 10))
-                continue  # Explicit continue
-
-    except Exception as e:
-        error_history.append(
-            AnalysisError(
-                attempt=attempts,
-                error=str(e),
-                error_type=type(e).__name__,
-                code=sql_code if "sql_code" in locals() else None,
-                timestamp=datetime.now().isoformat(),
-                memory_usage=_get_memory_usage(),
-            )
-        )
-        logger.error(f"Error in run_database_analysis: {str(e)}")
-        return DatabaseAnalysisResult(
+        return await _run_database_analysis(request)
+    except MaxReflectionAttempts as e:
+        return RunAnalysisResult(
             status="failed",
-            last_generated_code=last_generated_code,
-            metadata=DatabaseAnalysisMetadata(
-                attempts=attempts,
-                error_history=error_history,
-                execution_time=time.time() - start_time,
-                memory_usage=_get_memory_usage(),
+            suggestions="Consider reformulating the question or checking data quality",
+            metadata=RunAnalysisResultMetadata(
+                duration=e.duration,
+                attempts=len(e.exception_history) if e.exception_history else 0,
             ),
         )

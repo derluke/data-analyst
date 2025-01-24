@@ -39,17 +39,16 @@ from utils.database_helpers import Database
 from utils.schema import (
     AiCatalogDataset,
     AnalystDataset,
-    BusinessAnalysisRequest,
-    BusinessAnalysisResult,
     ChatRequest,
     CleansedDataset,
-    DatabaseAnalysisRequest,
-    DatabaseAnalysisResult,
     DataDictionary,
     RunAnalysisRequest,
     RunAnalysisResult,
+    RunBusinessAnalysisRequest,
+    RunBusinessAnalysisResult,
     RunChartsRequest,
     RunChartsResult,
+    RunDatabaseAnalysisRequest,
     ValidatedQuestion,
 )
 
@@ -165,13 +164,13 @@ async def run_charts_endpoint(request: RunChartsRequest) -> RunChartsResult:
 
 @app.post("/get_business_analysis")
 async def get_business_analysis_endpoint(
-    request: BusinessAnalysisRequest,
-) -> BusinessAnalysisResult:
+    request: RunBusinessAnalysisRequest,
+) -> RunBusinessAnalysisResult:
     return await get_business_analysis(request)
 
 
 @app.post("/chat")
-async def rephrase_message_endpoint(request: ChatRequest) -> dict[str, Any]:
+async def rephrase_message_endpoint(request: ChatRequest) -> str:
     return await rephrase_message(request)
 
 
@@ -182,8 +181,6 @@ async def run_analysis_endpoint(request: RunAnalysisRequest) -> RunAnalysisResul
 
 @app.post("/run_database_analysis")
 async def run_database_analysis_endpoint(
-    request: DatabaseAnalysisRequest, max_attempts: int = 3, timeout: int = 300
-) -> DatabaseAnalysisResult:
-    return await run_database_analysis(
-        request=request, max_attempts=max_attempts, timeout=timeout
-    )
+    request: RunDatabaseAnalysisRequest,
+) -> RunAnalysisResult:
+    return await run_database_analysis(request=request)

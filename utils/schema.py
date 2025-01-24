@@ -34,7 +34,6 @@ from pydantic import (
     BeforeValidator,
     ConfigDict,
     Field,
-    field_serializer,
     field_validator,
 )
 
@@ -212,7 +211,7 @@ class RunAnalysisRequest(BaseModel):
 
 
 class RunAnalysisResultMetadata(BaseModel):
-    timestamp: str
+    duration: float
     attempts: int
     datasets_analyzed: int | None = None
     total_rows_analyzed: int | None = None
@@ -221,7 +220,7 @@ class RunAnalysisResultMetadata(BaseModel):
 
 class RunAnalysisResult(BaseModel):
     status: str
-    metadata: DatabaseAnalysisMetadata | RunAnalysisResultMetadata
+    metadata: DatabaseExecutionMetadata | RunAnalysisResultMetadata
     data: AnalystDataset | None = None
     code: str | None = None
     suggestions: str | None = None
@@ -252,30 +251,21 @@ class RunChartsRequest(BaseModel):
 
 class RunChartsResult(BaseModel):
     status: str
-    fig1: go.Figure | None = None
-    fig2: go.Figure | None = None
+    fig1_json: str | None = None
+    fig2_json: str | None = None
     code: str | None = None
-    metadata: RunChartsResultMetadata
+    metadata: RunAnalysisResultMetadata
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    @property
+    def fig1(self) -> go.Figure | None:
+        return go.Figure(json.loads(self.fig1_json)) if self.fig1_json else None
 
-    @field_serializer("fig1", "fig2")
-    def serialize_plotly(self, fig: go.Figure) -> str:
-        return fig.to_json()  # type: ignore[no-any-return]
-
-    @field_validator("fig1", "fig2", mode="before")
-    @classmethod
-    def validate_figs(cls, fig_dict: dict[str, Any]) -> go.Figure:
-        if not isinstance(fig_dict, go.Figure):
-            if isinstance(fig_dict, dict):
-                return go.Figure(fig_dict)
-            if isinstance(fig_dict, str):
-                return go.Figure(json.loads(fig_dict))
-        else:
-            return fig_dict
+    @property
+    def fig2(self) -> go.Figure | None:
+        return go.Figure(json.loads(self.fig2_json)) if self.fig2_json else None
 
 
-class BusinessAnalysisMetadata(BaseModel):
+class RunBusinessAnalysisMetadata(BaseModel):
     timestamp: str
     question: str
     rows_analyzed: int
@@ -288,11 +278,11 @@ class BusinessAnalysisGeneration(BaseModel):
     follow_up_questions: list[str]
 
 
-class BusinessAnalysisResult(BusinessAnalysisGeneration):
-    metadata: BusinessAnalysisMetadata
+class RunBusinessAnalysisResult(BusinessAnalysisGeneration):
+    metadata: RunBusinessAnalysisMetadata
 
 
-class BusinessAnalysisRequest(BaseModel):
+class RunBusinessAnalysisRequest(BaseModel):
     """Request model for business analysis endpoint
 
     Attributes:
@@ -334,7 +324,7 @@ class ValidatedQuestion(BaseModel):
     validation_message: str
 
 
-class DatabaseAnalysisRequest(BaseModel):
+class RunDatabaseAnalysisRequest(BaseModel):
     """Request model for Database analysis endpoint
 
     Attributes:
@@ -357,40 +347,6 @@ class DatabaseAnalysisCodeGeneration(BaseModel):
     description: str
 
 
-class MemoryUsage(BaseModel):
-    rss: float
-    vms: float
-    percent: float
-
-
-class DatabaseAnalysisMetadata(BaseModel):
-    attempts: int
-    execution_time: float
-    memory_usage: MemoryUsage
-    error_history: list[AnalysisError]
-    query_metadata: DatabaseExecutionMetadata | None = None
-    tables_analyzed: int | None = None
-    total_sample_rows: int | None = None
-
-
-class AnalysisResult(BaseModel):
-    status: str
-    metadata: DatabaseAnalysisMetadata | RunAnalysisResultMetadata
-    data: AnalystDataset | None = None
-    code: str | None = None
-    suggestions: str | None = None
-
-
-class DatabaseAnalysisResult(AnalysisResult):
-    status: str
-    metadata: DatabaseAnalysisMetadata
-    data: AnalystDataset | None = None
-    code: str | None = None
-    suggestions: str | None = None
-    last_generated_code: str | None = None
-    description: str | None = None
-
-
 class DatabaseExecutionMetadata(BaseModel):
     query_id: str
     row_count: int
@@ -398,22 +354,6 @@ class DatabaseExecutionMetadata(BaseModel):
     db_schema: str
     database: str | None = None
     warehouse: str | None = None
-
-
-class AnalysisError(BaseModel):
-    attempt: int
-    error: str
-    error_type: str
-    timestamp: str
-    memory_usage: MemoryUsage
-    stdout: str | None = None
-    stderr: str | None = None
-    code: str | None = None
-
-
-class RunChartsResultMetadata(BaseModel):
-    timestamp: str
-    attempts: int
 
 
 class EnhancedQuestionGeneration(BaseModel):
@@ -433,12 +373,7 @@ class AppInfra(BaseModel):
 class AnalystChatMessage(BaseModel):
     role: Literal["assistant", "user", "system"]
     content: str
-    components: list[
-        RunAnalysisResult
-        | RunChartsResult
-        | BusinessAnalysisResult
-        | DatabaseAnalysisResult
-    ]
+    components: list[RunAnalysisResult | RunChartsResult | RunBusinessAnalysisResult]
 
     def to_openai_message_param(self) -> ChatCompletionMessageParam:
         if self.role == "user":

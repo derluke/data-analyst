@@ -44,6 +44,7 @@ from utils.database_helpers import Database, app_infra
 from utils.schema import (
     AnalystDataset,
     CleansedDataset,
+    CleansingReport,
     DataDictionary,
 )
 
@@ -167,15 +168,28 @@ def process_data_and_update_state(datasets: list[AnalystDataset]) -> None:
 
     # Process the new data
     logger.info("Starting data processing")
-    try:
-        cleansed_datasets = process_data_cached(datasets)
-    except Exception as e:
-        logger.error("Data processing failed")
-        st.error(f"❌ Error processing data: {str(e)}")
+    if st.session_state.data_source != "database":
+        try:
+            cleansed_datasets = process_data_cached(datasets)
+        except Exception as e:
+            logger.error("Data processing failed")
+            st.error(f"❌ Error processing data: {str(e)}")
+    else:
+        cleansed_datasets = [
+            CleansedDataset(
+                name=ds.name,
+                data=ds.data,
+                cleaning_report=CleansingReport(
+                    columns_cleaned=[], errors=[], warnings=[]
+                ),
+            )
+            for ds in datasets
+        ]
 
     st.session_state.cleansed_data += cleansed_datasets
     logger.info("Data processing successful, generating dictionaries")
 
+    new_dictionaries = []
     # Generate data dictionaries
     try:
         new_dictionaries = generate_dictionaries(cleansed_datasets)

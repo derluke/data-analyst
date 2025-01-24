@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import time
+import traceback
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -32,6 +33,7 @@ from openai.types.chat.chat_completion_system_message_param import (
 )
 from pydantic import ValidationError
 
+from utils.code_execution import InvalidGeneratedCode
 from utils.credentials import (
     GoogleCredentials,
     NoDatabaseCredentials,
@@ -249,10 +251,20 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
 
                     except snowflake.connector.errors.ProgrammingError as e:
                         # Handle Snowflake-specific errors
-                        raise Exception(f"Snowflake error: {str(e)}")
+                        raise InvalidGeneratedCode(
+                            f"Snowflake error: {str(e)}",
+                            code=query,
+                            exception=e,
+                            traceback_str=traceback.format_exc(),
+                        )
 
         except Exception as e:
-            raise Exception(f"Query execution failed: {str(e)}")
+            raise InvalidGeneratedCode(
+                f"Query execution failed: {str(e)}",
+                code=query,
+                exception=e,
+                traceback_str=traceback.format_exc(),
+            )
 
     @functools.lru_cache(maxsize=1)
     def get_tables(self, timeout: int | None = None) -> list[str]:
@@ -472,7 +484,12 @@ class BigQueryOperator(DatabaseOperator[BigQueryCredentialArgs]):
                 return sql_result_as_dicts, metadata
 
         except Exception as e:
-            raise Exception(f"Query execution failed: {str(e)}")
+            raise InvalidGeneratedCode(
+                f"Query execution failed: {str(e)}",
+                code=query,
+                exception=e,
+                traceback_str=traceback.format_exc(),
+            )
 
     @functools.lru_cache(maxsize=1)
     def get_tables(self, timeout: int | None = None) -> list[str]:

@@ -46,17 +46,16 @@ from utils.api import (
 from utils.schema import (
     AnalystChatMessage,
     AnalystDataset,
-    BusinessAnalysisRequest,
-    BusinessAnalysisResult,
     ChatRequest,
     CleansedDataset,
-    DatabaseAnalysisRequest,
-    DatabaseAnalysisResult,
     DataDictionary,
     RunAnalysisRequest,
     RunAnalysisResult,
+    RunBusinessAnalysisRequest,
+    RunBusinessAnalysisResult,
     RunChartsRequest,
     RunChartsResult,
+    RunDatabaseAnalysisRequest,
 )
 
 # Suppress warnings
@@ -307,8 +306,6 @@ async def rephrase_message_and_analysis(
     try:
         # Create placeholder containers in desired order
         with st.chat_message("assistant", avatar="bot.jpg"):
-            message_placeholder = st.empty()
-
             # Create containers for each section
             bottom_line_container = st.container()
             analysis_container = st.container()
@@ -321,29 +318,16 @@ async def rephrase_message_and_analysis(
                 role="assistant", content="", components=[]
             )
 
-            # Get initial chat response
-            try:
-                chat_request = ChatRequest(messages=chat_messages)
-                chat_response = await rephrase_message(chat_request)
-                message_content = chat_response.get("response", "")
-                message_placeholder.markdown(message_content)
-                assistant_message.content = message_content
-            except Exception as e:
-                message_content = "Something went wrong. Check your connection to the Internet and to DataRobot. The LLM could be out of quota. Try your question again or start a new chat."
-                message_placeholder.markdown(message_content)
-                assistant_message.content = message_content
-                logger.error(f"Error in chat function: {str(e)}", exc_info=True)
-
             # Run analysis with enhanced error capture
-            analysis_result: DatabaseAnalysisResult | RunAnalysisResult
+            analysis_result: RunAnalysisResult
             with st.spinner("Running analysis..."):
                 try:
                     if st.session_state.data_source == DataSource.DATABASE:
                         # Convert DataFrames to dictionary format
-                        sf_analysis_request = DatabaseAnalysisRequest(
+                        sf_analysis_request = RunDatabaseAnalysisRequest(
                             data=st.session_state.cleansed_data,
                             dictionary=st.session_state.data_dictionaries,
-                            question=chat_response.get("enhanced_question", question),
+                            question=enhanced_question,
                         )
                         analysis_result = await run_database_analysis(
                             sf_analysis_request
@@ -352,7 +336,7 @@ async def rephrase_message_and_analysis(
                         analysis_request = RunAnalysisRequest(
                             data=st.session_state.cleansed_data,
                             dictionary=st.session_state.data_dictionaries,
-                            question=chat_response.get("enhanced_question", question),
+                            question=enhanced_question,
                         )
                         analysis_result = await run_analysis(analysis_request)
 
@@ -394,13 +378,13 @@ async def rephrase_message_and_analysis(
                     # Prepare requests
                     chart_request = RunChartsRequest(
                         data=analysis_result.data,
-                        question=chat_response.get("enhanced_question", question),
+                        question=enhanced_question,
                     )
 
-                    business_request = BusinessAnalysisRequest(
+                    business_request = RunBusinessAnalysisRequest(
                         data=analysis_result.data,
                         dictionary=DataDictionary.from_df(analysis_result.data.to_df()),
-                        question=chat_response.get("enhanced_question", question),
+                        question=enhanced_question,
                     )
 
                     # Create and start tasks immediately
@@ -435,7 +419,7 @@ async def rephrase_message_and_analysis(
                                                 result.fig2, use_container_width=True
                                             )
 
-                                elif isinstance(result, BusinessAnalysisResult):
+                                elif isinstance(result, RunBusinessAnalysisResult):
                                     # Business analysis task completed
                                     assistant_message.components.append(result)
 
@@ -507,7 +491,7 @@ async def rephrase_message_and_analysis(
 
 def render_conversation_history(chat_messages: list[AnalystChatMessage]) -> None:
     def render_bottom_line(
-        business_analysis_component: BusinessAnalysisResult | None,
+        business_analysis_component: RunBusinessAnalysisResult | None,
     ) -> None:
         with st.expander("Bottom Line", expanded=True):
             if business_analysis_component:
@@ -521,7 +505,7 @@ def render_conversation_history(chat_messages: list[AnalystChatMessage]) -> None
                 st.markdown("No bottom line available")
 
     def render_analysis(
-        analysis_component: RunAnalysisResult | DatabaseAnalysisResult | None,
+        analysis_component: RunAnalysisResult | None,
     ) -> None:
         language = (
             "sql"
@@ -567,7 +551,7 @@ def render_conversation_history(chat_messages: list[AnalystChatMessage]) -> None
                 st.markdown("No charts available")
 
     def render_additional_insights(
-        business_analysis_component: BusinessAnalysisResult | None,
+        business_analysis_component: RunBusinessAnalysisResult | None,
     ) -> None:
         with st.expander("Additional Insights", expanded=True):
             if business_analysis_component:
@@ -578,7 +562,7 @@ def render_conversation_history(chat_messages: list[AnalystChatMessage]) -> None
                 st.markdown("No additional insights available")
 
     def render_follow_up_questions(
-        business_analysis_component: BusinessAnalysisResult | None,
+        business_analysis_component: RunBusinessAnalysisResult | None,
     ) -> None:
         with st.expander("Follow-up Questions", expanded=True):
             if business_analysis_component:
@@ -599,9 +583,9 @@ def render_conversation_history(chat_messages: list[AnalystChatMessage]) -> None
             None,
         )
         for component in message.components:
-            if isinstance(component, (RunAnalysisResult, DatabaseAnalysisResult)):
+            if isinstance(component, (RunAnalysisResult)):
                 analysis_component = component
-            elif isinstance(component, BusinessAnalysisResult):
+            elif isinstance(component, RunBusinessAnalysisResult):
                 business_analysis_component = component
             elif isinstance(component, RunChartsResult):
                 charts_component = component
@@ -639,7 +623,7 @@ else:
         chat_request = ChatRequest(messages=valid_messages)
         chat_response = asyncio.run(rephrase_message(chat_request))
 
-        enhanced_question = chat_response.get("enhanced_user_message", question)
+        enhanced_question = chat_response if chat_response else question
         user_message = AnalystChatMessage(
             role="user", content=enhanced_question, components=[]
         )

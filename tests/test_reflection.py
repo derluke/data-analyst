@@ -16,10 +16,12 @@ from typing import Any
 
 import pytest
 
+from utils.code_execution import reflect_code_generation_errors
+
 
 @pytest.fixture
 def f_always_fails(pulumi_up: Any) -> Any:
-    from utils.api import InvalidGeneratedCode
+    from utils.code_execution import InvalidGeneratedCode
 
     received_args = []
     received_kwargs = {}
@@ -41,7 +43,7 @@ def f_always_fails(pulumi_up: Any) -> Any:
 
 @pytest.fixture
 def f_passes_on_second(pulumi_up: Any) -> Any:
-    from utils.api import InvalidGeneratedCode
+    from utils.code_execution import InvalidGeneratedCode
 
     received_args = []
     received_kwargs = {}
@@ -66,7 +68,7 @@ def f_passes_on_second(pulumi_up: Any) -> Any:
 
 @pytest.mark.asyncio
 async def test_max_retries(pulumi_up: Any, f_always_fails: Any) -> Any:
-    from utils.api import MaxReflectionAttempts, reflect_code_generation_errors
+    from utils.code_execution import MaxReflectionAttempts
 
     f, retries, received_args, received_kwargs = f_always_fails
     decorated = reflect_code_generation_errors(max_attempts=3)(f)
@@ -81,7 +83,7 @@ async def test_max_retries(pulumi_up: Any, f_always_fails: Any) -> Any:
 
 @pytest.mark.asyncio
 async def test_success(pulumi_up: Any, f_passes_on_second: Any) -> Any:
-    from utils.api import reflect_code_generation_errors
+    from utils.code_execution import reflect_code_generation_errors
 
     f, retries, received_args, received_kwargs = f_passes_on_second
     decorated = reflect_code_generation_errors(max_attempts=3)(f)

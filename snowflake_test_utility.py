@@ -39,7 +39,7 @@ from utils.rest_api import (  # type: ignore[attr-defined]
 from utils.schema import (
     AnalystDataset,
     ChatRequest,
-    DatabaseAnalysisRequest,
+    RunDatabaseAnalysisRequest,
 )
 
 console = Console()
@@ -426,7 +426,7 @@ async def main() -> None:
         chat_request = ChatRequest(messages=chat_messages)
         chat_result = await rephrase_message(chat_request)
 
-        enhanced_question = chat_result.get("enhanced_user_message", selected_question)
+        enhanced_question = chat_result if chat_result else selected_question
 
         # Display current question enhancement
         console.print("\n[bold cyan]Enhanced Question:[/bold cyan]")
@@ -444,7 +444,7 @@ async def main() -> None:
             task = progress.add_task("Analyzing data...", total=None)
 
             # Create analysis request
-            analysis_request = DatabaseAnalysisRequest(
+            analysis_request = RunDatabaseAnalysisRequest(
                 data={
                     table: metadata["sample_data"]
                     for table, metadata in tables_metadata.items()
@@ -576,9 +576,8 @@ async def main() -> None:
             chat_request = ChatRequest(messages=chat_context)
             chat_result = await rephrase_message(chat_request)
 
-            enhanced_question = chat_result.get(
-                "enhanced_user_message", selected_question
-            )
+            enhanced_question = chat_result if chat_result else selected_question
+
             console.print("\n[bold cyan]Enhanced Question:[/bold cyan]")
             console.print(enhanced_question)
 
@@ -593,7 +592,7 @@ async def main() -> None:
                 task = progress.add_task("Analyzing data...", total=None)
 
                 # Create new analysis request
-                analysis_request = DatabaseAnalysisRequest(
+                analysis_request = RunDatabaseAnalysisRequest(
                     data={
                         table: metadata["sample_data"]
                         for table, metadata in tables_metadata.items()
