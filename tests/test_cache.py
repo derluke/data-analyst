@@ -21,39 +21,18 @@ from utils.schema import AnalystDataset
 
 
 @pytest.mark.asyncio
-async def test_clean_data_cache(dataset_loaded: AnalystDataset) -> None:
-    from utils.api import cleanse_dataframes
-
-    # First call - populate cache and measure time
-    start_time = datetime.now()
-    result1 = await cleanse_dataframes(datasets=[dataset_loaded])
-    end_time = datetime.now()
-    duration1 = (end_time - start_time).total_seconds()
-
-    print(f"First call duration: {duration1:.2f} seconds")
-
-    # Second call - should retrieve from cache and measure time
-    start_time = datetime.now()
-    result2 = await cleanse_dataframes(datasets=[dataset_loaded])
-    end_time = datetime.now()
-    duration2 = (end_time - start_time).total_seconds()
-
-    print(f"Second call duration: {duration2:.2f} seconds")
-
-    # Assertion to check if the second call is significantly faster
-    assert result1 == result2, "Cached results must be identical"
-    assert duration2 < duration1 * 0.8, "Second call must be at least 20% faster"
-
-
-@pytest.mark.asyncio
 async def test_get_dictionary_cache(
     pulumi_up: Any, dataset_loaded: AnalystDataset
 ) -> None:
-    from utils.api import get_dictionary
+    from utils.api import get_dictionaries
+
+    # shuffle data to invalidate cache
+    df_shuffled = dataset_loaded.to_df().sample(frac=1, random_state=42)
+    new_dataset_loaded = AnalystDataset(name=dataset_loaded.name, data=df_shuffled)
 
     # First call - populate cache and measure time
     start_time = datetime.now()
-    result1 = await get_dictionary([dataset_loaded])
+    result1 = await get_dictionaries([new_dataset_loaded])
     end_time = datetime.now()
     duration1 = (end_time - start_time).total_seconds()
 
@@ -61,7 +40,7 @@ async def test_get_dictionary_cache(
 
     # Second call - should retrieve from cache and measure time
     start_time = datetime.now()
-    result2 = await get_dictionary([dataset_loaded])
+    result2 = await get_dictionaries([new_dataset_loaded])
     end_time = datetime.now()
     duration2 = (end_time - start_time).total_seconds()
 

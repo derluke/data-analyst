@@ -24,7 +24,6 @@ import tempfile
 from datetime import datetime
 from typing import (
     Any,
-    Sequence,
     TypeVar,
     cast,
 )
@@ -82,6 +81,8 @@ from utils.schema import (
     RunChartsRequest,
     RunChartsResult,
     RunDatabaseAnalysisRequest,
+    RunDatabaseAnalysisResult,
+    RunDatabaseAnalysisResultMetadata,
     ValidatedQuestion,
 )
 
@@ -287,7 +288,6 @@ async def _get_dictionary_batch(
                 role="user", content=f"Categorical Values:\n{categories}\n"
             )
         )
-    logger.info(f"Messages sent to OpenAI: {json.dumps(messages)}")
 
     # Get descriptions from OpenAI
     completion: DictionaryGeneration = client.chat.completions.create(
@@ -322,7 +322,7 @@ async def _get_dictionary_batch(
         ]
 
 
-async def _get_dictionary(dataset: AnalystDataset) -> DataDictionary:
+async def _get_dictionaries(dataset: AnalystDataset) -> DataDictionary:
     """Process a single dataset with parallel column batch processing"""
     try:
         # Convert JSON to DataFrame
@@ -336,7 +336,7 @@ async def _get_dictionary(dataset: AnalystDataset) -> DataDictionary:
             logger.warning(f"Dataset {dataset.name} is empty")
             return DataDictionary(
                 name=dataset.name,
-                dictionary=[],
+                column_descriptions=[],
             )
 
         # Split columns into batches
@@ -362,7 +362,7 @@ async def _get_dictionary(dataset: AnalystDataset) -> DataDictionary:
 
         return DataDictionary(
             name=dataset.name,
-            dictionary=dictionary,
+            column_descriptions=dictionary,
         )
 
     except Exception as e:
@@ -371,7 +371,7 @@ async def _get_dictionary(dataset: AnalystDataset) -> DataDictionary:
 
 def _validate_question_feasibility(
     question: str, available_columns: list[str]
-) -> ValidatedQuestion:
+) -> ValidatedQuestion | None:
     """Validate if a question can be answered with available data
 
     Checks if common data elements mentioned in the question exist in columns
@@ -385,24 +385,13 @@ def _validate_question_feasibility(
 
     # Find matches and missing terms
     found_columns = [col for col in columns_lower if any(word in col for word in words)]
-    missing_columns = [
-        word for word in words if any(word in col for col in columns_lower)
-    ]
 
     is_valid = len(found_columns) > 0
-    message = (
-        "Question can be answered with available data"
-        if is_valid
-        else "Question may require unavailable data"
-    )
-
-    return ValidatedQuestion(
-        question=question,
-        is_valid=is_valid,
-        available_columns=found_columns,
-        missing_columns=missing_columns,
-        validation_message=message,
-    )
+    if is_valid:
+        return ValidatedQuestion(
+            question=question,
+        )
+    return None
 
 
 async def suggest_questions(
@@ -425,7 +414,7 @@ async def suggest_questions(
             DataDictionary.from_df(
                 ds.to_df(),
                 column_descriptions=f"Column from dataset {ds.name}",
-            ).dictionary
+            ).column_descriptions
             for ds in datasets
         ],
         [],
@@ -475,9 +464,9 @@ async def suggest_questions(
     validated_questions: list[ValidatedQuestion] = []
 
     for question in completion.questions:
-        validated_questions.append(
-            _validate_question_feasibility(question, available_columns)
-        )
+        validated_question = _validate_question_feasibility(question, available_columns)
+        if validated_question is not None:
+            validated_questions.append(validated_question)
 
     return validated_questions
 
@@ -485,7 +474,7 @@ async def suggest_questions(
 async def _generate_run_charts_python_code(
     request: RunChartsRequest, validation_error: InvalidGeneratedCode | None = None
 ) -> str:
-    df = request.data.to_df()
+    df = request.dataset.to_df()
     question = request.question
     dataframe_metadata = {
         "shape": {"rows": int(df.shape[0]), "columns": int(df.shape[1])},
@@ -552,8 +541,8 @@ async def _generate_run_analysis_python_code(
     all_descriptions = []
     all_data_types = []
 
-    for dictionary in request.dictionary:
-        for entry in dictionary.dictionary:
+    for dictionary in request.dictionaries:
+        for entry in dictionary.column_descriptions:
             all_columns.append(f"{dictionary.name}.{entry.column}")
             all_descriptions.append(entry.description)
             all_data_types.append(entry.data_type)
@@ -569,7 +558,7 @@ async def _generate_run_analysis_python_code(
     all_samples = []
     all_shapes = []
 
-    for dataset in request.data:
+    for dataset in request.datasets:
         df = dataset.to_df()
         all_shapes.append(f"{dataset.name}: {df.shape[0]} rows x {df.shape[1]} columns")
         # Limit sample to 10 rows
@@ -629,7 +618,6 @@ async def _generate_run_analysis_python_code(
     return completion.code
 
 
-@cache
 async def cleanse_dataframes(
     datasets: list[AnalystDataset],
 ) -> list[CleansedDataset]:
@@ -637,16 +625,18 @@ async def cleanse_dataframes(
     cleaned_datasets = []
 
     for dataset in datasets:
-        df = dataset.to_df()
-        if df.empty:
+        cleaned_df = dataset.to_df()
+        if cleaned_df.empty:
             raise ValueError(f"Dataset {dataset.name} is empty")
 
         report = CleansingReport(columns_cleaned=[], errors=[], warnings=[])
 
         # Clean column names
-        original_cols = df.columns.tolist()
-        df.columns = [re.sub(r"\s+", " ", col.strip()) for col in df.columns]  # type: ignore[assignment]
-        cleaned_cols = df.columns.tolist()
+        original_cols = cleaned_df.columns.tolist()
+        cleaned_df.columns = [
+            re.sub(r"\s+", " ", col.strip()) for col in cleaned_df.columns
+        ]  # type: ignore[assignment]
+        cleaned_cols = cleaned_df.columns.tolist()
 
         # Track column name changes
         for orig, cleaned in zip(original_cols, cleaned_cols):
@@ -655,55 +645,59 @@ async def cleanse_dataframes(
                 report.warnings.append(f"Column '{orig}' renamed to '{cleaned}'")
 
         # Process each column
-        for col in df.columns:
+        for col in cleaned_df.columns:
             try:
-                original = df[col].copy()
+                original = cleaned_df[col].copy()
 
                 # Handle numeric columns
-                if pd.api.types.is_numeric_dtype(df[col]):
-                    df[col] = pd.to_numeric(df[col], errors="coerce")
-                    if not df[col].equals(original):
+                if pd.api.types.is_numeric_dtype(cleaned_df[col]):
+                    cleaned_df[col] = pd.to_numeric(cleaned_df[col], errors="coerce")
+                    if not cleaned_df[col].equals(original):
                         report.columns_cleaned.append(col)
 
                 # Handle potential numeric strings (with currency/percentage)
                 elif (
-                    df[col].dtype == "object"
-                    and df[col].notna().all()
-                    and df[col]
+                    cleaned_df[col].dtype == "object"
+                    and cleaned_df[col].notna().all()
+                    and cleaned_df[col]
                     .str.replace(r"[$%,\s]", "", regex=True)
                     .str.match(r"^-?\d*\.?\d*$")
                     .all()
                 ):
-                    df[col] = pd.to_numeric(
-                        df[col].astype(str).str.replace(r"[$%,\s]", "", regex=True),
+                    cleaned_df[col] = pd.to_numeric(
+                        cleaned_df[col]
+                        .astype(str)
+                        .str.replace(r"[$%,\s]", "", regex=True),
                         errors="coerce",
                     )
                     report.columns_cleaned.append(col)
 
                 # Handle dates
-                elif is_date_column(df[col]):
-                    df[col] = convert_datetime_series(df[col])
-                    if not df[col].equals(original):
+                elif is_date_column(cleaned_df[col]):
+                    cleaned_df[col] = convert_datetime_series(cleaned_df[col])
+                    if not cleaned_df[col].equals(original):
                         report.columns_cleaned.append(col)
 
                 # Handle categorical
-                elif df[col].dtype == "object":
-                    mask = df[col].notna()
+                elif cleaned_df[col].dtype == "object":
+                    mask = cleaned_df[col].notna()
                     if mask.any():
-                        temp = df.loc[mask, col]
+                        temp = cleaned_df.loc[mask, col]
                         if not pd.api.types.is_string_dtype(temp):
                             temp = temp.astype(str)
-                        df.loc[mask, col] = temp.str.strip()
-                        if not df[col].equals(original):
+                        cleaned_df.loc[mask, col] = temp.str.strip()
+                        if not cleaned_df[col].equals(original):
                             report.columns_cleaned.append(col)
-
+                cleaned_df = cleaned_df.replace({pd.NaT: None})
             except Exception as e:
                 report.errors.append(f"Error processing column {col}: {str(e)}")
 
         cleaned_datasets.append(
             CleansedDataset(
-                name=dataset.name,
-                data=df.replace({pd.NaT: None}).to_dict("records"),
+                dataset=AnalystDataset(
+                    name=dataset.name,
+                    data=cleaned_df,
+                ),
                 cleaning_report=report,
             )
         )
@@ -711,8 +705,8 @@ async def cleanse_dataframes(
 
 
 @cache
-async def get_dictionary(
-    datasets: Sequence[AnalystDataset],
+async def get_dictionaries(
+    datasets: list[AnalystDataset],
 ) -> list[DataDictionary]:
     """
     Generate data dictionary for multiple datasets.
@@ -727,7 +721,7 @@ async def get_dictionary(
         # Add debug logging
         logger.info(f"Received dictionary request with {len(datasets)} datasets")
 
-        tasks = [_get_dictionary(dataset) for dataset in datasets]
+        tasks = [_get_dictionaries(dataset) for dataset in datasets]
 
         results = await asyncio.gather(*tasks)
         # Process datasets using ThreadPoolExecutor instead of ProcessPoolExecutor
@@ -784,10 +778,10 @@ async def _run_charts(
     # Create messages for OpenAI
     start_time = datetime.now()
 
-    if not request.data:
+    if not request.dataset:
         raise ValueError("Input data cannot be empty")
 
-    df = request.data.to_df()
+    df = request.dataset.to_df()
     if exception_history is None:
         exception_history = []
 
@@ -837,7 +831,7 @@ async def run_charts(
         return chart_result
     except MaxReflectionAttempts as e:
         return RunChartsResult(
-            status="failed",
+            status="error",
             metadata=RunAnalysisResultMetadata(
                 duration=e.duration,
                 attempts=len(e.exception_history) if e.exception_history else 0,
@@ -859,7 +853,7 @@ async def get_business_analysis(
     """
     try:
         # Convert JSON data to DataFrame for analysis
-        df = request.data.to_df()
+        df = request.dataset.to_df()
 
         # Get first 1000 rows as CSV with quoted values for context
         df_csv = df.head(750).to_csv(index=False, quoting=1)
@@ -913,7 +907,7 @@ async def _run_analysis(
     exception_history: list[InvalidGeneratedCode] | None = None,
 ) -> RunAnalysisResult:
     start_time = datetime.now()
-    if not request.data:
+    if not request.datasets:
         raise ValueError("Input data cannot be empty")
 
     if exception_history is None:
@@ -923,13 +917,8 @@ async def _run_analysis(
         request, next(iter(exception_history), None)
     )
     dataframes: dict[str, pd.DataFrame] = {}
-    for dataset in request.data:
-        if dataset.data:
-            df = dataset.to_df()
-            dataframes[dataset.name] = df
-        else:
-            dataframes[dataset.name] = pd.DataFrame()
-
+    for dataset in request.datasets:
+        dataframes[dataset.name] = dataset.to_df()
     try:
         result = execute_python(
             modules={
@@ -952,7 +941,7 @@ async def _run_analysis(
     return RunAnalysisResult(
         status="success",
         code=code,
-        data=result,
+        dataset=result,
         metadata=RunAnalysisResultMetadata(
             duration=duration.total_seconds(),
             attempts=len(exception_history) + 1,
@@ -975,8 +964,7 @@ async def run_analysis(
         return await _run_analysis(request)
     except MaxReflectionAttempts as e:
         return RunAnalysisResult(
-            status="failed",
-            suggestions="Consider reformulating the question or checking data quality",
+            status="error",
             metadata=RunAnalysisResultMetadata(
                 duration=e.duration,
                 attempts=len(e.exception_history) if e.exception_history else 0,
@@ -999,11 +987,11 @@ async def _generate_database_analysis_code(
     """
 
     # Convert dictionary data structure to list of columns for all tables
-    all_tables_info = [d.model_dump(mode="json") for d in request.dictionary]
+    all_tables_info = [d.model_dump(mode="json") for d in request.dictionaries]
 
     # Get sample data for all tables
     all_samples = []
-    for table in request.data:
+    for table in request.datasets:
         df = table.to_df()
         sample_str = f"Table: {table.name}\n{df.head(10).to_string()}"
         all_samples.append(sample_str)
@@ -1056,8 +1044,9 @@ async def _generate_database_analysis_code(
 async def _run_database_analysis(
     request: RunDatabaseAnalysisRequest,
     exception_history: list[InvalidGeneratedCode] | None = None,
-) -> RunAnalysisResult:
-    if not request.data:
+) -> RunDatabaseAnalysisResult:
+    start_time = datetime.now()
+    if not request.datasets:
         raise ValueError("Input data cannot be empty")
 
     if exception_history is None:
@@ -1066,33 +1055,39 @@ async def _run_database_analysis(
         request, next(iter(exception_history), None)
     )
     try:
-        results, metadata = Database.execute_query(query=sql_code)
+        results = Database.execute_query(query=sql_code)
         results = cast(list[dict[str, Any]], results)
+        duration = datetime.now() - start_time
+
     except InvalidGeneratedCode:
         raise
     except Exception as e:
         raise InvalidGeneratedCode(code=sql_code, exception=e)
-    return RunAnalysisResult(
+    return RunDatabaseAnalysisResult(
         status="success",
         code=sql_code,
-        data=AnalystDataset(
+        dataset=AnalystDataset(
             data=results,
         ),
-        metadata=metadata,
+        metadata=RunDatabaseAnalysisResultMetadata(
+            duration=duration.total_seconds(),
+            attempts=len(exception_history),
+            datasets_analyzed=len(request.datasets),
+            total_columns_analyzed=sum(len(ds.columns) for ds in request.datasets),
+        ),
     )
 
 
 async def run_database_analysis(
     request: RunDatabaseAnalysisRequest,
-) -> RunAnalysisResult:
+) -> RunDatabaseAnalysisResult:
     """Execute analysis workflow on datasets."""
     try:
         return await _run_database_analysis(request)
     except MaxReflectionAttempts as e:
-        return RunAnalysisResult(
-            status="failed",
-            suggestions="Consider reformulating the question or checking data quality",
-            metadata=RunAnalysisResultMetadata(
+        return RunDatabaseAnalysisResult(
+            status="error",
+            metadata=RunDatabaseAnalysisResultMetadata(
                 duration=e.duration,
                 attempts=len(e.exception_history) if e.exception_history else 0,
             ),

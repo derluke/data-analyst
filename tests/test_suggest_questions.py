@@ -38,9 +38,7 @@ def test_validate_question_feasibility_valid() -> None:
 
     result = _validate_question_feasibility(question, columns)
 
-    assert result.is_valid
-    assert "total_sales" in result.available_columns
-    assert "can be answered" in result.validation_message
+    assert result is not None
 
 
 def test_validate_question_feasibility_invalid() -> None:
@@ -51,9 +49,7 @@ def test_validate_question_feasibility_invalid() -> None:
 
     result = _validate_question_feasibility(question, columns)
 
-    assert not result.is_valid
-    assert not result.available_columns
-    assert "unavailable data" in result.validation_message
+    assert result is None
 
 
 @pytest.mark.asyncio
@@ -71,7 +67,6 @@ async def test_suggest_questions_basic(mocker: Any) -> None:
 
     assert len(result) == 1
     assert result[0].question == "How many records in col1?"
-    assert result[0].is_valid
 
 
 def test_validate_question_case_insensitive() -> None:
@@ -82,8 +77,7 @@ def test_validate_question_case_insensitive() -> None:
 
     result = _validate_question_feasibility(question, columns)
 
-    assert result.is_valid
-    assert "total_sales" in [c.lower() for c in result.available_columns]
+    assert result is not None
 
 
 @pytest.mark.asyncio

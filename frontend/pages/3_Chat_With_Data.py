@@ -47,7 +47,6 @@ from utils.schema import (
     AnalystChatMessage,
     AnalystDataset,
     ChatRequest,
-    CleansedDataset,
     DataDictionary,
     RunAnalysisRequest,
     RunAnalysisResult,
@@ -56,6 +55,7 @@ from utils.schema import (
     RunChartsRequest,
     RunChartsResult,
     RunDatabaseAnalysisRequest,
+    RunDatabaseAnalysisResult,
 )
 
 # Suppress warnings
@@ -295,9 +295,6 @@ async def rephrase_message_and_analysis(
     st.session_state.chat_messages = cast(
         list[AnalystChatMessage], st.session_state.chat_messages
     )
-    st.session_state.cleansed_data = cast(
-        list[CleansedDataset], st.session_state.cleansed_data
-    )
     st.session_state.data_dictionaries = cast(
         list[DataDictionary], st.session_state.data_dictionaries
     )
@@ -319,14 +316,14 @@ async def rephrase_message_and_analysis(
             )
 
             # Run analysis with enhanced error capture
-            analysis_result: RunAnalysisResult
+            analysis_result: RunAnalysisResult | RunDatabaseAnalysisResult
             with st.spinner("Running analysis..."):
                 try:
                     if st.session_state.data_source == DataSource.DATABASE:
                         # Convert DataFrames to dictionary format
                         sf_analysis_request = RunDatabaseAnalysisRequest(
-                            data=st.session_state.cleansed_data,
-                            dictionary=st.session_state.data_dictionaries,
+                            datasets=st.session_state.datasets,
+                            dictionaries=st.session_state.data_dictionaries,
                             question=enhanced_question,
                         )
                         analysis_result = await run_database_analysis(
@@ -334,8 +331,8 @@ async def rephrase_message_and_analysis(
                         )
                     else:
                         analysis_request = RunAnalysisRequest(
-                            data=st.session_state.cleansed_data,
-                            dictionary=st.session_state.data_dictionaries,
+                            datasets=st.session_state.datasets,
+                            dictionaries=st.session_state.data_dictionaries,
                             question=enhanced_question,
                         )
                         analysis_result = await run_analysis(analysis_request)
@@ -355,10 +352,10 @@ async def rephrase_message_and_analysis(
                                     else "python"
                                 )
                                 st.code(analysis_result.code, language=language)
-                        if analysis_result.data:
+                        if analysis_result.dataset:
                             with st.expander("Analysis Results", expanded=True):
                                 st.dataframe(
-                                    analysis_result.data.to_df(),
+                                    analysis_result.dataset.to_df(),
                                     use_container_width=True,
                                 )
 
@@ -373,17 +370,19 @@ async def rephrase_message_and_analysis(
                     st.stop()
 
             # Process charts and business analysis concurrently
-            if analysis_result and analysis_result.data:
+            if analysis_result and analysis_result.dataset:
                 try:
                     # Prepare requests
                     chart_request = RunChartsRequest(
-                        data=analysis_result.data,
+                        dataset=analysis_result.dataset,
                         question=enhanced_question,
                     )
 
                     business_request = RunBusinessAnalysisRequest(
-                        data=analysis_result.data,
-                        dictionary=DataDictionary.from_df(analysis_result.data.to_df()),
+                        dataset=analysis_result.dataset,
+                        dictionary=DataDictionary.from_df(
+                            analysis_result.dataset.to_df()
+                        ),
                         question=enhanced_question,
                     )
 
@@ -505,7 +504,7 @@ def render_conversation_history(chat_messages: list[AnalystChatMessage]) -> None
                 st.markdown("No bottom line available")
 
     def render_analysis(
-        analysis_component: RunAnalysisResult | None,
+        analysis_component: RunAnalysisResult | RunDatabaseAnalysisResult | None,
     ) -> None:
         language = (
             "sql"
@@ -516,8 +515,8 @@ def render_conversation_history(chat_messages: list[AnalystChatMessage]) -> None
         with analysis_container:
             with st.expander("Analysis Results", expanded=True):
                 if analysis_component:
-                    if analysis_component.data:
-                        analysis_data: AnalystDataset = analysis_component.data
+                    if analysis_component.dataset:
+                        analysis_data: AnalystDataset = analysis_component.dataset
                         df = pd.DataFrame(analysis_data.data)
                         st.dataframe(df, use_container_width=True)
                     else:
@@ -583,7 +582,7 @@ def render_conversation_history(chat_messages: list[AnalystChatMessage]) -> None
             None,
         )
         for component in message.components:
-            if isinstance(component, (RunAnalysisResult)):
+            if isinstance(component, (RunAnalysisResult, RunDatabaseAnalysisResult)):
                 analysis_component = component
             elif isinstance(component, RunBusinessAnalysisResult):
                 business_analysis_component = component
@@ -605,7 +604,7 @@ st.image(get_page_logo(), width=200)
 st.session_state.chat_messages = cast(
     list[AnalystChatMessage], st.session_state.chat_messages
 )
-if not st.session_state.cleansed_data:
+if not st.session_state.datasets:
     st.info("Please upload and process data using the sidebar before starting the chat")
 else:
     render_conversation_history(st.session_state.chat_messages)

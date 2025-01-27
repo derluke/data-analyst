@@ -33,7 +33,7 @@ from rich.table import Table
 from utils.rest_api import (  # type: ignore[attr-defined]
     cleanse_dataframes,
     get_business_analysis,
-    get_dictionary,
+    get_dictionaries,
     rephrase_message,
     run_analysis,
     run_charts,
@@ -271,7 +271,7 @@ async def main() -> None:
                     f"[cyan]Debug: Request dataset '{dataset.name}' has {len(dataset.data)} records[/cyan]"
                 )
 
-            dictionary_result = await get_dictionary(datasets)
+            dictionary_result = await get_dictionaries(datasets)
             progress.update(task, completed=True)
 
         dict_elapsed_time = time.time() - dict_start_time
@@ -506,11 +506,11 @@ async def main() -> None:
 
                     # Create analysis request with cleaned data
                     analysis_request = RunAnalysisRequest(
-                        data={
+                        datasets={
                             dataset["name"]: dataset["data"]
                             for dataset in result["datasets"]
                         },
-                        dictionary={
+                        dictionaries={
                             dataset["name"]: [
                                 {
                                     "column": col["column"],
@@ -738,7 +738,7 @@ async def main() -> None:
                         analysis_result["data"], list
                     ):
                         business_request = RunBusinessAnalysisRequest(
-                            data=analysis_result["data"],
+                            dataset=analysis_result["data"],
                             dictionary=[
                                 {
                                     "column": col["column"],
@@ -801,7 +801,7 @@ async def main() -> None:
 
                     # Create charts request
                     charts_request = RunChartsRequest(
-                        data=analysis_data,
+                        dataset=analysis_data,
                         question=chat_result.get(
                             "enhanced_user_message", selected_question
                         ),

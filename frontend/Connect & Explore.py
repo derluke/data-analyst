@@ -37,7 +37,7 @@ from app_settings import (
 from utils.api import (
     cleanse_dataframes,
     download_catalog_datasets,
-    get_dictionary,
+    get_dictionaries,
     list_catalog_datasets,
 )
 from utils.database_helpers import Database, app_infra
@@ -78,12 +78,12 @@ def process_data_cached(_datasets: list[AnalystDataset]) -> list[CleansedDataset
 
 
 def generate_dictionaries(
-    _cleansed_data: list[CleansedDataset],
+    _cleansed_data: list[AnalystDataset],
 ) -> list[DataDictionary]:
     """
     Wrapper function to handle async dictionary generation
     """
-    return asyncio.run(get_dictionary(_cleansed_data))
+    return asyncio.run(get_dictionaries(_cleansed_data))
 
 
 def process_uploaded_file(file: UploadedFile) -> list[AnalystDataset]:
@@ -161,7 +161,6 @@ def process_data_and_update_state(datasets: list[AnalystDataset]) -> None:
     ]
 
     # Add the new (or updated) datasets to the session state
-    st.session_state.datasets.extend(datasets)
 
     for ds in datasets:
         st.success(f"✓ {ds.name}: {len(ds.to_df())} rows, {len(ds.columns)} columns")
@@ -174,25 +173,19 @@ def process_data_and_update_state(datasets: list[AnalystDataset]) -> None:
         except Exception as e:
             logger.error("Data processing failed")
             st.error(f"❌ Error processing data: {str(e)}")
+            cleansed_datasets = []
+        analysis_datasets = [ds.dataset for ds in cleansed_datasets]
+        st.session_state.cleansed_data += cleansed_datasets
     else:
-        cleansed_datasets = [
-            CleansedDataset(
-                name=ds.name,
-                data=ds.data,
-                cleaning_report=CleansingReport(
-                    columns_cleaned=[], errors=[], warnings=[]
-                ),
-            )
-            for ds in datasets
-        ]
+        analysis_datasets = datasets
 
-    st.session_state.cleansed_data += cleansed_datasets
+    st.session_state.datasets.extend(analysis_datasets)
     logger.info("Data processing successful, generating dictionaries")
 
     new_dictionaries = []
     # Generate data dictionaries
     try:
-        new_dictionaries = generate_dictionaries(cleansed_datasets)
+        new_dictionaries = generate_dictionaries(analysis_datasets)
         st.session_state.data_dictionaries += [
             d
             for d in new_dictionaries
@@ -364,38 +357,51 @@ st.image(get_page_logo(), width=200)
 st.title("Explore")
 
 # Main content area - conditional rendering based on cleansed data
-if not st.session_state.cleansed_data:
+if not st.session_state.datasets:
     st.info("Upload and process your data using the sidebar to get started")
 else:
-    for ds_clean in st.session_state.cleansed_data:
-        st.subheader(f"{ds_clean.name}")
+    st.session_state.datasets = cast(list[AnalystDataset], st.session_state.datasets)
+    st.session_state.cleansed_data = cast(
+        list[CleansedDataset], st.session_state.cleansed_data
+    )
+    for ds_display in st.session_state.datasets:
+        st.subheader(f"{ds_display.name}")
+        cleaning_report: CleansingReport | None = None
+        try:
+            cleaning_report = next(
+                clean_ds.cleaning_report
+                for clean_ds in st.session_state.cleansed_data
+                if clean_ds.name == ds_display.name
+            )
 
-        # Display cleaning report in expander
-        with st.expander("View Cleaning Report"):
-            report = ds_clean.cleaning_report
-            if report.columns_cleaned:
-                st.write("**Columns Cleaned:**")
-                st.write(", ".join(report.columns_cleaned))
+            # Display cleaning report in expander
+            with st.expander("View Cleaning Report"):
+                report = cleaning_report
+                if report.columns_cleaned:
+                    st.write("**Columns Cleaned:**")
+                    st.write(", ".join(report.columns_cleaned))
 
-                if report.warnings:
-                    st.write("**Warnings:**")
-                    for warning in report.warnings:
-                        st.write(f"- {warning}")
+                    if report.warnings:
+                        st.write("**Warnings:**")
+                        for warning in report.warnings:
+                            st.write(f"- {warning}")
 
-                if report.errors:
-                    st.error("**Errors:**")
-                    for error in report.errors:
-                        st.write(f"- {error}")
+                    if report.errors:
+                        st.error("**Errors:**")
+                        for error in report.errors:
+                            st.write(f"- {error}")
+        except IndexError:
+            pass
 
         # Display dataframe with column filters
-        df_display: pd.DataFrame = pd.DataFrame.from_records(ds_clean.data)
+        df_display = ds_display.to_df()
 
         # Create column filters
         col1, col2 = st.columns([3, 1])
         with col1:
             search = st.text_input(
                 "Search columns",
-                key=f"search_{ds_clean.name}",
+                key=f"search_{ds_display.name}",
                 help="Filter columns by name",
             )
         with col2:
@@ -406,7 +412,7 @@ else:
                     max_value=len(df_display),
                     value=min(10, len(df_display)),
                     step=1,
-                    key=f"n_rows_{ds_clean.name}",
+                    key=f"n_rows_{ds_display.name}",
                 )
             )
 
@@ -426,9 +432,9 @@ else:
             st.download_button(
                 label="Download Cleansed Data",
                 data=csv,
-                file_name=f"{ds_clean.name}_cleansed.csv",
+                file_name=f"{ds_display.name}_cleansed.csv",
                 mime="text/csv",
-                key=f"download_{ds_clean.name}",
+                key=f"download_{ds_display.name}",
             )
 
         st.markdown("---")

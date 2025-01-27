@@ -16,7 +16,6 @@ import logging
 import sys
 from typing import cast
 
-import pandas as pd
 import streamlit as st
 
 sys.path.append("..")
@@ -62,7 +61,7 @@ else:
 
         try:
             # Convert dictionary to DataFrame
-            dict_df = pd.DataFrame(dictionary.model_dump()["dictionary"])
+            dict_df = dictionary.to_df()
             logger.info(
                 f"Created DataFrame for {dictionary.name} with shape {dict_df.shape}"
             )
