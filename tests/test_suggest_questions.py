@@ -17,7 +17,6 @@ from typing import Any
 import pandas as pd
 import pytest
 
-from utils.api import _validate_question_feasibility, suggest_questions
 from utils.schema import AnalystDataset
 
 
@@ -32,6 +31,8 @@ def sample_datasets() -> list[AnalystDataset]:
 
 
 def test_validate_question_feasibility_valid() -> None:
+    from utils.api import _validate_question_feasibility
+
     columns = ["total_sales", "revenue_2023", "profit_margin"]
     question = "What were the total sales in 2023?"
 
@@ -43,6 +44,8 @@ def test_validate_question_feasibility_valid() -> None:
 
 
 def test_validate_question_feasibility_invalid() -> None:
+    from utils.api import _validate_question_feasibility
+
     columns = ["revenue", "costs"]
     question = "What is the customer satisfaction score?"
 
@@ -55,6 +58,8 @@ def test_validate_question_feasibility_invalid() -> None:
 
 @pytest.mark.asyncio
 async def test_suggest_questions_basic(mocker: Any) -> None:
+    from utils.api import suggest_questions
+
     datasets = [
         AnalystDataset(name="test", data=pd.DataFrame({"col1": [], "col2": []}))
     ]
@@ -70,6 +75,8 @@ async def test_suggest_questions_basic(mocker: Any) -> None:
 
 
 def test_validate_question_case_insensitive() -> None:
+    from utils.api import _validate_question_feasibility
+
     columns = ["Total_Sales", "REVENUE"]
     question = "what were the total sales?"
 
@@ -81,6 +88,8 @@ def test_validate_question_case_insensitive() -> None:
 
 @pytest.mark.asyncio
 async def test_suggest_questions_empty_dataset() -> None:
+    from utils.api import suggest_questions
+
     datasets = [AnalystDataset(name="test", data=pd.DataFrame())]
 
     with pytest.raises(ValueError, match="Dictionary DataFrame cannot be empty"):

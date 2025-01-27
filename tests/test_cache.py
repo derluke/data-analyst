@@ -17,12 +17,13 @@ from typing import Any
 
 import pytest
 
-from utils.api import cleanse_dataframes, get_dictionary
 from utils.schema import AnalystDataset
 
 
 @pytest.mark.asyncio
 async def test_clean_data_cache(dataset_loaded: AnalystDataset) -> None:
+    from utils.api import cleanse_dataframes
+
     # First call - populate cache and measure time
     start_time = datetime.now()
     result1 = await cleanse_dataframes(datasets=[dataset_loaded])
@@ -48,6 +49,8 @@ async def test_clean_data_cache(dataset_loaded: AnalystDataset) -> None:
 async def test_get_dictionary_cache(
     pulumi_up: Any, dataset_loaded: AnalystDataset
 ) -> None:
+    from utils.api import get_dictionary
+
     # First call - populate cache and measure time
     start_time = datetime.now()
     result1 = await get_dictionary([dataset_loaded])

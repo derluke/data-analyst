@@ -106,27 +106,3 @@ class TestDatasetInput:
     def test_different_input_types(self, input_type: str, data: dict[str, Any]) -> None:
         model = AnalystDataset(data=data[input_type], name="test")
         assert_frame_equal(model.to_df(), data["df"])
-
-
-# class TestTypedDatasetInput:
-#     def test_type_validation(self) -> None:
-#         # Test with correct types
-#         valid_df = pd.DataFrame({"a": [1, 2], "b": ["x", "y"]})
-#         model = TypedDatasetInput(data=valid_df)
-#         assert_frame_equal(model.to_df(), valid_df)
-
-#         # Test with incorrect types
-#         invalid_df = pd.DataFrame({"a": ["wrong", "type"], "b": [1, 2]})
-#         with pytest.raises(ValidationError):
-#             TypedDatasetInput(data=invalid_df)
-
-#     def test_additional_fields(self) -> None:
-#         df = pd.DataFrame(
-#             {
-#                 "a": [1, 2],
-#                 "b": ["x", "y"],
-#                 "extra": [True, False],  # extra column
-#             }
-#         )
-#         with pytest.raises(ValidationError):
-#             TypedDatasetInput(data=df)
