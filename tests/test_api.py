@@ -12,10 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from typing import Any
 
-import pandas as pd
 import plotly.graph_objects as go
 import pytest
 import pytest_asyncio
@@ -32,21 +30,6 @@ from utils.schema import (
     RunChartsRequest,
     RunChartsResult,
 )
-
-
-@pytest.fixture(scope="module")
-def dataset_loaded(url_diabetes: str) -> AnalystDataset:
-    df = pd.read_csv(url_diabetes)
-    # Replace non-JSON compliant values
-    df = df.replace([float("inf"), -float("inf")], None)  # Replace infinity with None
-    df = df.where(pd.notnull(df), None)  # Replace NaN with None
-
-    # Create dataset dictionary
-    dataset = AnalystDataset(
-        name=os.path.splitext(os.path.basename(url_diabetes))[0],
-        data=df,
-    )
-    return dataset
 
 
 @pytest_asyncio.fixture(scope="module")

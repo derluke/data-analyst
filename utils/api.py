@@ -198,7 +198,7 @@ def download_catalog_datasets(*args: Any) -> list[AnalystDataset]:
         *args: list of dataset IDs to download
 
     Returns:
-        list[DatasetInput]: Dictionary of dataset names and data
+        list[AnalystDataset]: Dictionary of dataset names and data
     """
     dataset_ids = list(args)
     datasets = [dr.Dataset.get(id_) for id_ in dataset_ids]  # type: ignore
@@ -287,6 +287,7 @@ async def _get_dictionary_batch(
                 role="user", content=f"Categorical Values:\n{categories}\n"
             )
         )
+    logger.info(f"Messages sent to OpenAI: {json.dumps(messages)}")
 
     # Get descriptions from OpenAI
     completion: DictionaryGeneration = client.chat.completions.create(
@@ -709,6 +710,7 @@ async def cleanse_dataframes(
     return cleaned_datasets
 
 
+@cache
 async def get_dictionary(
     datasets: Sequence[AnalystDataset],
 ) -> list[DataDictionary]:
@@ -716,7 +718,7 @@ async def get_dictionary(
     Generate data dictionary for multiple datasets.
 
     Parameters:
-    - datasets: list[DatasetInput] containing datasets
+    - datasets: list[AnalystDataset] containing datasets
 
     Returns:
     - Dictionary containing column descriptions and metadata
