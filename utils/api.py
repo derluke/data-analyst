@@ -59,6 +59,7 @@ from utils.datetime_helpers import convert_datetime_series, is_date_column
 from utils.resources import LLMDeployment
 from utils.schema import (
     AiCatalogDataset,
+    AnalysisError,
     AnalystDataset,
     BusinessAnalysisGeneration,
     ChartGenerationExecutionResult,
@@ -71,13 +72,13 @@ from utils.schema import (
     DataDictionaryColumn,
     DictionaryGeneration,
     EnhancedQuestionGeneration,
+    GetBusinessAnalysisMetadata,
+    GetBusinessAnalysisRequest,
+    GetBusinessAnalysisResult,
     QuestionListGeneration,
     RunAnalysisRequest,
     RunAnalysisResult,
     RunAnalysisResultMetadata,
-    RunBusinessAnalysisMetadata,
-    RunBusinessAnalysisRequest,
-    RunBusinessAnalysisResult,
     RunChartsRequest,
     RunChartsResult,
     RunDatabaseAnalysisRequest,
@@ -841,13 +842,14 @@ async def run_charts(request: RunChartsRequest) -> RunChartsResult:
             metadata=RunAnalysisResultMetadata(
                 duration=e.duration,
                 attempts=len(e.exception_history) if e.exception_history else 0,
+                exception=AnalysisError.from_max_reflection_exception(e),
             ),
         )
 
 
 async def get_business_analysis(
-    request: RunBusinessAnalysisRequest,
-) -> RunBusinessAnalysisResult:
+    request: GetBusinessAnalysisRequest,
+) -> GetBusinessAnalysisResult:
     """
     Generate business analysis based on data and question.
 
@@ -859,6 +861,8 @@ async def get_business_analysis(
     """
     try:
         # Convert JSON data to DataFrame for analysis
+        start = datetime.now()
+
         df = request.dataset.to_df()
 
         # Get first 1000 rows as CSV with quoted values for context
@@ -888,15 +892,16 @@ async def get_business_analysis(
             temperature=0.1,
             messages=messages,
         )
-
+        duration = (datetime.now() - start).total_seconds()
         # Ensure all response fields are present
-        metadata = RunBusinessAnalysisMetadata(
-            timestamp=datetime.now().isoformat(),
+        metadata = GetBusinessAnalysisMetadata(
+            duration=duration,
             question=request.question,
             rows_analyzed=len(df),
             columns_analyzed=len(df.columns),
         )
-        return RunBusinessAnalysisResult(
+        return GetBusinessAnalysisResult(
+            status="success",
             **completion.model_dump(),
             metadata=metadata,
         )
@@ -904,10 +909,16 @@ async def get_business_analysis(
     except Exception as e:
         msg = type(e).__name__ + f": {str(e)}"
         logger.error(f"Error in get_business_analysis: {msg}")
-        raise
+        return GetBusinessAnalysisResult(
+            status="error",
+            metadata=GetBusinessAnalysisMetadata(exception_str=msg),
+            additional_insights="",
+            follow_up_questions=[],
+            bottom_line="",
+        )
 
 
-@reflect_code_generation_errors(max_attempts=10)
+@reflect_code_generation_errors(max_attempts=3)
 async def _run_analysis(
     request: RunAnalysisRequest,
     exception_history: list[InvalidGeneratedCode] | None = None,
@@ -972,6 +983,7 @@ async def run_analysis(request: RunAnalysisRequest) -> RunAnalysisResult:
             metadata=RunAnalysisResultMetadata(
                 duration=e.duration,
                 attempts=len(e.exception_history) if e.exception_history else 0,
+                exception=AnalysisError.from_max_reflection_exception(e),
             ),
         )
 
@@ -1095,5 +1107,6 @@ async def run_database_analysis(
             metadata=RunDatabaseAnalysisResultMetadata(
                 duration=e.duration,
                 attempts=len(e.exception_history) if e.exception_history else 0,
+                exception=AnalysisError.from_max_reflection_exception(e),
             ),
         )
