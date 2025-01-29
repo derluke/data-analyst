@@ -181,9 +181,7 @@ async def process_data_and_update_state(datasets: list[AnalystDataset]) -> None:
         )
     if len(new_dictionaries) > 0:
         st.success("✅ Data processed and dictionaries generated successfully!")
-        st.info(
-            "View the generated data dictionaries in the [Data Dictionary](/Data_Dictionary) page"
-        )
+        st.info("View the generated data dictionaries in the Data Dictionary page")
 
 
 # Add callback for AI Catalog dataset selection
