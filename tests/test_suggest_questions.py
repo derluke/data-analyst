@@ -57,12 +57,17 @@ async def test_suggest_questions_basic(mocker: Any) -> None:
     from utils.api import suggest_questions
 
     datasets = [
-        AnalystDataset(name="test", data=pd.DataFrame({"col1": [], "col2": []}))
+        AnalystDataset(
+            name="test", data=pd.DataFrame({"col1": [1, 2, 3], "col2": [4, 5, 6]})
+        )
     ]
 
     mock_completion = mocker.Mock()
     mock_completion.questions = ["How many records in col1?"]
-    mocker.patch("instructor.client.Instructor.create", return_value=mock_completion)
+
+    mocker.patch(
+        "instructor.client.AsyncInstructor.create", return_value=mock_completion
+    )
     result = await suggest_questions(datasets)
 
     assert len(result) == 1

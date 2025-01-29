@@ -466,12 +466,11 @@ async def main() -> None:
 
         chat_request = ChatRequest(messages=chat_messages)
         chat_result = await rephrase_message(chat_request)
-
         # Add new question to history
         result["question_history"].append(
             {
                 "original": selected_question,
-                "enhanced": chat_result.get("enhanced_user_message", selected_question),
+                "enhanced": chat_result or selected_question,
                 "timestamp": datetime.now().isoformat(),
             }
         )
@@ -485,7 +484,7 @@ async def main() -> None:
         current_table.add_column("Enhanced Question", style="yellow")
         current_table.add_row(
             selected_question,
-            chat_result.get("enhanced_user_message", selected_question),
+            chat_result or selected_question,
         )
         console.print(current_table)
 
@@ -521,9 +520,7 @@ async def main() -> None:
                             ]
                             for dataset in dictionary_result.get("dictionaries", [])
                         },
-                        question=chat_result.get(
-                            "enhanced_user_message", selected_question
-                        ),
+                        question=chat_result or selected_question,
                     )
 
                     try:
@@ -748,9 +745,7 @@ async def main() -> None:
                                 for dataset in dictionary_result.get("dictionaries", [])
                                 for col in dataset.get("dictionary", [])
                             ],
-                            question=chat_result.get(
-                                "enhanced_user_message", selected_question
-                            ),
+                            question=chat_result or selected_question,
                         )
 
                         # Get business analysis
@@ -802,9 +797,7 @@ async def main() -> None:
                     # Create charts request
                     charts_request = RunChartsRequest(
                         dataset=analysis_data,
-                        question=chat_result.get(
-                            "enhanced_user_message", selected_question
-                        ),
+                        question=chat_result or selected_question,
                     )
 
                     # Run charts
@@ -832,7 +825,7 @@ async def main() -> None:
                                 </style>
                             </head>
                             <body>
-                                <h2>{chat_result.get("enhanced_user_message", selected_question)}</h2>
+                                <h2>{chat_result or selected_question}</h2>
                                 <div class="chart-container">
                                     <div id="chart1" style="width: 100%; height: 600px;"></div>
                                 </div>
@@ -945,14 +938,11 @@ async def main() -> None:
 
                 chat_request = ChatRequest(messages=chat_messages)
                 chat_result = await rephrase_message(chat_request)
-
                 # Add new question to history
                 result["question_history"].append(
                     {
                         "original": selected_question,
-                        "enhanced": chat_result.get(
-                            "enhanced_user_message", selected_question
-                        ),
+                        "enhanced": chat_result or selected_question,
                         "timestamp": datetime.now().isoformat(),
                     }
                 )
@@ -966,7 +956,7 @@ async def main() -> None:
                 current_table.add_column("Enhanced Question", style="yellow")
                 current_table.add_row(
                     selected_question,
-                    chat_result.get("enhanced_user_message", selected_question),
+                    chat_result or selected_question,
                 )
                 console.print(current_table)
 

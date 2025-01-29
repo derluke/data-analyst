@@ -48,7 +48,6 @@ else:
     # Add debug logging
     logger.info("Data Dictionary page loaded")
     logger.info(f"Session state keys: {st.session_state.keys()}")
-    logger.info(f"data_dictionaries content: {st.session_state.data_dictionaries}")
 
     logger.info(f"Found {len(st.session_state.data_dictionaries)} dictionaries")
 

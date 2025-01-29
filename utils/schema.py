@@ -347,6 +347,7 @@ class AnalystChatMessage(BaseModel):
         RunAnalysisResult
         | RunChartsResult
         | RunBusinessAnalysisResult
+        | EnhancedQuestionGeneration
         | RunDatabaseAnalysisResult
     ]
 

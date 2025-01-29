@@ -34,7 +34,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from joblib import Memory
-from openai import OpenAI
+from openai import AsyncOpenAI
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 from openai.types.chat.chat_completion_system_message_param import (
     ChatCompletionSystemMessageParam,
@@ -95,12 +95,13 @@ try:
         dr_client.endpoint + f"/deployments/{chat_agent_deployment_id}/"
     )
 
-    openai_client = OpenAI(
+    openai_client = AsyncOpenAI(
         api_key=dr_client.token,
         base_url=deployment_chat_base_url,
         timeout=90,
         max_retries=2,
     )
+
     client = instructor.from_openai(openai_client, mode=instructor.Mode.MD_JSON)
 
 
@@ -226,6 +227,7 @@ def download_catalog_datasets(*args: Any) -> list[AnalystDataset]:
     return result_datasets
 
 
+@cache
 async def _get_dictionary_batch(
     columns: list[str], df: pd.DataFrame, batch_size: int = 5
 ) -> list[DataDictionaryColumn]:
@@ -233,70 +235,72 @@ async def _get_dictionary_batch(
 
     # Get sample data and stats for just these columns
     # Convert timestamps to ISO format strings for JSON serialization
-    sample_data = {}
-    for col in columns:
-        if pd.api.types.is_datetime64_any_dtype(df[col]):
-            # Convert timestamps to ISO format strings
-            sample_data[col] = (
-                df[col]
-                .head(10)
-                .apply(lambda x: x.isoformat() if pd.notnull(x) else None)
-                .to_dict()
-            )
-        else:
-            sample_data[col] = df[col].head(10).to_dict()
+    try:
+        sample_data = {}
+        for col in columns:
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                # Convert timestamps to ISO format strings
+                sample_data[col] = (
+                    df[col]
+                    .head(10)
+                    .apply(lambda x: x.isoformat() if pd.notnull(x) else None)
+                    .to_dict()
+                )
+            else:
+                sample_data[col] = df[col].head(10).to_dict()
 
-    # Handle numeric summary
-    numeric_summary = {}
-    for col in columns:
-        if pd.api.types.is_numeric_dtype(df[col]):
-            desc = df[col].describe()
-            numeric_summary[col] = {
-                k: float(v) if pd.notnull(v) else None
-                for k, v in desc.to_dict().items()
-            }
+        # Handle numeric summary
+        numeric_summary = {}
+        for col in columns:
+            if pd.api.types.is_numeric_dtype(df[col]):
+                desc = df[col].describe()
+                numeric_summary[col] = {
+                    k: float(v) if pd.notnull(v) else None
+                    for k, v in desc.to_dict().items()
+                }
 
-    # Get categories for non-numeric columns
-    categories = []
-    for column in columns:
-        if not pd.api.types.is_numeric_dtype(df[column]):
-            try:
-                value_counts = df[column].value_counts().head(10)
-                # Convert any timestamp values to strings
-                if pd.api.types.is_datetime64_any_dtype(df[column]):
-                    value_counts.index = value_counts.index.map(
-                        lambda x: x.isoformat() if pd.notnull(x) else None
-                    )
-                categories.append({column: list(value_counts.keys())})
-            except Exception:
-                continue
+        # Get categories for non-numeric columns
+        categories = []
+        for column in columns:
+            if not pd.api.types.is_numeric_dtype(df[column]):
+                try:
+                    value_counts = df[column].value_counts().head(10)
+                    # Convert any timestamp values to strings
+                    if pd.api.types.is_datetime64_any_dtype(df[column]):
+                        value_counts.index = value_counts.index.map(
+                            lambda x: x.isoformat() if pd.notnull(x) else None
+                        )
+                    categories.append({column: list(value_counts.keys())})
+                except Exception:
+                    continue
 
-    # Create messages for OpenAI
-    messages: list[ChatCompletionMessageParam] = [
-        ChatCompletionSystemMessageParam(
-            role="system", content=prompts.SYSTEM_PROMPT_GET_DICTIONARY
-        ),
-        ChatCompletionUserMessageParam(role="user", content=f"Data:\n{sample_data}\n"),
-        ChatCompletionUserMessageParam(
-            role="user", content=f"Statistical Summary:\n{numeric_summary}\n"
-        ),
-    ]
-
-    if categories:
-        messages.append(
+        # Create messages for OpenAI
+        messages: list[ChatCompletionMessageParam] = [
+            ChatCompletionSystemMessageParam(
+                role="system", content=prompts.SYSTEM_PROMPT_GET_DICTIONARY
+            ),
             ChatCompletionUserMessageParam(
-                role="user", content=f"Categorical Values:\n{categories}\n"
+                role="user", content=f"Data:\n{sample_data}\n"
+            ),
+            ChatCompletionUserMessageParam(
+                role="user", content=f"Statistical Summary:\n{numeric_summary}\n"
+            ),
+        ]
+
+        if categories:
+            messages.append(
+                ChatCompletionUserMessageParam(
+                    role="user", content=f"Categorical Values:\n{categories}\n"
+                )
             )
+
+        # Get descriptions from OpenAI
+        completion: DictionaryGeneration = await client.chat.completions.create(
+            response_model=DictionaryGeneration,
+            model=ALTERNATIVE_LLM_SMALL,
+            messages=messages,
         )
 
-    # Get descriptions from OpenAI
-    completion: DictionaryGeneration = client.chat.completions.create(
-        response_model=DictionaryGeneration,
-        model=ALTERNATIVE_LLM_SMALL,
-        messages=messages,
-    )
-
-    try:
         # Convert to dictionary format
         descriptions = completion.to_dict()
 
@@ -324,6 +328,7 @@ async def _get_dictionary_batch(
 
 async def _get_dictionaries(dataset: AnalystDataset) -> DataDictionary:
     """Process a single dataset with parallel column batch processing"""
+
     try:
         # Convert JSON to DataFrame
         df = dataset.to_df()
@@ -454,7 +459,7 @@ async def suggest_questions(
         ),
     ]
 
-    completion: QuestionListGeneration = client.chat.completions.create(
+    completion: QuestionListGeneration = await client.chat.completions.create(
         response_model=QuestionListGeneration,
         model=ALTERNATIVE_LLM_SMALL,
         messages=messages,
@@ -514,7 +519,7 @@ async def _generate_run_charts_python_code(
         )
 
     # Get response based on model mode
-    response: CodeGeneration = client.chat.completions.create(
+    response: CodeGeneration = await client.chat.completions.create(
         response_model=CodeGeneration,
         model=ALTERNATIVE_LLM_BIG,
         temperature=0,
@@ -608,11 +613,12 @@ async def _generate_run_analysis_python_code(
             ]
         )
 
-    completion: CodeGeneration = client.chat.completions.create(
+    completion: CodeGeneration = await client.chat.completions.create(
         response_model=CodeGeneration,
         model=ALTERNATIVE_LLM_BIG,
         temperature=0.1,
         messages=messages,
+        max_retries=10,
     )
 
     return completion.code
@@ -704,10 +710,7 @@ async def cleanse_dataframes(
     return cleaned_datasets
 
 
-@cache
-async def get_dictionaries(
-    datasets: list[AnalystDataset],
-) -> list[DataDictionary]:
+async def get_dictionaries(datasets: list[AnalystDataset]) -> list[DataDictionary]:
     """
     Generate data dictionary for multiple datasets.
 
@@ -717,6 +720,7 @@ async def get_dictionaries(
     Returns:
     - Dictionary containing column descriptions and metadata
     """
+
     try:
         # Add debug logging
         logger.info(f"Received dictionary request with {len(datasets)} datasets")
@@ -724,7 +728,6 @@ async def get_dictionaries(
         tasks = [_get_dictionaries(dataset) for dataset in datasets]
 
         results = await asyncio.gather(*tasks)
-        # Process datasets using ThreadPoolExecutor instead of ProcessPoolExecutor
 
         logger.info(f"Returning dictionary response with {len(results)} results")
         return results
@@ -760,7 +763,7 @@ async def rephrase_message(messages: ChatRequest) -> str:
         ),
     ]
 
-    completion: EnhancedQuestionGeneration = client.chat.completions.create(
+    completion: EnhancedQuestionGeneration = await client.chat.completions.create(
         response_model=EnhancedQuestionGeneration,
         model=ALTERNATIVE_LLM_BIG,
         messages=prompt_messages,
@@ -810,6 +813,7 @@ async def _run_charts(
         raise InvalidGeneratedCode(code=code, exception=e)
 
     duration = datetime.now() - start_time
+
     return RunChartsResult(
         status="success",
         code=code,
@@ -822,13 +826,15 @@ async def _run_charts(
     )
 
 
-async def run_charts(
-    request: RunChartsRequest,
-) -> RunChartsResult:
+async def run_charts(request: RunChartsRequest) -> RunChartsResult:
     """Execute analysis workflow on datasets."""
     try:
         chart_result = await _run_charts(request)
         return chart_result
+    except ValidationError:
+        return RunChartsResult(
+            status="error", metadata=RunAnalysisResultMetadata(duration=0, attempts=1)
+        )
     except MaxReflectionAttempts as e:
         return RunChartsResult(
             status="error",
@@ -876,7 +882,7 @@ async def get_business_analysis(
             ),
         ]
 
-        completion: BusinessAnalysisGeneration = client.chat.completions.create(
+        completion: BusinessAnalysisGeneration = await client.chat.completions.create(
             response_model=BusinessAnalysisGeneration,
             model=ALTERNATIVE_LLM_BIG,
             temperature=0.1,
@@ -901,7 +907,7 @@ async def get_business_analysis(
         raise
 
 
-@reflect_code_generation_errors(max_attempts=3)
+@reflect_code_generation_errors(max_attempts=10)
 async def _run_analysis(
     request: RunAnalysisRequest,
     exception_history: list[InvalidGeneratedCode] | None = None,
@@ -956,9 +962,7 @@ async def _run_analysis(
     )
 
 
-async def run_analysis(
-    request: RunAnalysisRequest,
-) -> RunAnalysisResult:
+async def run_analysis(request: RunAnalysisRequest) -> RunAnalysisResult:
     """Execute analysis workflow on datasets."""
     try:
         return await _run_analysis(request)
@@ -1030,7 +1034,7 @@ async def _generate_database_analysis_code(
         )
 
     # Get response from OpenAI
-    completion = client.chat.completions.create(
+    completion = await client.chat.completions.create(
         response_model=DatabaseAnalysisCodeGeneration,
         model=ALTERNATIVE_LLM_BIG,
         temperature=0.1,
@@ -1051,6 +1055,7 @@ async def _run_database_analysis(
 
     if exception_history is None:
         exception_history = []
+
     sql_code = await _generate_database_analysis_code(
         request, next(iter(exception_history), None)
     )
