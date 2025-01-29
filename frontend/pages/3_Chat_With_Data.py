@@ -439,7 +439,7 @@ async def main() -> None:
             valid_messages: list[ChatCompletionMessageParam] = [
                 msg.to_openai_message_param()
                 for msg in st.session_state.chat_messages
-                if msg.role in ["user", "assistant", "system"] and msg.content.strip()
+                if msg.content.strip()
             ]
             valid_messages.append(
                 ChatCompletionUserMessageParam(role="user", content=question)

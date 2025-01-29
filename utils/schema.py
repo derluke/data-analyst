@@ -335,13 +335,22 @@ class CodeGeneration(BaseModel):
     description: str
 
 
+RuntimeCredentialType = Literal["llm", "db"]
+
+
+DatabaseConnectionType = Literal["bigquery", "snowflake", "no_database"]
+
+
 class AppInfra(BaseModel):
     llm: str
-    database: Literal["bigquery", "snowflake", "no_database"]
+    database: DatabaseConnectionType
+
+
+UserRoleType = Literal["assistant", "user", "system"]
 
 
 class AnalystChatMessage(BaseModel):
-    role: Literal["assistant", "user", "system"]
+    role: UserRoleType
     content: str
     components: list[
         RunAnalysisResult

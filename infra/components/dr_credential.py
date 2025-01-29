@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import textwrap
-from typing import Any, Literal
+from typing import Any
 
 import pulumi
 import pulumi_datarobot as datarobot
@@ -32,10 +32,15 @@ from utils.credentials import (
     NoDatabaseCredentials,
     SnowflakeCredentials,
 )
+from utils.schema import (
+    DatabaseConnectionType,
+    RuntimeCredentialType,
+)
 
 
 def get_credential_runtime_parameter_values(
-    credentials: DRCredentials, credential_type: str = "llm"
+    credentials: DRCredentials,
+    credential_type: RuntimeCredentialType = "llm",
 ) -> list[datarobot.CustomModelRuntimeParameterValueArgs]:
     if isinstance(credentials, AzureOpenAICredentials):
         rtps: list[dict[str, Any]] = [
@@ -372,7 +377,7 @@ def get_llm_credentials(llm: LLMConfig, test_credentials: bool = True) -> DRCred
 
 
 def get_database_credentials(
-    database: Literal["snowflake", "bigquery", "no_database"],
+    database: DatabaseConnectionType,
     test_credentials: bool = True,
 ) -> SnowflakeCredentials | GoogleCredentials | NoDatabaseCredentials:
     try:
