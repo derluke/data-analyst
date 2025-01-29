@@ -70,31 +70,7 @@ and `pulumi` invocation see [here](#setup-for-advanced-users).
 
 ## Architecture overview
 
-```mermaid
-flowchart TD
-   subgraph DataSource["Data Sources"]
-        File("File upload")
-        AICatalog("AI Catalog")
-        Snowflake("Snowflake")
-        Bigquery("Bigquery")
-   end
-
-   Frontend("Streamlit </br> Frontend")
-   Deployment("Bolt On Governance </br> MLOps Deployment")
-   LLM("LLM")
-   Dictionaries("Data Dictionaries")
-   DataAnalysis("Code Generation and Execution")
-   Insights("Business Analysis Insights")
-   Charts("Chart Generation")
-
-   LLM -.-> Deployment
-   Deployment --> Frontend
-
-   Frontend --> Dictionaries
-   Frontend --> DataAnalysis
-   Frontend --> Insights
-   Frontend --> Charts
-```
+![image](https://github.com/user-attachments/assets/2ca66231-9321-48fe-abdb-f2d35687dff6)
 
 
 App templates contain three families of complementary logic:
