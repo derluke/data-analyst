@@ -33,6 +33,9 @@ import instructor
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import scipy
+import sklearn
+import statsmodels as sm
 from joblib import Memory
 from openai import AsyncOpenAI
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
@@ -798,6 +801,7 @@ async def _run_charts(
                 "pd": pd,
                 "np": np,
                 "go": go,
+                "scipy": scipy,
             },
             functions={
                 "make_subplots": make_subplots,
@@ -806,7 +810,7 @@ async def _run_charts(
             code=code,
             input_data=df,
             output_type=ChartGenerationExecutionResult,
-            allowed_modules={"pandas", "numpy", "plotly", "scipy"},
+            allowed_modules={"pandas", "numpy", "plotly", "scipy", "datetime"},
         )
     except InvalidGeneratedCode:
         raise
@@ -918,7 +922,7 @@ async def get_business_analysis(
         )
 
 
-@reflect_code_generation_errors(max_attempts=3)
+@reflect_code_generation_errors(max_attempts=5)
 async def _run_analysis(
     request: RunAnalysisRequest,
     exception_history: list[InvalidGeneratedCode] | None = None,
@@ -941,13 +945,23 @@ async def _run_analysis(
             modules={
                 "pd": pd,
                 "np": np,
+                "sm": sm,
+                "scipy": scipy,
+                "sklearn": sklearn,
             },
             functions={},
             expected_function="analyze_data",
             code=code,
             input_data=dataframes,
             output_type=AnalystDataset,
-            allowed_modules={"pandas", "numpy", "scipy"},
+            allowed_modules={
+                "pandas",
+                "numpy",
+                "scipy",
+                "sklearn",
+                "statsmodels",
+                "datetime",
+            },
         )
     except InvalidGeneratedCode:
         raise
