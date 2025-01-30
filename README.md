@@ -18,7 +18,10 @@ and govern the components.
 3. [Why build AI Apps with DataRobot app templates?](#why-build-ai-apps-with-datarobot-app-templates)
 4. [Data privacy](#data-privacy)
 5. [Make changes](#make-changes)
-    - [Snowflake connection](#snowflake-connection)
+   - [Change the LLM](#change-the-llm)
+   - [Change the database](#change-the-database)
+      * [No database](#no-database)
+      * [BigQuery](#bigquery)
 6. [Share results](#share-results)
 7. [Delete all provisioned resources](#delete-all-provisioned-resources)
 8. [Setup for advanced users](#setup-for-advanced-users)
@@ -117,11 +120,17 @@ Your data privacy is important to us. Data handling is governed by the DataRobot
 
 ### Change the database
 
+#### No database
+
+To remove the database connection completely:
+
+1. Modify the `DATABASE_CONNECTION_TYPE` setting in `infra/settings_database.py` by changing `DATABASE_CONNECTION_TYPE="snowflake"` to `DATABASE_CONNECTION_TYPE="no_database"`.
+ 
 #### BigQuery
 
 The Talk to my Data Agent supports connecting to BigQuery.
 1. Modify the `DATABASE_CONNECTION_TYPE` setting in `infra/settings_database.py` by changing `DATABASE_CONNECTION_TYPE=snowflake` to `DATABASE_CONNECTION_TYPE=bigquery`. 
-2. Provide the required google credentials in `.env` dependent on your choice.  Ensure that GOOGLE_DB_SCHEMA is also populated `.env`.
+2. Provide the required google credentials in `.env` dependent on your choice.  Ensure that GOOGLE_DB_SCHEMA is also populated in `.env`.
 3. Run `pulumi up` to update your stack (Or rerun your quickstart).
       ```bash
       source set_env.sh  # On windows use `set_env.bat`
