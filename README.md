@@ -28,7 +28,7 @@ and govern the components.
 
 ## Setup
 
-Before proceeding, ensure you have access to the required credentials and services. This template is pre-configured to use an Azure OpenAI endpoint and Snowflake Database credentials. To run the template as-is, you will need access to Azure OpenAI (leverages `gpt-4o` by default). 
+Before proceeding, ensure you have access to the required credentials and services. This template is pre-configured to use an Azure OpenAI endpoint and Snowflake Database credentials. To run the template as-is, you will need access to Azure OpenAI (leverages `gpt-4o-mini` by default). 
 
 Codespace users can **skip steps 1 and 2**. For local development, follow all of the following steps.
 
@@ -110,7 +110,8 @@ Your data privacy is important to us. Data handling is governed by the DataRobot
 
 ### Change the LLM
 
-1. Modify the `LLM` setting in `infra/settings_generative.py` by changing `LLM=GlobalLLM.AZURE_OPENAI_GPT_4_O` to any other LLM from the `GlobalLLM` object.
+1. Modify the `LLM` setting in `infra/settings_generative.py` by changing `LLM=GlobalLLM.AZURE_OPENAI_GPT_4_O_MINI` to any other LLM from the `GlobalLLM` object. 
+     - Trial users: since the list of supported LLMs is limited, use the `OPENAI_API_DEPLOYMENT_ID` in `.env` to override which model is used in your azure organisation. You'll still see GPT 4o-mini in the playground, but the deployed app will use the provided azure deployment.  
 2. Provide the required credentials in `.env` dependent on your choice.
 3. Run `pulumi up` to update your stack (Or rerun your quickstart).
       ```bash

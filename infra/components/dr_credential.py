@@ -229,6 +229,7 @@ def get_llm_credentials(llm: LLMConfig, test_credentials: bool = True) -> DRCred
                         GlobalLLM.AZURE_OPENAI_GPT_4_32K.name: "gpt-4-32k",
                         GlobalLLM.AZURE_OPENAI_GPT_4_O.name: "gpt-4o",
                         GlobalLLM.AZURE_OPENAI_GPT_4_TURBO.name: "gpt-4-turbo",
+                        GlobalLLM.AZURE_OPENAI_GPT_4_O_MINI.name: "gpt-4o-mini",
                     }
                     if (
                         credentials.azure_deployment is not None
