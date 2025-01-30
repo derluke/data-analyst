@@ -739,7 +739,20 @@ async def get_dictionaries(datasets: list[AnalystDataset]) -> list[DataDictionar
     except Exception as e:
         msg = type(e).__name__ + f": {str(e)}"
         logger.error(f"Error in get_dictionary: {msg}")
-        raise
+        return [
+            DataDictionary(
+                name=dataset.name,
+                column_descriptions=[
+                    DataDictionaryColumn(
+                        column=c,
+                        data_type=str(dataset.to_df()[c].dtype),
+                        description="No Description Available",
+                    )
+                    for c in dataset.columns
+                ],
+            )
+            for dataset in datasets
+        ]
 
 
 async def rephrase_message(messages: ChatRequest) -> str:
