@@ -151,15 +151,19 @@ class AnalystDataset(BaseModel):
         return self.data.df.columns.tolist()
 
 
-class CleansingReport(BaseModel):
-    columns_cleaned: list[str]
-    errors: list[str]
-    warnings: list[str]
+class CleansedColumnReport(BaseModel):
+    new_column_name: str
+    original_column_name: str | None = None
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    original_dtype: str | None = None
+    new_dtype: str | None = None
+    conversion_type: str | None = None
 
 
 class CleansedDataset(BaseModel):
     dataset: AnalystDataset
-    cleaning_report: CleansingReport
+    cleaning_report: list[CleansedColumnReport]
 
     @property
     def name(self) -> str:
