@@ -23,9 +23,13 @@ PAGE_ICON = "./datarobot_favicon.png"
 
 def get_page_logo() -> str:
     theme = st_theme()
-    logo = "./DataRobot_white.svg"
-    if theme and theme.get("base") == "light":
-        logo = "./DataRobot_black.svg"
+    # logo placeholder used for initial load
+    logo = '<svg width="133" height="20" xmlns="http://www.w3.org/2000/svg"></svg>'
+    if theme:
+        if theme.get("base") == "light":
+            logo = "./DataRobot_black.svg"
+        else:
+            logo = "./DataRobot_white.svg"
     return logo
 
 

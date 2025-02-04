@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
 import logging
 import sys
 from typing import cast
@@ -21,11 +22,15 @@ import streamlit as st
 sys.path.append("..")
 from app_settings import PAGE_ICON, apply_custom_css, get_page_logo
 
+from frontend.helpers import state_init
 from utils.schema import DataDictionary
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Initialize session state variables
+state_init(st.session_state)
 
 # Page config
 st.set_page_config(page_title="Data Dictionary", page_icon=PAGE_ICON, layout="wide")
@@ -36,77 +41,84 @@ apply_custom_css()
 st.image(get_page_logo(), width=200)
 st.title("Dictionary")
 
-if (
-    "data_dictionaries" not in st.session_state
-    or len(st.session_state.data_dictionaries) == 0
-):
-    logger.warning("No data dictionaries found in session state")
-    st.info(
-        "Please upload and process data from the main page to view the data dictionary"
-    )
-else:
-    # Add debug logging
-    logger.info("Data Dictionary page loaded")
-    logger.info(f"Session state keys: {st.session_state.keys()}")
 
-    logger.info(f"Found {len(st.session_state.data_dictionaries)} dictionaries")
+async def main() -> None:
+    if (
+        "data_dictionaries" not in st.session_state
+        or len(st.session_state.data_dictionaries) == 0
+    ):
+        logger.warning("No data dictionaries found in session state")
+        st.info(
+            "Please upload and process data from the main page to view the data dictionary"
+        )
+    else:
+        # Add debug logging
+        logger.info("Data Dictionary page loaded")
+        logger.info(f"Session state keys: {st.session_state.keys()}")
 
-    st.session_state.data_dictionaries = cast(
-        list[DataDictionary], st.session_state.data_dictionaries
-    )
-    for dictionary in st.session_state.data_dictionaries:
-        st.subheader(dictionary.name)
-        logger.info(f"Processing dictionary for {dictionary.name}")
+        logger.info(f"Found {len(st.session_state.data_dictionaries)} dictionaries")
 
-        try:
-            # Convert dictionary to DataFrame
-            dict_df = dictionary.to_df()
-            logger.info(
-                f"Created DataFrame for {dictionary.name} with shape {dict_df.shape}"
-            )
+        st.session_state.data_dictionaries = cast(
+            list[DataDictionary], st.session_state.data_dictionaries
+        )
+        for dictionary in st.session_state.data_dictionaries:
+            st.subheader(dictionary.name)
+            logger.info(f"Processing dictionary for {dictionary.name}")
 
-            # Make dictionary editable
-            edited_df = st.data_editor(
-                dict_df,
-                use_container_width=True,
-                num_rows="dynamic",
-                key=f"dict_editor_{dictionary.name}",
-            )
+            try:
+                # Convert dictionary to DataFrame
+                dict_df = dictionary.to_df()
+                logger.info(
+                    f"Created DataFrame for {dictionary.name} with shape {dict_df.shape}"
+                )
 
-            # Download button for dictionary
-            csv = edited_df.to_csv(index=False)
-            st.download_button(
-                label="Download Data Dictionary",
-                data=csv,
-                file_name=f"{dictionary.name}_dictionary.csv",
-                mime="text/csv",
-                key=f"download_dict_{dictionary.name}",
-            )
+                # Make dictionary editable
+                edited_df = st.data_editor(
+                    dict_df,
+                    use_container_width=True,
+                    num_rows="dynamic",
+                    key=f"dict_editor_{dictionary.name}",
+                )
 
-        except Exception as e:
-            logger.error(
-                f"Error processing dictionary for {dictionary.name}: {str(e)}",
-                exc_info=True,
-            )
-            st.error(f"Error displaying dictionary for {dictionary.name}: {str(e)}")
+                # Download button for dictionary
+                csv = edited_df.to_csv(index=False)
+                st.download_button(
+                    label="Download Data Dictionary",
+                    data=csv,
+                    file_name=f"{dictionary.name}_dictionary.csv",
+                    mime="text/csv",
+                    key=f"download_dict_{dictionary.name}",
+                )
 
-        st.markdown("---")
+            except Exception as e:
+                logger.error(
+                    f"Error processing dictionary for {dictionary.name}: {str(e)}",
+                    exc_info=True,
+                )
+                st.error(f"Error displaying dictionary for {dictionary.name}: {str(e)}")
 
-# Add helpful tips
-with st.sidebar:
-    st.markdown(
+            st.markdown("---")
+
+    # Add helpful tips
+    with st.sidebar:
+        st.markdown(
+            """
+        ### Using the Data Dictionary
+        
+        The data dictionary provides detailed information about each column in your datasets:
+        
+        - **Column**: The name of the column
+        - **Data Type**: The type of data in the column
+        - **Description**: A description of what the data represents
+        
+        You can:
+        - Edit descriptions directly in the table
+        - Download the dictionary as CSV
+        - Use the information to better understand your data
         """
-    ### Using the Data Dictionary
-    
-    The data dictionary provides detailed information about each column in your datasets:
-    
-    - **Column**: The name of the column
-    - **Data Type**: The type of data in the column
-    - **Description**: A description of what the data represents
-    
-    You can:
-    - Edit descriptions directly in the table
-    - Download the dictionary as CSV
-    - Use the information to better understand your data
-    """
-    )
+        )
+
+
+if __name__ == "__main__":
+    loop = asyncio.new_event_loop()
+    loop.run_until_complete(main())

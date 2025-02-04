@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import streamlit as st
-from helpers import log_api_call, log_error_details
+from helpers import log_api_call, log_error_details, state_init
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 from openai.types.chat.chat_completion_user_message_param import (
     ChatCompletionUserMessageParam,
@@ -64,24 +64,8 @@ warnings.filterwarnings("ignore")
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Initialize session state variables at the very beginning of the file
-if "initialized" not in st.session_state:
-    st.session_state.initialized = True
-    st.session_state.datasets = []
-    st.session_state.cleansed_data = []
-    st.session_state.data_dictionaries = []
-    st.session_state.chat_messages = []
-    st.session_state.chat_input_key = 0
-    st.session_state.debug_mode = True
-    st.session_state.data_source = None
-    st.session_state.file_uploader_key = 0
-    st.session_state.processed_file_ids = []
-
-elif "chat_messages" not in st.session_state:
-    st.session_state.chat_messages = []
-elif "chat_input_key" not in st.session_state:
-    st.session_state.chat_input_key = 0
-
+# Initialize session state variables
+state_init(st.session_state)
 
 # Page config
 st.set_page_config(
@@ -364,13 +348,6 @@ async def run_complete_analysis(
                             f"Error running initial analysis. Try rephrasing: {str(e)}"
                         )
                         return
-                    # if analysis_result.status == "error":
-                    #     error_context.update({"component": "analysis"})
-                    #     log_error_details(
-                    #         analysis_result.metadata.exception, error_context
-                    #     )
-                    #     renderer.render_exception(analysis_result.metadata.exception)
-                    #     return
                 # Run concurrent analyses if we have initial results
                 if analysis_result and analysis_result.dataset:
                     with st.spinner("Generating Insights..."):

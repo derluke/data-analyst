@@ -35,6 +35,7 @@ from app_settings import (
     get_page_logo,
 )
 
+from frontend.helpers import state_empty, state_init
 from utils.api import (
     cleanse_dataframes,
     download_catalog_datasets,
@@ -59,14 +60,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialize session state variables
-if "initialized" not in st.session_state:
-    st.session_state.initialized = True
-    st.session_state.datasets = []
-    st.session_state.cleansed_data = []
-    st.session_state.data_dictionaries = []
-    st.session_state.data_source = None
-    st.session_state.file_uploader_key = 0
-    st.session_state.processed_file_ids = []
+state_init(st.session_state)
 
 
 def process_uploaded_file(file: UploadedFile) -> list[AnalystDataset]:
@@ -122,14 +116,8 @@ def process_uploaded_file(file: UploadedFile) -> list[AnalystDataset]:
 def clear_data_callback() -> None:
     """Callback function to clear all data from session state and cache"""
     # Clear session state
-    st.session_state.datasets = []
-    st.session_state.cleansed_data = []
-    st.session_state.data_dictionaries = []
-    st.session_state.selected_catalog_datasets = []  # Also clear catalog selection
-    st.session_state.data_source = None  # Reset data source flag
-    st.session_state.processed_file_ids = []
-    st.session_state.file_uploader_key += 1  # Used to clear file_uploader on st.rerun()
-    st.rerun()
+    state_empty(st.session_state)
+    st.session_state.file_uploader_key += 1  # Used to clear file_uploader
 
 
 async def process_data_and_update_state(datasets: list[AnalystDataset]) -> None:

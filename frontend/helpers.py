@@ -19,6 +19,7 @@ import traceback
 from datetime import datetime
 from typing import Any, Callable, Coroutine, TypeVar
 
+from streamlit.runtime.state import SessionStateProxy
 from typing_extensions import ParamSpec
 
 
@@ -185,3 +186,28 @@ def log_error_details(error: BaseException, context: dict[str, Any]) -> None:
     logger.error(
         f"\nERROR DETAILS\n=============\n{json.dumps(error_details, indent=2, default=str)}"
     )
+
+
+empty_session_state = {
+    "initialized": True,
+    "datasets": [],
+    "cleansed_data": [],
+    "data_dictionaries": [],
+    "selected_catalog_datasets": [],
+    "data_source": None,
+    "file_uploader_key": 0,
+    "processed_file_ids": [],
+    "chat_messages": [],
+    "chat_input_key": 0,
+    "debug_mode": True,
+}
+
+
+def state_empty(session_state: SessionStateProxy) -> None:
+    for key, value in empty_session_state.items():
+        session_state[key] = value
+
+
+def state_init(session_state: SessionStateProxy) -> None:
+    if "initialized" not in session_state:
+        state_empty(session_state)
