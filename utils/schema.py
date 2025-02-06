@@ -456,6 +456,16 @@ class AppInfra(BaseModel):
 UserRoleType = Literal["assistant", "user", "system"]
 
 
+class Tool(BaseModel):
+    name: str
+    signature: str
+    docstring: str
+    function: Callable[..., Any]
+
+    def __str__(self) -> str:
+        return f"function: {self.name}{self.signature}\n{self.docstring}\n\n"
+
+
 class AnalystChatMessage(BaseModel):
     role: UserRoleType
     content: str

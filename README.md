@@ -22,9 +22,10 @@ and govern the components.
    - [Change the database](#change-the-database)
       * [No database](#no-database)
       * [BigQuery](#bigquery)
-6. [Share results](#share-results)
-7. [Delete all provisioned resources](#delete-all-provisioned-resources)
-8. [Setup for advanced users](#setup-for-advanced-users)
+6. [Tools](#tools)
+7. [Share results](#share-results)
+8. [Delete all provisioned resources](#delete-all-provisioned-resources)
+9. [Setup for advanced users](#setup-for-advanced-users)
 
 ## Setup
 
@@ -137,6 +138,10 @@ The Talk to my Data Agent supports connecting to BigQuery.
       source set_env.sh  # On windows use `set_env.bat`
       pulumi up
       ```
+
+## Tools
+
+You can help the data analyst python agent by providing tools that can assist with data analysis tasks. For that, define functions in `utils/tools.py`. The function will be made available inside the code execution environment of the agent. The name, docstring and signature will be provided to the agent inside the prompt.
 
 ## Share results
 
