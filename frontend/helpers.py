@@ -16,6 +16,7 @@ import json
 import logging
 import time
 import traceback
+from copy import deepcopy
 from datetime import datetime
 from typing import Any, Callable, Coroutine, TypeVar
 
@@ -204,8 +205,7 @@ empty_session_state = {
 
 
 def state_empty(session_state: SessionStateProxy) -> None:
-    for key, value in empty_session_state.items():
-        session_state[key] = value
+    session_state.update(deepcopy(empty_session_state)) # type: ignore
 
 
 def state_init(session_state: SessionStateProxy) -> None:
