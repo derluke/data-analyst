@@ -21,7 +21,6 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import streamlit as st
-from helpers import log_api_call, log_error_details, state_init
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 from openai.types.chat.chat_completion_user_message_param import (
     ChatCompletionUserMessageParam,
@@ -30,10 +29,9 @@ from pydantic import ValidationError
 from streamlit.delta_generator import DeltaGenerator
 
 sys.path.append("..")
-
-
 # Import FastAPI functions directly
 from app_settings import PAGE_ICON, DataSource, apply_custom_css, get_page_logo
+from helpers import log_api_call, log_error_details, state_init
 
 from utils.api import (
     get_business_analysis,

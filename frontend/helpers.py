@@ -205,7 +205,7 @@ empty_session_state = {
 
 
 def state_empty(session_state: SessionStateProxy) -> None:
-    session_state.update(deepcopy(empty_session_state)) # type: ignore
+    session_state.update(deepcopy(empty_session_state))  # type: ignore
 
 
 def state_init(session_state: SessionStateProxy) -> None:

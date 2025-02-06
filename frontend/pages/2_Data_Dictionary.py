@@ -21,8 +21,8 @@ import streamlit as st
 
 sys.path.append("..")
 from app_settings import PAGE_ICON, apply_custom_css, get_page_logo
+from helpers import state_init
 
-from frontend.helpers import state_init
 from utils.schema import DataDictionary
 
 # Configure logging
