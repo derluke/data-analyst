@@ -15,6 +15,7 @@
 import asyncio
 import logging
 import sys
+import uuid
 import warnings
 from dataclasses import dataclass
 from typing import Any, cast
@@ -131,7 +132,9 @@ class UnifiedRenderer:
         return self._containers
 
     def render_message(
-        self, message: AnalystChatMessage, within_chat_context: bool = False
+        self,
+        message: AnalystChatMessage,
+        within_chat_context: bool = False,
     ) -> None:
         """
         Render a single message with all its components
@@ -224,10 +227,20 @@ class UnifiedRenderer:
         with self.containers.charts:
             if result.status == "error":
                 self.render_exception(result.metadata.exception)
+
+            index = uuid.uuid4()
             if result.fig1:
-                st.plotly_chart(result.fig1, use_container_width=True)
+                st.plotly_chart(
+                    result.fig1,
+                    use_container_width=True,
+                    key=f"message_{index}_fig1",
+                )
             if result.fig2:
-                st.plotly_chart(result.fig2, use_container_width=True)
+                st.plotly_chart(
+                    result.fig2,
+                    use_container_width=True,
+                    key=f"message_{index}_fig2",
+                )
 
     def render_business_results(self, result: GetBusinessAnalysisResult) -> None:
         """Render business analysis results"""
