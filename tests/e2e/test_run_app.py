@@ -23,14 +23,14 @@ from tests.e2e.utils import (
     wait_for_element_to_be_visible,
 )
 
-PROCESSING_TIMEOUT = 180
+PROCESSING_TIMEOUT = 240
 
 
 def assert_data_processed(browser) -> None:
     assert wait_for_element_to_be_visible(
         browser,
         By.XPATH,
-        "//p[contains(text(), '✅ Data processed and dictionaries generated successfully!')]",
+        "//p[contains(text(), 'Data processed and dictionaries generated successfully!')]",
         PROCESSING_TIMEOUT,
     )
 

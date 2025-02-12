@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Added
 - LLM tool use support
 - Checkboxes allow changing conversation
+- DATABASE_CONNECTION_TYPE can be set from environment
 
 ### Fixed
 - Fix issue where plotly charts reuse the same key
