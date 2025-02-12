@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [0.1.5] - 2025-02-12
+
 ## Added
 - LLM tool use support
 - Checkboxes allow changing conversation
@@ -18,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix logo rendering on first load
 - Fix Data Dictionary editing
 
-## [0.1.3] - 2025-02-03
+## [0.1.4] - 2025-02-03
 
 ### Changed
 - Better cleansing report, showing more information
