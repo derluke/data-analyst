@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix issue where plotly charts reuse the same key
 - Fix [Clear Data] button
 - Fix logo rendering on first load
+- Fix Data Dictionary editing
 
 ## [0.1.3] - 2025-02-03
 

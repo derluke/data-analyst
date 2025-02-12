@@ -371,7 +371,7 @@ async def run_complete_analysis(
 
                             business_request = GetBusinessAnalysisRequest(
                                 dataset=analysis_result.dataset,
-                                dictionary=DataDictionary.from_df(
+                                dictionary=DataDictionary.from_analyst_df(
                                     analysis_result.dataset.to_df()
                                 ),
                                 question=enhanced_message,

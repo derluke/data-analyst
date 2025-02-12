@@ -18,6 +18,7 @@ import sys
 from typing import cast
 
 import streamlit as st
+from pandas import DataFrame
 
 sys.path.append("..")
 from app_settings import PAGE_ICON, apply_custom_css, get_page_logo
@@ -40,6 +41,14 @@ apply_custom_css()
 
 st.image(get_page_logo(), width=200)
 st.title("Dictionary")
+
+
+def save(dictionary: DataDictionary, edited_df: DataFrame) -> None:
+    edited = DataDictionary.from_application_df(edited_df, dictionary.name)
+    st.session_state.data_dictionaries = [
+        edited if d.name == edited.name else d
+        for d in st.session_state.data_dictionaries
+    ]
 
 
 async def main() -> None:
@@ -67,7 +76,7 @@ async def main() -> None:
 
             try:
                 # Convert dictionary to DataFrame
-                dict_df = dictionary.to_df()
+                dict_df = dictionary.to_application_df()
                 logger.info(
                     f"Created DataFrame for {dictionary.name} with shape {dict_df.shape}"
                 )
@@ -80,15 +89,27 @@ async def main() -> None:
                     key=f"dict_editor_{dictionary.name}",
                 )
 
-                # Download button for dictionary
-                csv = edited_df.to_csv(index=False)
-                st.download_button(
-                    label="Download Data Dictionary",
-                    data=csv,
-                    file_name=f"{dictionary.name}_dictionary.csv",
-                    mime="text/csv",
-                    key=f"download_dict_{dictionary.name}",
-                )
+                col1, col2, col3 = st.columns([2, 3, 1])
+
+                with col3:
+                    st.button(
+                        label="Save changes",
+                        on_click=save,
+                        args=(dictionary, edited_df),
+                        key=f"dict_save_{dictionary.name}",
+                        use_container_width=True,
+                    )
+
+                with col1:
+                    # Download button for dictionary
+                    csv = edited_df.to_csv(index=False)
+                    st.download_button(
+                        label="Download Data Dictionary",
+                        data=csv,
+                        file_name=f"{dictionary.name}_dictionary.csv",
+                        mime="text/csv",
+                        key=f"download_dict_{dictionary.name}",
+                    )
 
             except Exception as e:
                 logger.error(

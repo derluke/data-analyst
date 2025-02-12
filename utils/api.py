@@ -428,7 +428,7 @@ async def suggest_questions(
     # Validate input
     dictionary = sum(
         [
-            DataDictionary.from_df(
+            DataDictionary.from_analyst_df(
                 ds.to_df(),
                 column_descriptions=f"Column from dataset {ds.name}",
             ).column_descriptions
