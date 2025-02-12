@@ -863,7 +863,7 @@ async def rephrase_message(messages: ChatRequest) -> str:
     return completion.enhanced_user_message
 
 
-@reflect_code_generation_errors(max_attempts=3)
+@reflect_code_generation_errors(max_attempts=7)
 async def _run_charts(
     request: RunChartsRequest,
     exception_history: list[InvalidGeneratedCode] | None = None,
@@ -1009,7 +1009,7 @@ async def get_business_analysis(
         )
 
 
-@reflect_code_generation_errors(max_attempts=5)
+@reflect_code_generation_errors(max_attempts=7)
 async def _run_analysis(
     request: RunAnalysisRequest,
     exception_history: list[InvalidGeneratedCode] | None = None,
@@ -1164,7 +1164,7 @@ async def _generate_database_analysis_code(
     return completion.code
 
 
-@reflect_code_generation_errors(max_attempts=3)
+@reflect_code_generation_errors(max_attempts=7)
 async def _run_database_analysis(
     request: RunDatabaseAnalysisRequest,
     exception_history: list[InvalidGeneratedCode] | None = None,

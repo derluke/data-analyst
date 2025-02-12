@@ -30,9 +30,9 @@ from app_settings import (
     PAGE_ICON,
     DataSource,
     apply_custom_css,
+    display_page_logo,
     get_database_loader_message,
     get_database_logo,
-    get_page_logo,
 )
 from helpers import state_empty, state_init
 
@@ -167,8 +167,7 @@ async def process_data_and_update_state(datasets: list[AnalystDataset]) -> None:
             "⚠️ Data processed but there were issues generating some dictionaries"
         )
     if len(new_dictionaries) > 0:
-        st.success("✅ Data processed and dictionaries generated successfully!")
-        st.info("View the generated data dictionaries in the Data Dictionary page")
+        st.toast("Data processed and dictionaries generated successfully!", icon="✅")
 
 
 # Add callback for AI Catalog dataset selection
@@ -323,7 +322,7 @@ async def main() -> None:
         )
 
     # Main content area
-    st.image(get_page_logo(), width=200)
+    display_page_logo()
     st.title("Explore")
 
     # Main content area - conditional rendering based on cleansed data
