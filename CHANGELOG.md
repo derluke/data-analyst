@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+- remove information about tools from prompt if there are none 
+
 ## [0.1.5] - 2025-02-12
 
 ## Added

@@ -604,7 +604,6 @@ async def _generate_run_charts_python_code(
 async def _generate_run_analysis_python_code(
     request: RunAnalysisRequest,
     validation_error: InvalidGeneratedCode | None = None,
-    use_tools: bool = False,
 ) -> str:
     """
     Generate Python analysis code based on JSON data and question.
@@ -667,12 +666,14 @@ async def _generate_run_analysis_python_code(
             content=f"Data Dictionary:\n{json.dumps(dictionary_data)}",
         ),
     ]
-    if use_tools:
+
+    tools = get_tools()
+    if len(tools) > 0:
         messages.append(
             ChatCompletionUserMessageParam(
                 role="user",
                 content="If it helps the analysis, you can optionally use following functions:\n"
-                + "\n".join([str(t) for t in get_tools()]),
+                + "\n".join([str(t) for t in tools]),
             )
         )
 
@@ -1013,7 +1014,6 @@ async def get_business_analysis(
 async def _run_analysis(
     request: RunAnalysisRequest,
     exception_history: list[InvalidGeneratedCode] | None = None,
-    use_tools: bool = True,
 ) -> RunAnalysisResult:
     start_time = datetime.now()
     if not request.datasets:
@@ -1023,16 +1023,16 @@ async def _run_analysis(
         exception_history = []
 
     code = await _generate_run_analysis_python_code(
-        request, next(iter(exception_history), None), use_tools
+        request, next(iter(exception_history), None)
     )
 
     dataframes: dict[str, pd.DataFrame] = {}
     for dataset in request.datasets:
         dataframes[dataset.name] = dataset.to_df()
     functions = {}
-    if use_tools:
-        for tool in get_tools():
-            functions[tool.name] = tool.function
+    tools = get_tools()
+    for tool in tools:
+        functions[tool.name] = tool.function
     try:
         result = execute_python(
             modules={
