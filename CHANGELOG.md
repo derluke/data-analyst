@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - remove information about tools from prompt if there are none 
+- tools-related error fixed
 
 ## [0.1.5] - 2025-02-12
 
