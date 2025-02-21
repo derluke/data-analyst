@@ -30,6 +30,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
+from utils.app_db import AnalystDatasetDuckDB, DuckDBHandler
 from utils.rest_api import (  # type: ignore[attr-defined]
     get_dictionaries,
     rephrase_message,
@@ -258,6 +259,9 @@ async def main() -> None:
     start_time = time.time()
     console.print("[bold blue]Snowflake Analysis Test Utility[/bold blue]")
 
+    duckdb_handler = DuckDBHandler(db_path="/tmp/app_snowflake_test.db")
+    analyst_db = AnalystDatasetDuckDB(duckdb_handler)
+
     try:
         # Load credentials and connect to Snowflake
         credentials = load_snowflake_credentials()
@@ -445,7 +449,7 @@ async def main() -> None:
 
             # Create analysis request
             analysis_request = RunDatabaseAnalysisRequest(
-                datasets={
+                dataset_names={
                     table: metadata["sample_data"]
                     for table, metadata in tables_metadata.items()
                 },
@@ -457,7 +461,9 @@ async def main() -> None:
             )
 
             try:
-                _analysis_result = await run_database_analysis(analysis_request)
+                _analysis_result = await run_database_analysis(
+                    analysis_request, analyst_db
+                )
                 analysis_result = _analysis_result.model_dump()
                 progress.update(task, completed=True)
 
@@ -593,7 +599,7 @@ async def main() -> None:
 
                 # Create new analysis request
                 analysis_request = RunDatabaseAnalysisRequest(
-                    datasets={
+                    dataset_names={
                         table: metadata["sample_data"]
                         for table, metadata in tables_metadata.items()
                     },
@@ -605,7 +611,9 @@ async def main() -> None:
                 )
 
                 try:
-                    _analysis_result = await run_database_analysis(analysis_request)
+                    _analysis_result = await run_database_analysis(
+                        analysis_request, analyst_db
+                    )
                     analysis_result = _analysis_result.model_dump()
                     progress.update(task, completed=True)
 

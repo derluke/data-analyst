@@ -25,6 +25,7 @@ import pandas as pd
 import pytest
 from dotenv import dotenv_values
 
+from utils.app_db import AnalystDatasetDuckDB, DuckDBHandler
 from utils.resources import LLMDeployment
 from utils.schema import AnalystDataset
 
@@ -181,7 +182,9 @@ def url_mpg():
 
 
 @pytest.fixture(scope="module")
-def dataset_loaded(url_diabetes: str) -> AnalystDataset:
+def dataset_loaded(
+    url_diabetes: str, analyst_db: AnalystDatasetDuckDB
+) -> AnalystDataset:
     df = pd.read_csv(url_diabetes)
     # Replace non-JSON compliant values
     df = df.replace([float("inf"), -float("inf")], None)  # Replace infinity with None
@@ -192,4 +195,12 @@ def dataset_loaded(url_diabetes: str) -> AnalystDataset:
         name=os.path.splitext(os.path.basename(url_diabetes))[0],
         data=df,
     )
+    analyst_db.register_dataset(dataset)
     return dataset
+
+
+@pytest.fixture(scope="module")
+def analyst_db() -> AnalystDatasetDuckDB:
+    duckdb_handler = DuckDBHandler(db_path="/tmp/app_test.db")
+    analyst_db = AnalystDatasetDuckDB(duckdb_handler)
+    return analyst_db

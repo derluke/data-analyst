@@ -21,6 +21,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
+from utils.app_db import AnalystDatasetDuckDB, DuckDBHandler
+
 sys.path.append("..")
 
 from utils.api import (
@@ -108,6 +110,8 @@ def custom_openapi() -> dict[str, Any]:
 
 
 app.openapi = custom_openapi  # type: ignore[method-assign]
+duckdb_handler = DuckDBHandler(db_path="/tmp/app_fastapi.db")
+analyst_db = AnalystDatasetDuckDB(duckdb_handler)
 
 
 @app.get("/list_catalog_datasets")
@@ -174,11 +178,11 @@ async def rephrase_message_endpoint(request: ChatRequest) -> str:
 
 @app.post("/run_analysis")
 async def run_analysis_endpoint(request: RunAnalysisRequest) -> RunAnalysisResult:
-    return await run_analysis(request)
+    return await run_analysis(request=request, analyst_db=analyst_db)
 
 
 @app.post("/run_database_analysis")
 async def run_database_analysis_endpoint(
     request: RunDatabaseAnalysisRequest,
 ) -> RunDatabaseAnalysisResult:
-    return await run_database_analysis(request=request)
+    return await run_database_analysis(request=request, analyst_db=analyst_db)

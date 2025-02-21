@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import functools
 import json
-import logging
 import traceback
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
@@ -38,13 +37,14 @@ from utils.credentials import (
     NoDatabaseCredentials,
     SnowflakeCredentials,
 )
+from utils.logging_helper import get_logger
 from utils.prompts import SYSTEM_PROMPT_BIGQUERY, SYSTEM_PROMPT_SNOWFLAKE
 from utils.schema import (
     AnalystDataset,
     AppInfra,
 )
 
-logger = logging.getLogger("DataAnalystFrontend")
+logger = get_logger("DatabaseHelper")
 
 T = TypeVar("T")
 _DEFAULT_DB_QUERY_TIMEOUT = 300

@@ -18,6 +18,7 @@ import plotly.graph_objects as go
 import pytest
 import pytest_asyncio
 
+from utils.app_db import AnalystDatasetDuckDB
 from utils.schema import (
     AnalystDataset,
     CleansedDataset,
@@ -34,13 +35,14 @@ from utils.schema import (
 
 @pytest_asyncio.fixture(scope="module")
 async def dataset_cleansed(
-    pulumi_up: Any, dataset_loaded: AnalystDataset
+    pulumi_up: Any, dataset_loaded: AnalystDataset, analyst_db: AnalystDatasetDuckDB
 ) -> list[CleansedDataset]:
     from utils.api import (
         cleanse_dataframes,
     )
 
     result = await cleanse_dataframes([dataset_loaded])
+    analyst_db.register_cleansed_dataset(result[0])
     return result
 
 
@@ -50,13 +52,17 @@ def test_dataset_is_cleansed(dataset_cleansed: list[CleansedDataset]) -> None:
 
 @pytest_asyncio.fixture(scope="module")
 async def data_dictionary(
-    pulumi_up: Any, dataset_loaded: AnalystDataset
+    pulumi_up: Any,
+    dataset_loaded: AnalystDataset,
+    analyst_db: AnalystDatasetDuckDB,
 ) -> list[DataDictionary]:
     from utils.api import (
         get_dictionaries,
     )
 
     dictionary_result = await get_dictionaries([dataset_loaded])
+    analyst_db.register_data_dictionary(dictionary_result[0])
+
     return dictionary_result
 
 
@@ -71,10 +77,10 @@ def run_analysis_request(
     dataset_cleansed: list[CleansedDataset],
     data_dictionary: list[DataDictionary],
     question: str,
+    analyst_db: AnalystDatasetDuckDB,
 ) -> RunAnalysisRequest:
     analysis_request = RunAnalysisRequest(
-        datasets=[ds.dataset for ds in dataset_cleansed],
-        dictionaries=data_dictionary,
+        dataset_names=[ds.name for ds in dataset_cleansed],
         question=question,
     )
     return analysis_request
@@ -137,13 +143,16 @@ def business_request(
 
 @pytest.mark.asyncio
 async def test_run_analysis(
-    pulumi_up: Any, run_analysis_request: RunAnalysisRequest
+    pulumi_up: Any,
+    run_analysis_request: RunAnalysisRequest,
+    dataset_loaded: AnalystDataset,
+    analyst_db: AnalystDatasetDuckDB,
 ) -> None:
     from utils.api import (
         run_analysis,
     )
 
-    run_analysis_result = await run_analysis(run_analysis_request)
+    run_analysis_result = await run_analysis(run_analysis_request, analyst_db)
 
     assert run_analysis_result.code is not None
     assert len(run_analysis_result.code) > 1

@@ -15,8 +15,6 @@
 import textwrap
 from typing import List, Sequence, Tuple
 
-import datarobot as dr
-import pulumi
 import pulumi_datarobot as datarobot
 from settings_database import DATABASE_CONNECTION_TYPE
 
@@ -28,37 +26,7 @@ application_path = PROJECT_ROOT / "frontend"
 
 app_source_args = ApplicationSourceArgs(
     resource_name=f"Data Analyst App Source [{project_name}]",
-    replicas=2,
 ).model_dump(mode="json", exclude_none=True)
-
-
-def ensure_app_settings(app_id: str) -> None:
-    try:
-        dr.client.get_client().patch(
-            f"customApplications/{app_id}/",
-            json={"allowAutoStopping": True},
-        )
-    except Exception:
-        pulumi.warn("Patching app unsuccessful.")
-    return
-
-
-def ensure_app_source_settings(source_id: str, version_id: str) -> str:
-    try:
-        dr.client.get_client().patch(
-            url=f"customApplicationSources/{source_id}/versions/{version_id}/",
-            json={
-                "resources": {
-                    "sessionAffinity": True,
-                    "resourceLabel": "cpu.xlarge",
-                    "replicas": 2,
-                }
-            },
-        )
-    except dr.errors.ClientError:
-        pulumi.warn("Patching app source unsuccessful.")
-    return version_id
-
 
 app_resource_name: str = f"Data Analyst Application [{project_name}]"
 

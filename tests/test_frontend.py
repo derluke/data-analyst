@@ -23,7 +23,7 @@ from typing import Any, Callable, cast
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from utils.schema import DataDictionary
+from utils.app_db import AnalystDatasetDuckDB
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -76,10 +76,14 @@ def test_database_queried(app_post_database_load: AppTest) -> None:
     assert app_post_database_load.toast[0].value == success_message
 
 
-def test_data_dictionary_generated(app_post_database_load: AppTest) -> None:
-    dictionaries = cast(
-        list[DataDictionary], app_post_database_load.session_state.data_dictionaries
-    )
+def test_data_dictionary_generated(
+    app_post_database_load: AppTest, analyst_db: AnalystDatasetDuckDB
+) -> None:
+    names = cast(list[str], app_post_database_load.session_state.datasets_names)
+    dictionaries = []
+
+    for name in names:
+        dictionaries.append(analyst_db.get_data_dictionary(name))
     for dictionary in dictionaries:
         column_decriptions = dictionary.column_descriptions
         logger.info(column_decriptions)

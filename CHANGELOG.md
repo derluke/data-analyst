@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- Shared app will use the user's API key if available
+- Chat sessions can be saved and loaded
+- Polars added for faster big data processing
+- Duck Db integration
+
 ## [0.1.6] - 2025-02-18
 
 ### Fixed
@@ -16,11 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.5] - 2025-02-12
 
-## Added
+### Added
 - LLM tool use support
 - Checkboxes allow changing conversation
 - DATABASE_CONNECTION_TYPE can be set from environment
-
+  
 ### Fixed
 - Fix issue where plotly charts reuse the same key
 - Fix [Clear Data] button

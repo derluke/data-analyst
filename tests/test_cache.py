@@ -27,7 +27,7 @@ async def test_get_dictionary_cache(
     from utils.api import get_dictionaries
 
     # shuffle data to invalidate cache
-    df_shuffled = dataset_loaded.to_df().sample(frac=1, random_state=42)
+    df_shuffled = dataset_loaded.to_df().sample(fraction=1, seed=42)
     new_dataset_loaded = AnalystDataset(name=dataset_loaded.name, data=df_shuffled)
 
     # First call - populate cache and measure time

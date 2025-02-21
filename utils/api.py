@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import ast
 import asyncio
-import functools
 import inspect
 import json
 import logging
@@ -36,6 +35,8 @@ import instructor
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import polars as pl
+import psutil
 import scipy
 import sklearn
 import statsmodels as sm
@@ -48,12 +49,12 @@ from openai.types.chat.chat_completion_system_message_param import (
 from openai.types.chat.chat_completion_user_message_param import (
     ChatCompletionUserMessageParam,
 )
-from pandas import DataFrame
 from plotly.subplots import make_subplots
 from pydantic import ValidationError
 
 sys.path.append("..")
 from utils import prompts, tools
+from utils.app_db import AnalystDatasetDuckDB
 from utils.code_execution import (
     InvalidGeneratedCode,
     MaxReflectionAttempts,
@@ -62,11 +63,10 @@ from utils.code_execution import (
 )
 from utils.data_cleansing_helpers import (
     add_summary_statistics,
-    try_datetime_conversion,
-    try_simple_numeric_conversion,
-    try_unit_conversion,
+    process_column,
 )
 from utils.database_helpers import Database
+from utils.logging_helper import get_logger, log_api_call
 from utils.resources import LLMDeployment
 from utils.schema import (
     AiCatalogDataset,
@@ -75,7 +75,6 @@ from utils.schema import (
     BusinessAnalysisGeneration,
     ChartGenerationExecutionResult,
     ChatRequest,
-    CleansedColumnReport,
     CleansedDataset,
     CodeGeneration,
     DatabaseAnalysisCodeGeneration,
@@ -99,23 +98,44 @@ from utils.schema import (
     ValidatedQuestion,
 )
 
-logger = logging.getLogger("DataAnalystFrontend")
+logger = get_logger()
+logging.getLogger("openai").setLevel(logging.WARNING)
+logging.getLogger("openai.http_client").setLevel(logging.WARNING)
+
+
+def log_memory() -> None:
+    process = psutil.Process()
+    memory = process.memory_info().rss / 1024 / 1024  # MB
+    logger.info(f"Memory usage: {memory:.2f} MB")
+
 
 try:
-    dr_client = dr.Client()  # type: ignore[attr-defined]
+    dr_client = dr.Client()
     chat_agent_deployment_id = LLMDeployment().id
     deployment_chat_base_url = (
         dr_client.endpoint + f"/deployments/{chat_agent_deployment_id}/"
     )
 
-    openai_client = AsyncOpenAI(
-        api_key=dr_client.token,
-        base_url=deployment_chat_base_url,
-        timeout=90,
-        max_retries=2,
-    )
+    class AsyncLLMClient:
+        async def __aenter__(self) -> instructor.AsyncInstructor:
+            dr_client = dr.Client()
+            chat_agent_deployment_id = LLMDeployment().id
+            deployment_chat_base_url = (
+                dr_client.endpoint + f"/deployments/{chat_agent_deployment_id}/"
+            )
+            self.openai_client = AsyncOpenAI(
+                api_key=dr_client.token,
+                base_url=deployment_chat_base_url,
+                timeout=90,
+                max_retries=2,
+            )
+            self.client = instructor.from_openai(
+                self.openai_client, mode=instructor.Mode.MD_JSON
+            )
+            return self.client
 
-    client = instructor.from_openai(openai_client, mode=instructor.Mode.MD_JSON)
+        async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:  # type:ignore
+            await self.openai_client.close()  # Properly close the client
 
 
 except ValidationError as e:
@@ -173,7 +193,6 @@ def cache(f: T) -> T:
 
 
 # This can be large as we are not storing the actual datasets in memory, just metadata
-@functools.lru_cache(maxsize=32)
 def list_catalog_datasets(limit: int = 100) -> list[AiCatalogDataset]:
     """
     Fetch datasets from AI Catalog with specified limit
@@ -216,7 +235,7 @@ def download_catalog_datasets(*args: Any) -> list[AnalystDataset]:
         list[AnalystDataset]: Dictionary of dataset names and data
     """
     dataset_ids = list(args)
-    datasets = [dr.Dataset.get(id_) for id_ in dataset_ids]  # type: ignore
+    datasets = [dr.Dataset.get(id_) for id_ in dataset_ids]
     if (
         sum([ds.size for ds in datasets if ds.size is not None])
         > MAX_AI_CATALOG_DATASET_SIZE
@@ -242,48 +261,56 @@ def download_catalog_datasets(*args: Any) -> list[AnalystDataset]:
 
 @cache
 async def _get_dictionary_batch(
-    columns: list[str], df: pd.DataFrame, batch_size: int = 5
+    columns: list[str], df: pl.DataFrame, batch_size: int = 5
 ) -> list[DataDictionaryColumn]:
     """Process a batch of columns to get their descriptions"""
 
     # Get sample data and stats for just these columns
     # Convert timestamps to ISO format strings for JSON serialization
     try:
+        logger.debug(f"Processing batch of {len(columns)} columns")
         sample_data = {}
+        logger.debug("Converting datetime columns to ISO format")
+        num_samples = 10
         for col in columns:
-            if pd.api.types.is_datetime64_any_dtype(df[col]):
+            if df[col].dtype.is_temporal():
                 # Convert timestamps to ISO format strings
                 sample_data[col] = (
-                    df[col]
-                    .head(10)
-                    .apply(lambda x: x.isoformat() if pd.notnull(x) else None)
+                    df.select(
+                        pl.col(col)
+                        .cast(pl.Datetime)
+                        .map_elements(
+                            lambda x: x.isoformat() if x is not None else None
+                        )
+                    )
+                    .head(num_samples)
                     .to_dict()
                 )
             else:
-                sample_data[col] = df[col].head(10).to_dict()
+                # For non-datetime columns, just take the samples as is
+                sample_data[col] = df.select(pl.col(col)).head(num_samples).to_dict()
 
         # Handle numeric summary
         numeric_summary = {}
+        logger.debug("Calculating numeric summaries")
         for col in columns:
-            if pd.api.types.is_numeric_dtype(df[col]):
+            if df[col].dtype.is_numeric():
                 desc = df[col].describe()
-                numeric_summary[col] = {
-                    k: float(v) if pd.notnull(v) else None
-                    for k, v in desc.to_dict().items()
-                }
+                numeric_summary[col] = desc.to_dict()
 
         # Get categories for non-numeric columns
         categories = []
+        logger.debug("Getting categories for non-numeric columns")
         for column in columns:
-            if not pd.api.types.is_numeric_dtype(df[column]):
+            if not df[column].dtype.is_numeric():
                 try:
-                    value_counts = df[column].value_counts().head(10)
+                    value_counts = (
+                        df[column].sample(n=1000, seed=42).value_counts().head(10)
+                    )
                     # Convert any timestamp values to strings
-                    if pd.api.types.is_datetime64_any_dtype(df[column]):
-                        value_counts.index = value_counts.index.map(
-                            lambda x: x.isoformat() if pd.notnull(x) else None
-                        )
-                    categories.append({column: list(value_counts.keys())})
+                    if df[column].dtype.is_temporal():
+                        value_counts[column] = value_counts[column].cast(pl.String)
+                    categories.append({column: value_counts[column].to_list()})
                 except Exception:
                     continue
 
@@ -306,13 +333,16 @@ async def _get_dictionary_batch(
                     role="user", content=f"Categorical Values:\n{categories}\n"
                 )
             )
-
-        # Get descriptions from OpenAI
-        completion: DictionaryGeneration = await client.chat.completions.create(
-            response_model=DictionaryGeneration,
-            model=ALTERNATIVE_LLM_SMALL,
-            messages=messages,
+        logger.debug(
+            f"total_characters: {len(''.join([str(msg) for msg in messages]))}"
         )
+        # Get descriptions from OpenAI
+        async with AsyncLLMClient() as client:
+            completion: DictionaryGeneration = await client.chat.completions.create(
+                response_model=DictionaryGeneration,
+                model=ALTERNATIVE_LLM_SMALL,
+                messages=messages,
+            )
 
         # Convert to dictionary format
         descriptions = completion.to_dict()
@@ -344,13 +374,14 @@ async def _get_dictionaries(dataset: AnalystDataset) -> DataDictionary:
 
     try:
         # Convert JSON to DataFrame
-        df = dataset.to_df()
+        df_full = dataset.to_df()
+        df = df_full.sample(n=min(10000, len(df_full)), seed=42)
 
         # Add debug logging
         logger.info(f"Processing dataset {dataset.name} with shape {df.shape}")
 
         # Handle empty dataset
-        if df.empty:
+        if df.is_empty():
             logger.warning(f"Dataset {dataset.name} is empty")
             return DataDictionary(
                 name=dataset.name,
@@ -412,6 +443,7 @@ def _validate_question_feasibility(
     return None
 
 
+@log_api_call
 async def suggest_questions(
     datasets: list[AnalystDataset], max_columns: int = 40
 ) -> list[ValidatedQuestion]:
@@ -423,7 +455,7 @@ async def suggest_questions(
 
     Returns:
         Dict containing:
-            - questions: List of validated question objects
+            - questions: list of validated question objects
             - metadata: Dictionary of processing information
     """
     # Validate input
@@ -471,12 +503,12 @@ async def suggest_questions(
             role="user", content=f"Data Dictionary:\n{json.dumps(dict_data)}"
         ),
     ]
-
-    completion: QuestionListGeneration = await client.chat.completions.create(
-        response_model=QuestionListGeneration,
-        model=ALTERNATIVE_LLM_SMALL,
-        messages=messages,
-    )
+    async with AsyncLLMClient() as client:
+        completion: QuestionListGeneration = await client.chat.completions.create(
+            response_model=QuestionListGeneration,
+            model=ALTERNATIVE_LLM_SMALL,
+            messages=messages,
+        )
 
     available_columns = dict_data["columns"]
     validated_questions: list[ValidatedQuestion] = []
@@ -497,7 +529,7 @@ def find_imports(module: ModuleType) -> list[str]:
         module: Python module object to analyze
 
     Returns:
-        List of third-party package names
+        list of third-party package names
 
     Example:
         >>> import my_module
@@ -557,9 +589,10 @@ def get_tools() -> list[Tool]:
 
 
 async def _generate_run_charts_python_code(
-    request: RunChartsRequest, validation_error: InvalidGeneratedCode | None = None
+    request: RunChartsRequest,
+    validation_error: InvalidGeneratedCode | None = None,
 ) -> str:
-    df = request.dataset.to_df()
+    df = request.dataset.to_df().to_pandas()
     question = request.question
     dataframe_metadata = {
         "shape": {"rows": int(df.shape[0]), "columns": int(df.shape[1])},
@@ -599,18 +632,21 @@ async def _generate_run_charts_python_code(
         )
 
     # Get response based on model mode
-    response: CodeGeneration = await client.chat.completions.create(
-        response_model=CodeGeneration,
-        model=ALTERNATIVE_LLM_BIG,
-        temperature=0,
-        messages=messages,
-    )
+    async with AsyncLLMClient() as client:
+        response: CodeGeneration = await client.chat.completions.create(
+            response_model=CodeGeneration,
+            model=ALTERNATIVE_LLM_BIG,
+            temperature=0,
+            messages=messages,
+        )
     return response.code
 
 
 async def _generate_run_analysis_python_code(
     request: RunAnalysisRequest,
+    analyst_db: AnalystDatasetDuckDB,
     validation_error: InvalidGeneratedCode | None = None,
+    attempt: int = 0,
 ) -> str:
     """
     Generate Python analysis code based on JSON data and question.
@@ -623,11 +659,16 @@ async def _generate_run_analysis_python_code(
     - Generated code
     """
     # Convert dictionary data structure to list of columns for all datasets
+    logger.info("Starting code gen")
+
     all_columns = []
     all_descriptions = []
     all_data_types = []
 
-    for dictionary in request.dictionaries:
+    dictionaries = [
+        analyst_db.get_data_dictionary(name) for name in request.dataset_names
+    ]
+    for dictionary in dictionaries:
         for entry in dictionary.column_descriptions:
             all_columns.append(f"{dictionary.name}.{entry.column}")
             all_descriptions.append(entry.description)
@@ -644,16 +685,17 @@ async def _generate_run_analysis_python_code(
     all_samples = []
     all_shapes = []
 
-    for dataset in request.datasets:
-        df = dataset.to_df()
-        all_shapes.append(f"{dataset.name}: {df.shape[0]} rows x {df.shape[1]} columns")
+    logger.debug(f"datasets: {request.dataset_names}")
+    for dataset in request.dataset_names:
+        df = analyst_db.get_dataset(dataset).to_df()
+        all_shapes.append(f"{dataset}: {df.shape[0]} rows x {df.shape[1]} columns")
         # Limit sample to 10 rows
         sample_df = df.head(10)
-        all_samples.append(f"{dataset.name}:\n{sample_df.to_string()}")
+        all_samples.append(f"{dataset}:\n{sample_df}")
 
     shape_info = "\n".join(all_shapes)
     sample_data = "\n\n".join(all_samples)
-
+    logger.debug("Assembling messages")
     # Create messages for OpenAI
     messages: list[ChatCompletionMessageParam] = [
         ChatCompletionSystemMessageParam(
@@ -674,16 +716,17 @@ async def _generate_run_analysis_python_code(
         ),
     ]
 
-    tools = get_tools()
-    if len(tools) > 0:
+    tools_list = get_tools()
+    if len(tools_list) > 0:
         messages.append(
             ChatCompletionUserMessageParam(
                 role="user",
                 content="If it helps the analysis, you can optionally use following functions:\n"
-                + "\n".join([str(t) for t in tools]),
+                + "\n".join([str(t) for t in tools_list]),
             )
         )
 
+    logger.debug(f"total_characters: {len(''.join([str(msg) for msg in messages]))}")
     # Add error context if available
     if validation_error:
         msg = type(validation_error).__name__ + f": {str(validation_error)}"
@@ -703,86 +746,60 @@ async def _generate_run_analysis_python_code(
                 ),
             ]
         )
-
-    completion: CodeGeneration = await client.chat.completions.create(
-        response_model=CodeGeneration,
-        model=ALTERNATIVE_LLM_BIG,
-        temperature=0.1,
-        messages=messages,
-        max_retries=10,
-    )
-
+        if attempt > 2:
+            messages.append(
+                ChatCompletionUserMessageParam(
+                    role="user",
+                    content="Convert the dataframe to pandas!",
+                )
+            )
+    logger.info("Running Code Gen")
+    logger.debug(messages)
+    async with AsyncLLMClient() as client:
+        completion: CodeGeneration = await client.chat.completions.create(
+            response_model=CodeGeneration,
+            model=ALTERNATIVE_LLM_BIG,
+            temperature=0.1,
+            messages=messages,
+            max_retries=10,
+        )
+    logger.info("Code Gen complete")
     return completion.code
 
 
-async def cleanse_dataframes(
-    datasets: list[AnalystDataset],
-) -> list[CleansedDataset]:
-    """Clean and standardize multiple pandas DataFrames.
+async def cleanse_dataframes(datasets: list[AnalystDataset]) -> list[CleansedDataset]:
+    """Clean and standardize multiple pandas DataFrames in parallel.
 
     Args:
         datasets: List of AnalystDataset objects to clean
-
     Returns:
         List of CleansedDataset objects containing cleaned data and reports
-
     Raises:
         ValueError: If a dataset is empty
     """
-    cleaned_datasets: list[CleansedDataset] = []
+    cleaned_datasets = []
 
     for dataset in datasets:
-        report: list[CleansedColumnReport] = []
-        cleaned_df: DataFrame = dataset.to_df()
-
-        sample_df = cleaned_df.sample(min(100, len(cleaned_df)))
-        if cleaned_df.empty:
+        if dataset.to_df().is_empty():
             raise ValueError(f"Dataset {dataset.name} is empty")
 
-        dtypes = cleaned_df.dtypes.to_dict()
-        for column_name in cleaned_df.columns:
-            # rename column:
-            cleaned_column_name = re.sub(r"\s+", " ", str(column_name).strip())
-            original_nulls = sample_df[column_name].isna()
+        df = dataset.to_df()
+        sample_df = df.sample(min(100, len(df)))
 
-            column_report = CleansedColumnReport(new_column_name=cleaned_column_name)
-            if cleaned_column_name != column_name:
-                column_report.original_column_name = column_name
-                column_report.warnings.append(
-                    f"Column renamed from '{column_name}' to '{cleaned_column_name}'"
-                )
+        results = []
+        for col in df.columns:
+            results.append(process_column(df, col, sample_df))
 
-            if dtypes[column_name] == "object":
-                column_report.original_dtype = "object"
+        # Create new DataFrame from processed columns
+        new_columns = {}
+        reports = []
 
-                conversions = [
-                    ("simple_clean", try_simple_numeric_conversion),
-                    ("unit_conversion", try_unit_conversion),
-                    ("datetime", try_datetime_conversion),
-                ]
-                try:
-                    for conversion_type, conversion_func in conversions:
-                        success, cleaned_series, warnings = conversion_func(
-                            cleaned_df[column_name],
-                            sample_df[column_name],
-                            original_nulls,
-                        )
+        for new_name, series, report in results:
+            new_columns[new_name] = series
+            reports.append(report)
 
-                        # Add any warnings from the attempt
-                        column_report.warnings.extend(warnings)
-
-                        if success:
-                            cleaned_df[column_name] = cleaned_series
-                            column_report.new_dtype = str(cleaned_series.dtype)
-                            column_report.conversion_type = conversion_type
-                            break
-                except Exception as e:
-                    column_report.errors.append(str(e))
-
-            cleaned_df = cleaned_df.rename(columns={column_name: cleaned_column_name})
-            report.append(column_report)
-
-        add_summary_statistics(cleaned_df, report)
+        cleaned_df = pl.DataFrame(new_columns)
+        add_summary_statistics(cleaned_df, reports)
 
         cleaned_datasets.append(
             CleansedDataset(
@@ -790,12 +807,14 @@ async def cleanse_dataframes(
                     name=dataset.name,
                     data=cleaned_df,
                 ),
-                cleaning_report=report,
+                cleaning_report=reports,
             )
         )
+
     return cleaned_datasets
 
 
+@log_api_call
 async def get_dictionaries(datasets: list[AnalystDataset]) -> list[DataDictionary]:
     """
     Generate data dictionary for multiple datasets.
@@ -837,11 +856,12 @@ async def get_dictionaries(datasets: list[AnalystDataset]) -> list[DataDictionar
         ]
 
 
+@log_api_call
 async def rephrase_message(messages: ChatRequest) -> str:
     """Process chat messages history and return a new question
 
     Args:
-        messages: List of message dictionaries with 'role' and 'content' fields
+        messages: list of message dictionaries with 'role' and 'content' fields
 
     Returns:
         Dict[str, str]: Dictionary containing response content
@@ -861,12 +881,12 @@ async def rephrase_message(messages: ChatRequest) -> str:
             role="user",
         ),
     ]
-
-    completion: EnhancedQuestionGeneration = await client.chat.completions.create(
-        response_model=EnhancedQuestionGeneration,
-        model=ALTERNATIVE_LLM_BIG,
-        messages=prompt_messages,
-    )
+    async with AsyncLLMClient() as client:
+        completion: EnhancedQuestionGeneration = await client.chat.completions.create(
+            response_model=EnhancedQuestionGeneration,
+            model=ALTERNATIVE_LLM_BIG,
+            messages=prompt_messages,
+        )
 
     return completion.enhanced_user_message
 
@@ -883,7 +903,7 @@ async def _run_charts(
     if not request.dataset:
         raise ValueError("Input data cannot be empty")
 
-    df = request.dataset.to_df()
+    df = request.dataset.to_df().to_pandas()
     if exception_history is None:
         exception_history = []
 
@@ -896,6 +916,7 @@ async def _run_charts(
                 "pd": pd,
                 "np": np,
                 "go": go,
+                "pl": pl,
                 "scipy": scipy,
             },
             functions={
@@ -905,7 +926,14 @@ async def _run_charts(
             code=code,
             input_data=df,
             output_type=ChartGenerationExecutionResult,
-            allowed_modules={"pandas", "numpy", "plotly", "scipy", "datetime"},
+            allowed_modules={
+                "pandas",
+                "numpy",
+                "plotly",
+                "scipy",
+                "datetime",
+                "polars",
+            },
         )
     except InvalidGeneratedCode:
         raise
@@ -926,6 +954,7 @@ async def _run_charts(
     )
 
 
+@log_api_call
 async def run_charts(request: RunChartsRequest) -> RunChartsResult:
     """Execute analysis workflow on datasets."""
     try:
@@ -946,6 +975,7 @@ async def run_charts(request: RunChartsRequest) -> RunChartsResult:
         )
 
 
+@log_api_call
 async def get_business_analysis(
     request: GetBusinessAnalysisRequest,
 ) -> GetBusinessAnalysisResult:
@@ -962,7 +992,7 @@ async def get_business_analysis(
         # Convert JSON data to DataFrame for analysis
         start = datetime.now()
 
-        df = request.dataset.to_df()
+        df = request.dataset.to_df().to_pandas()
 
         # Get first 1000 rows as CSV with quoted values for context
         df_csv = df.head(750).to_csv(index=False, quoting=1)
@@ -984,13 +1014,15 @@ async def get_business_analysis(
                 content=f"Data Dictionary:\n{request.dictionary.model_dump_json()}",
             ),
         ]
-
-        completion: BusinessAnalysisGeneration = await client.chat.completions.create(
-            response_model=BusinessAnalysisGeneration,
-            model=ALTERNATIVE_LLM_BIG,
-            temperature=0.1,
-            messages=messages,
-        )
+        async with AsyncLLMClient() as client:
+            completion: BusinessAnalysisGeneration = (
+                await client.chat.completions.create(
+                    response_model=BusinessAnalysisGeneration,
+                    model=ALTERNATIVE_LLM_BIG,
+                    temperature=0.1,
+                    messages=messages,
+                )
+            )
         duration = (datetime.now() - start).total_seconds()
         # Ensure all response fields are present
         metadata = GetBusinessAnalysisMetadata(
@@ -1020,32 +1052,40 @@ async def get_business_analysis(
 @reflect_code_generation_errors(max_attempts=7)
 async def _run_analysis(
     request: RunAnalysisRequest,
+    analyst_db: AnalystDatasetDuckDB,
     exception_history: list[InvalidGeneratedCode] | None = None,
 ) -> RunAnalysisResult:
     start_time = datetime.now()
-    if not request.datasets:
+
+    if not request.dataset_names:
         raise ValueError("Input data cannot be empty")
 
     if exception_history is None:
         exception_history = []
-
+    logger.info(f"Running analysis (attempt {len(exception_history)})")
     code = await _generate_run_analysis_python_code(
-        request, next(iter(exception_history), None)
+        request,
+        analyst_db,
+        next(iter(exception_history), None),
+        attempt=len(exception_history),
     )
+    logger.info("Code generated, preparing execution")
+    dataframes: dict[str, pl.DataFrame] = {}
 
-    dataframes: dict[str, pd.DataFrame] = {}
-    for dataset in request.datasets:
-        dataframes[dataset.name] = dataset.to_df()
+    for dataset_name in request.dataset_names:
+        dataframes[dataset_name] = analyst_db.get_dataset(dataset_name).to_df()
     functions = {}
     tool_functions = get_tools()
     for tool in tool_functions:
         functions[tool.name] = tool.function
     try:
+        logger.info("Executing")
         result = execute_python(
             modules={
                 "pd": pd,
                 "np": np,
                 "sm": sm,
+                "pl": pl,
                 "scipy": scipy,
                 "sklearn": sklearn,
             },
@@ -1061,6 +1101,7 @@ async def _run_analysis(
                 "sklearn",
                 "statsmodels",
                 "datetime",
+                "polars",
                 *find_imports(tools),
             },
         )
@@ -1068,7 +1109,7 @@ async def _run_analysis(
         raise
     except Exception as e:
         raise InvalidGeneratedCode(code=code, exception=e)
-
+    logger.info("Execution done")
     duration = datetime.now() - start_time
     return RunAnalysisResult(
         status="success",
@@ -1079,19 +1120,25 @@ async def _run_analysis(
             attempts=len(exception_history) + 1,
             datasets_analyzed=len(dataframes),
             total_rows_analyzed=sum(
-                len(df) for df in dataframes.values() if not df.empty
+                len(df) for df in dataframes.values() if not df.is_empty()
             ),
             total_columns_analyzed=sum(
-                len(df.columns) for df in dataframes.values() if not df.empty
+                len(df.columns) for df in dataframes.values() if not df.is_empty()
             ),
         ),
     )
 
 
-async def run_analysis(request: RunAnalysisRequest) -> RunAnalysisResult:
+@log_api_call
+async def run_analysis(
+    request: RunAnalysisRequest,
+    analyst_db: AnalystDatasetDuckDB,
+) -> RunAnalysisResult:
     """Execute analysis workflow on datasets."""
+    logger.debug("Entering run_analysis")
+    log_memory()
     try:
-        return await _run_analysis(request)
+        return await _run_analysis(request, analyst_db=analyst_db)
     except MaxReflectionAttempts as e:
         return RunAnalysisResult(
             status="error",
@@ -1105,6 +1152,7 @@ async def run_analysis(request: RunAnalysisRequest) -> RunAnalysisResult:
 
 async def _generate_database_analysis_code(
     request: RunDatabaseAnalysisRequest,
+    analyst_db: AnalystDatasetDuckDB,
     validation_error: InvalidGeneratedCode | None = None,
 ) -> str:
     """
@@ -1118,13 +1166,18 @@ async def _generate_database_analysis_code(
     """
 
     # Convert dictionary data structure to list of columns for all tables
-    all_tables_info = [d.model_dump(mode="json") for d in request.dictionaries]
+    dictionaries = [
+        analyst_db.get_data_dictionary(name) for name in request.dataset_names
+    ]
+    all_tables_info = [d.model_dump(mode="json") for d in dictionaries]
 
     # Get sample data for all tables
     all_samples = []
-    for table in request.datasets:
-        df = table.to_df()
-        sample_str = f"Table: {table.name}\n{df.head(10).to_string()}"
+
+    for table in request.dataset_names:
+        df = analyst_db.get_dataset(table).to_df().to_pandas()
+
+        sample_str = f"Table: {table}\n{df.head(10).to_string()}"
         all_samples.append(sample_str)
 
     # Create messages for OpenAI
@@ -1161,12 +1214,13 @@ async def _generate_database_analysis_code(
         )
 
     # Get response from OpenAI
-    completion = await client.chat.completions.create(
-        response_model=DatabaseAnalysisCodeGeneration,
-        model=ALTERNATIVE_LLM_BIG,
-        temperature=0.1,
-        messages=messages,
-    )
+    async with AsyncLLMClient() as client:
+        completion = await client.chat.completions.create(
+            response_model=DatabaseAnalysisCodeGeneration,
+            model=ALTERNATIVE_LLM_BIG,
+            temperature=0.1,
+            messages=messages,
+        )
 
     return completion.code
 
@@ -1174,17 +1228,18 @@ async def _generate_database_analysis_code(
 @reflect_code_generation_errors(max_attempts=7)
 async def _run_database_analysis(
     request: RunDatabaseAnalysisRequest,
+    analyst_db: AnalystDatasetDuckDB,
     exception_history: list[InvalidGeneratedCode] | None = None,
 ) -> RunDatabaseAnalysisResult:
     start_time = datetime.now()
-    if not request.datasets:
+    if not request.dataset_names:
         raise ValueError("Input data cannot be empty")
 
     if exception_history is None:
         exception_history = []
 
     sql_code = await _generate_database_analysis_code(
-        request, next(iter(exception_history), None)
+        request, analyst_db, next(iter(exception_history), None)
     )
     try:
         results = Database.execute_query(query=sql_code)
@@ -1204,18 +1259,19 @@ async def _run_database_analysis(
         metadata=RunDatabaseAnalysisResultMetadata(
             duration=duration.total_seconds(),
             attempts=len(exception_history),
-            datasets_analyzed=len(request.datasets),
-            total_columns_analyzed=sum(len(ds.columns) for ds in request.datasets),
+            datasets_analyzed=len(request.dataset_names),
+            # total_columns_analyzed=sum(len(ds.columns) for ds in request.datasets),
         ),
     )
 
 
+@log_api_call
 async def run_database_analysis(
-    request: RunDatabaseAnalysisRequest,
+    request: RunDatabaseAnalysisRequest, analyst_db: AnalystDatasetDuckDB
 ) -> RunDatabaseAnalysisResult:
     """Execute analysis workflow on datasets."""
     try:
-        return await _run_database_analysis(request)
+        return await _run_database_analysis(request, analyst_db)
     except MaxReflectionAttempts as e:
         return RunDatabaseAnalysisResult(
             status="error",

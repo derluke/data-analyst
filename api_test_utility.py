@@ -505,7 +505,7 @@ async def main() -> None:
 
                     # Create analysis request with cleaned data
                     analysis_request = RunAnalysisRequest(
-                        datasets={
+                        dataset_names={
                             dataset["name"]: dataset["data"]
                             for dataset in result["datasets"]
                         },
