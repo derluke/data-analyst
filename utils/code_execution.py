@@ -188,6 +188,26 @@ def execute_python(
     if allowed_modules is None:
         allowed_modules = set(modules.keys())
 
+    allowed_modules = allowed_modules.union(
+        {
+            "json",
+            "pandas",
+            "numpy",
+            "datetime",
+            "time",
+            "yaml",
+            "scipy",
+            "matplotlib",
+            "seaborn",
+            "plotly",
+            "openpyxl",
+            "xlsxwriter",
+            "pyspark",
+            "dask",
+            "polars",
+        }
+    )
+
     namespace = {**modules, **functions}
 
     try:

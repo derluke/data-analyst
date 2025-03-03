@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Callable, Generator, Literal, Union
 
 import pandas as pd
@@ -304,15 +305,6 @@ class RunAnalysisRequest:
     question: str
 
 
-class RunAnalysisResultMetadata(BaseModel):
-    duration: float
-    attempts: int
-    datasets_analyzed: int | None = None
-    total_rows_analyzed: int | None = None
-    total_columns_analyzed: int | None = None
-    exception: AnalysisError | None = None
-
-
 class RunAnalysisResult(BaseModel):
     type: Literal["analysis"] = "analysis"
     status: Literal["success", "error"]
@@ -321,12 +313,13 @@ class RunAnalysisResult(BaseModel):
     code: str | None = None
 
 
-class CodeExecutionError(BaseModel):
-    code: str | None = None
-    exception_str: str | None = None
-    stdout: str | None = None
-    stderr: str | None = None
-    traceback_str: str | None = None
+class RunAnalysisResultMetadata(BaseModel):
+    duration: float
+    attempts: int
+    datasets_analyzed: int | None = None
+    total_rows_analyzed: int | None = None
+    total_columns_analyzed: int | None = None
+    exception: AnalysisError | None = None
 
 
 class AnalysisError(BaseModel):
@@ -338,20 +331,37 @@ class AnalysisError(BaseModel):
         exception: MaxReflectionAttempts,
     ) -> "AnalysisError":
         return AnalysisError(
-            exception_history=[
-                CodeExecutionError(
-                    exception_str=str(exception.exception),
-                    traceback_str=exception.traceback_str,
-                    code=exception.code,
-                    stdout=exception.stdout,
-                    stderr=exception.stderr,
-                )
-                for exception in exception.exception_history
-                if exception is not None
-            ]
-            if exception.exception_history is not None
-            else None,
+            exception_history=(
+                [
+                    CodeExecutionError(
+                        exception_str=str(exception.exception),
+                        traceback_str=exception.traceback_str,
+                        code=exception.code,
+                        stdout=exception.stdout,
+                        stderr=exception.stderr,
+                    )
+                    for exception in exception.exception_history
+                    if exception is not None
+                ]
+                if exception.exception_history is not None
+                else None
+            ),
         )
+
+
+class CodeExecutionError(BaseModel):
+    code: str | None = None
+    exception_str: str | None = None
+    stdout: str | None = None
+    stderr: str | None = None
+    traceback_str: str | None = None
+
+
+class RunDatabaseAnalysisResult(BaseModel):
+    status: Literal["success", "error"]
+    metadata: RunDatabaseAnalysisResultMetadata
+    dataset: AnalystDataset | None = None
+    code: str | None = None
 
 
 class RunDatabaseAnalysisResultMetadata(BaseModel):
@@ -360,13 +370,6 @@ class RunDatabaseAnalysisResultMetadata(BaseModel):
     datasets_analyzed: int | None = None
     total_columns_analyzed: int | None = None
     exception: AnalysisError | None = None
-
-
-class RunDatabaseAnalysisResult(BaseModel):
-    status: Literal["success", "error"]
-    metadata: RunDatabaseAnalysisResultMetadata
-    dataset: AnalystDataset | None = None
-    code: str | None = None
 
 
 class ChartGenerationExecutionResult(BaseModel):
@@ -499,6 +502,7 @@ Component = Union[
     GetBusinessAnalysisResult,
     EnhancedQuestionGeneration,
     RunDatabaseAnalysisResult,
+    str,
 ]
 
 
@@ -518,3 +522,39 @@ class AnalystChatMessage(BaseModel):
             return ChatCompletionSystemMessageParam(
                 role=self.role, content=self.content
             )
+
+
+class ChatJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder to handle special types."""
+
+    def default(self, obj: Any) -> Any:
+        try:
+            if isinstance(obj, pd.Period):
+                return str(obj)
+            if isinstance(obj, pd.Timestamp):
+                return obj.isoformat()
+            if hasattr(obj, "dtype"):
+                return obj.item()
+            if hasattr(obj, "model_dump"):
+                return obj.model_dump()
+            if hasattr(obj, "to_dict"):
+                return obj.to_dict()
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            return super().default(obj)
+        except TypeError:
+            return str(obj)  # Fallback to string representation
+
+
+class ChatHistory(BaseModel):
+    user_id: str
+    chat_name: str
+    chat_messages: list[AnalystChatMessage]
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+    model_config = ConfigDict(
+        json_encoders={
+            datetime: lambda v: v.isoformat(),
+        }
+    )

@@ -22,10 +22,12 @@ import logging
 import re
 import sys
 import tempfile
+from dataclasses import dataclass
 from datetime import datetime
 from types import ModuleType
 from typing import (
     Any,
+    AsyncGenerator,
     TypeVar,
     cast,
 )
@@ -54,7 +56,7 @@ from pydantic import ValidationError
 
 sys.path.append("..")
 from utils import prompts, tools
-from utils.app_db import AnalystDatasetDuckDB
+from utils.analyst_db import AnalystDB
 from utils.code_execution import (
     InvalidGeneratedCode,
     MaxReflectionAttempts,
@@ -71,12 +73,14 @@ from utils.resources import LLMDeployment
 from utils.schema import (
     AiCatalogDataset,
     AnalysisError,
+    AnalystChatMessage,
     AnalystDataset,
     BusinessAnalysisGeneration,
     ChartGenerationExecutionResult,
     ChatRequest,
     CleansedDataset,
     CodeGeneration,
+    Component,
     DatabaseAnalysisCodeGeneration,
     DataDictionary,
     DataDictionaryColumn,
@@ -136,7 +140,6 @@ try:
 
         async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:  # type:ignore
             await self.openai_client.close()  # Properly close the client
-
 
 except ValidationError as e:
     raise ValueError(
@@ -224,8 +227,9 @@ def list_catalog_datasets(limit: int = 100) -> list[AiCatalogDataset]:
     ]
 
 
-@cache
-def download_catalog_datasets(*args: Any) -> list[AnalystDataset]:
+async def download_catalog_datasets(
+    dataset_ids: list[str], analyst_db: AnalystDB
+) -> list[str]:
     """Load selected datasets as pandas DataFrames
 
     Args:
@@ -234,7 +238,6 @@ def download_catalog_datasets(*args: Any) -> list[AnalystDataset]:
     Returns:
         list[AnalystDataset]: Dictionary of dataset names and data
     """
-    dataset_ids = list(args)
     datasets = [dr.Dataset.get(id_) for id_ in dataset_ids]
     if (
         sum([ds.size for ds in datasets if ds.size is not None])
@@ -256,10 +259,13 @@ def download_catalog_datasets(*args: Any) -> list[AnalystDataset]:
         except Exception as e:
             logger.error(f"Failed to read dataset {dataset.name}: {str(e)}")
             continue
-    return result_datasets
+    names = []
+    for result_dataset in result_datasets:
+        await analyst_db.register_dataset(result_dataset)
+        names.append(result_dataset.name)
+    return names
 
 
-@cache
 async def _get_dictionary_batch(
     columns: list[str], df: pl.DataFrame, batch_size: int = 5
 ) -> list[DataDictionaryColumn]:
@@ -369,10 +375,12 @@ async def _get_dictionary_batch(
         ]
 
 
-async def _get_dictionaries(dataset: AnalystDataset) -> DataDictionary:
+@log_api_call
+async def get_dictionary(dataset: AnalystDataset) -> DataDictionary:
     """Process a single dataset with parallel column batch processing"""
 
     try:
+        logger.info(f"Processing dataset {dataset.name} init")
         # Convert JSON to DataFrame
         df_full = dataset.to_df()
         df = df_full.sample(n=min(10000, len(df_full)), seed=42)
@@ -414,8 +422,18 @@ async def _get_dictionaries(dataset: AnalystDataset) -> DataDictionary:
             column_descriptions=dictionary,
         )
 
-    except Exception as e:
-        raise Exception(f"Error processing dataset {dataset.name}: {str(e)}")
+    except Exception:
+        return DataDictionary(
+            name=dataset.name,
+            column_descriptions=[
+                DataDictionaryColumn(
+                    column=c,
+                    data_type=str(dataset.to_df()[c].dtype),
+                    description="No Description Available",
+                )
+                for c in dataset.columns
+            ],
+        )
 
 
 def _validate_question_feasibility(
@@ -644,7 +662,7 @@ async def _generate_run_charts_python_code(
 
 async def _generate_run_analysis_python_code(
     request: RunAnalysisRequest,
-    analyst_db: AnalystDatasetDuckDB,
+    analyst_db: AnalystDB,
     validation_error: InvalidGeneratedCode | None = None,
     attempt: int = 0,
 ) -> str:
@@ -666,9 +684,11 @@ async def _generate_run_analysis_python_code(
     all_data_types = []
 
     dictionaries = [
-        analyst_db.get_data_dictionary(name) for name in request.dataset_names
+        await analyst_db.get_data_dictionary(name) for name in request.dataset_names
     ]
     for dictionary in dictionaries:
+        if dictionary is None:
+            continue
         for entry in dictionary.column_descriptions:
             all_columns.append(f"{dictionary.name}.{entry.column}")
             all_descriptions.append(entry.description)
@@ -686,12 +706,17 @@ async def _generate_run_analysis_python_code(
     all_shapes = []
 
     logger.debug(f"datasets: {request.dataset_names}")
-    for dataset in request.dataset_names:
-        df = analyst_db.get_dataset(dataset).to_df()
-        all_shapes.append(f"{dataset}: {df.shape[0]} rows x {df.shape[1]} columns")
+    for dataset_name in request.dataset_names:
+        try:
+            dataset = (await analyst_db.get_cleansed_dataset(dataset_name)).to_df()
+        except Exception:
+            dataset = (await analyst_db.get_dataset(dataset_name)).to_df()
+        all_shapes.append(
+            f"{dataset_name}: {dataset.shape[0]} rows x {dataset.shape[1]} columns"
+        )
         # Limit sample to 10 rows
-        sample_df = df.head(10)
-        all_samples.append(f"{dataset}:\n{sample_df}")
+        sample_df = dataset.head(10)
+        all_samples.append(f"{dataset_name}:\n{sample_df}")
 
     shape_info = "\n".join(all_shapes)
     sample_data = "\n\n".join(all_samples)
@@ -767,7 +792,7 @@ async def _generate_run_analysis_python_code(
     return completion.code
 
 
-async def cleanse_dataframes(datasets: list[AnalystDataset]) -> list[CleansedDataset]:
+async def cleanse_dataframe(dataset: AnalystDataset) -> CleansedDataset:
     """Clean and standardize multiple pandas DataFrames in parallel.
 
     Args:
@@ -777,83 +802,35 @@ async def cleanse_dataframes(datasets: list[AnalystDataset]) -> list[CleansedDat
     Raises:
         ValueError: If a dataset is empty
     """
-    cleaned_datasets = []
 
-    for dataset in datasets:
-        if dataset.to_df().is_empty():
-            raise ValueError(f"Dataset {dataset.name} is empty")
+    if dataset.to_df().is_empty():
+        raise ValueError(f"Dataset {dataset.name} is empty")
 
-        df = dataset.to_df()
-        sample_df = df.sample(min(100, len(df)))
+    df = dataset.to_df()
+    sample_df = df.sample(min(100, len(df)))
 
-        results = []
-        for col in df.columns:
-            results.append(process_column(df, col, sample_df))
+    results = []
+    for col in df.columns:
+        results.append(process_column(df, col, sample_df))
 
-        # Create new DataFrame from processed columns
-        new_columns = {}
-        reports = []
+    # Create new DataFrame from processed columns
+    new_columns = {}
+    reports = []
 
-        for new_name, series, report in results:
-            new_columns[new_name] = series
-            reports.append(report)
+    for new_name, series, report in results:
+        new_columns[new_name] = series
+        reports.append(report)
 
-        cleaned_df = pl.DataFrame(new_columns)
-        add_summary_statistics(cleaned_df, reports)
+    cleaned_df = pl.DataFrame(new_columns)
+    add_summary_statistics(cleaned_df, reports)
 
-        cleaned_datasets.append(
-            CleansedDataset(
-                dataset=AnalystDataset(
-                    name=dataset.name,
-                    data=cleaned_df,
-                ),
-                cleaning_report=reports,
-            )
-        )
-
-    return cleaned_datasets
-
-
-@log_api_call
-async def get_dictionaries(datasets: list[AnalystDataset]) -> list[DataDictionary]:
-    """
-    Generate data dictionary for multiple datasets.
-
-    Parameters:
-    - datasets: list[AnalystDataset] containing datasets
-
-    Returns:
-    - Dictionary containing column descriptions and metadata
-    """
-
-    try:
-        # Add debug logging
-        logger.info(f"Received dictionary request with {len(datasets)} datasets")
-
-        tasks = [_get_dictionaries(dataset) for dataset in datasets]
-
-        results = await asyncio.gather(*tasks)
-
-        logger.info(f"Returning dictionary response with {len(results)} results")
-        return results
-
-    except Exception as e:
-        msg = type(e).__name__ + f": {str(e)}"
-        logger.error(f"Error in get_dictionary: {msg}")
-        return [
-            DataDictionary(
-                name=dataset.name,
-                column_descriptions=[
-                    DataDictionaryColumn(
-                        column=c,
-                        data_type=str(dataset.to_df()[c].dtype),
-                        description="No Description Available",
-                    )
-                    for c in dataset.columns
-                ],
-            )
-            for dataset in datasets
-        ]
+    return CleansedDataset(
+        dataset=AnalystDataset(
+            name=dataset.name,
+            data=cleaned_df,
+        ),
+        cleaning_report=reports,
+    )
 
 
 @log_api_call
@@ -1052,7 +1029,7 @@ async def get_business_analysis(
 @reflect_code_generation_errors(max_attempts=7)
 async def _run_analysis(
     request: RunAnalysisRequest,
-    analyst_db: AnalystDatasetDuckDB,
+    analyst_db: AnalystDB,
     exception_history: list[InvalidGeneratedCode] | None = None,
 ) -> RunAnalysisResult:
     start_time = datetime.now()
@@ -1073,7 +1050,15 @@ async def _run_analysis(
     dataframes: dict[str, pl.DataFrame] = {}
 
     for dataset_name in request.dataset_names:
-        dataframes[dataset_name] = analyst_db.get_dataset(dataset_name).to_df()
+        try:
+            dataset = (
+                await analyst_db.get_cleansed_dataset(dataset_name, max_rows=None)
+            ).to_df()
+        except Exception:
+            dataset = (
+                await analyst_db.get_dataset(dataset_name, max_rows=None)
+            ).to_df()
+        dataframes[dataset_name] = dataset
     functions = {}
     tool_functions = get_tools()
     for tool in tool_functions:
@@ -1132,7 +1117,7 @@ async def _run_analysis(
 @log_api_call
 async def run_analysis(
     request: RunAnalysisRequest,
-    analyst_db: AnalystDatasetDuckDB,
+    analyst_db: AnalystDB,
 ) -> RunAnalysisResult:
     """Execute analysis workflow on datasets."""
     logger.debug("Entering run_analysis")
@@ -1152,7 +1137,7 @@ async def run_analysis(
 
 async def _generate_database_analysis_code(
     request: RunDatabaseAnalysisRequest,
-    analyst_db: AnalystDatasetDuckDB,
+    analyst_db: AnalystDB,
     validation_error: InvalidGeneratedCode | None = None,
 ) -> str:
     """
@@ -1167,15 +1152,15 @@ async def _generate_database_analysis_code(
 
     # Convert dictionary data structure to list of columns for all tables
     dictionaries = [
-        analyst_db.get_data_dictionary(name) for name in request.dataset_names
+        await analyst_db.get_data_dictionary(name) for name in request.dataset_names
     ]
-    all_tables_info = [d.model_dump(mode="json") for d in dictionaries]
+    all_tables_info = [d.model_dump(mode="json") for d in dictionaries if d is not None]
 
     # Get sample data for all tables
     all_samples = []
 
     for table in request.dataset_names:
-        df = analyst_db.get_dataset(table).to_df().to_pandas()
+        df = (await analyst_db.get_dataset(table)).to_df().to_pandas()
 
         sample_str = f"Table: {table}\n{df.head(10).to_string()}"
         all_samples.append(sample_str)
@@ -1228,7 +1213,7 @@ async def _generate_database_analysis_code(
 @reflect_code_generation_errors(max_attempts=7)
 async def _run_database_analysis(
     request: RunDatabaseAnalysisRequest,
-    analyst_db: AnalystDatasetDuckDB,
+    analyst_db: AnalystDB,
     exception_history: list[InvalidGeneratedCode] | None = None,
 ) -> RunDatabaseAnalysisResult:
     start_time = datetime.now()
@@ -1267,7 +1252,7 @@ async def _run_database_analysis(
 
 @log_api_call
 async def run_database_analysis(
-    request: RunDatabaseAnalysisRequest, analyst_db: AnalystDatasetDuckDB
+    request: RunDatabaseAnalysisRequest, analyst_db: AnalystDB
 ) -> RunDatabaseAnalysisResult:
     """Execute analysis workflow on datasets."""
     try:
@@ -1281,3 +1266,246 @@ async def run_database_analysis(
                 exception=AnalysisError.from_max_reflection_exception(e),
             ),
         )
+
+
+# Type definitions
+@dataclass
+class AnalysisGenerationError:
+    message: str
+    original_error: BaseException | None = None
+
+
+async def execute_business_analysis_and_charts(
+    analysis_result: RunAnalysisResult | RunDatabaseAnalysisResult,
+    enhanced_message: str,
+    enable_chart_generation: bool = True,
+    enable_business_insights: bool = True,
+) -> tuple[
+    RunChartsResult | BaseException | None,
+    GetBusinessAnalysisResult | BaseException | None,
+]:
+    analysis_result.dataset = cast(AnalystDataset, analysis_result.dataset)
+    # Prepare both requests
+    chart_request = RunChartsRequest(
+        dataset=analysis_result.dataset,
+        question=enhanced_message,
+    )
+
+    business_request = GetBusinessAnalysisRequest(
+        dataset=analysis_result.dataset,
+        dictionary=DataDictionary.from_analyst_df(analysis_result.dataset.to_df()),
+        question=enhanced_message,
+    )
+
+    if enable_chart_generation and enable_business_insights:
+        # Run both analyses concurrently
+        result = await asyncio.gather(
+            run_charts(chart_request),
+            get_business_analysis(business_request),
+            return_exceptions=True,
+        )
+
+        return (result[0], result[1])
+    elif enable_chart_generation:
+        charts_result = await run_charts(chart_request)
+        return charts_result, None
+    else:
+        business_result = await get_business_analysis(business_request)
+        return None, business_result
+
+
+async def run_complete_analysis(
+    chat_request: ChatRequest,
+    data_source: str,
+    datasets_names: list[str],
+    analyst_db: AnalystDB,
+    current_chat_name: str,
+    enable_chart_generation: bool = True,
+    enable_business_insights: bool = True,
+) -> AsyncGenerator[Component | AnalysisGenerationError, None]:
+    # current_chat_content = await analyst_db.get_chat(current_chat_name) or []
+
+    # Get enhanced message
+    try:
+        logger.info("Getting rephrased question...")
+        enhanced_message = await rephrase_message(chat_request)
+        logger.info("Getting rephrased question done")
+        yield enhanced_message
+    except ValidationError:
+        yield AnalysisGenerationError("LLM Error, please retry")
+        return
+    assistant_message = AnalystChatMessage(
+        role="assistant",
+        content=enhanced_message,
+        components=[EnhancedQuestionGeneration(enhanced_user_message=enhanced_message)],
+    )
+    await analyst_db.update_chat(
+        chat_message=assistant_message,
+        chat_name=current_chat_name,
+        mode="append",
+    )
+    # Run main analysis
+    logger.info("Start main analysis")
+    try:
+        is_database = data_source == "database"
+        logger.info("Getting analysis result...")
+        log_memory()
+
+        if is_database:
+            analysis_result: (
+                RunAnalysisResult | RunDatabaseAnalysisResult
+            ) = await run_database_analysis(
+                RunDatabaseAnalysisRequest(
+                    dataset_names=datasets_names,
+                    question=enhanced_message,
+                ),
+                analyst_db,
+            )
+        else:
+            analysis_result = await run_analysis(
+                RunAnalysisRequest(
+                    dataset_names=datasets_names,
+                    question=enhanced_message,
+                ),
+                analyst_db,
+            )
+
+        log_memory()
+        logger.info("Getting analysis result done")
+
+        if isinstance(analysis_result, BaseException):
+            yield AnalysisGenerationError(
+                f"Error running initial analysis. Try rephrasing: {str(analysis_result)}"
+            )
+            return
+
+        yield analysis_result
+        assistant_message.components.append(analysis_result)
+        await analyst_db.update_chat(
+            chat_message=assistant_message,
+            chat_name=current_chat_name,
+            mode="overwrite",
+        )
+
+    except Exception as e:
+        yield AnalysisGenerationError(
+            f"Error running initial analysis. Try rephrasing: {str(e)}"
+        )
+        return
+
+    # Only proceed with additional analysis if we have valid initial results
+    if not (
+        analysis_result
+        and analysis_result.dataset
+        and (enable_chart_generation or enable_business_insights)
+    ):
+        return
+
+    # Run concurrent analyses
+    try:
+        charts_result, business_result = await execute_business_analysis_and_charts(
+            analysis_result,
+            enhanced_message,
+            enable_business_insights=enable_business_insights,
+            enable_chart_generation=enable_chart_generation,
+        )
+
+        # Handle chart results
+        if isinstance(charts_result, BaseException):
+            yield AnalysisGenerationError("Error generating charts")
+        elif charts_result is not None:
+            yield charts_result
+            assistant_message.components.append(charts_result)
+            await analyst_db.update_chat(
+                chat_message=assistant_message,
+                chat_name=current_chat_name,
+                mode="overwrite",
+            )
+
+        # Handle business analysis results
+        if isinstance(business_result, BaseException):
+            yield AnalysisGenerationError("Error generating business insights")
+        elif business_result is not None:
+            yield business_result
+            assistant_message.components.append(business_result)
+
+            await analyst_db.update_chat(
+                chat_message=assistant_message,
+                chat_name=current_chat_name,
+                mode="overwrite",
+            )
+
+    except Exception as e:
+        yield AnalysisGenerationError(f"Error setting up additional analysis: {str(e)}")
+
+
+async def process_data_and_update_state(
+    new_dataset_names: list[str], analyst_db: AnalystDB, data_source: str
+) -> AsyncGenerator[str, None]:
+    """Process datasets and yield progress updates asynchronously."""
+    # Start processing and yield initial message
+    logger.info("Starting data processing")
+    log_memory()
+    yield "Starting data processing"
+
+    # Handle data cleansing based on the source
+    if data_source != "database":
+        try:
+            logger.info("Cleansing datasets")
+            yield "Cleansing datasets"
+            for analysis_dataset_name in new_dataset_names:
+                analysis_dataset = await analyst_db.get_dataset(
+                    analysis_dataset_name, max_rows=None
+                )
+                cleansed_dataset = await cleanse_dataframe(analysis_dataset)
+                await analyst_db.register_dataset(cleansed_dataset)
+                yield f"Cleansed dataset: {analysis_dataset_name}"
+                del cleansed_dataset
+                del analysis_dataset
+                log_memory()
+
+            logger.info("Cleansing datasets complete")
+            yield "Cleansing datasets complete"
+            log_memory()
+        except Exception:
+            logger.error("Data processing failed", exc_info=True)
+            yield "Data processing failed"
+            raise
+    else:
+        pass
+
+    # Generate data dictionaries
+    logger.info("Data processing successful, generating dictionaries")
+    yield "Data processing successful, generating dictionaries"
+    log_memory()
+    try:
+        for analysis_dataset_name in new_dataset_names:
+            try:
+                existing_dictionary = await analyst_db.get_data_dictionary(
+                    analysis_dataset_name
+                )
+                logger.info(
+                    f"Found existing dictionary for dataset: {analysis_dataset_name}"
+                )
+                if existing_dictionary is not None:
+                    continue
+
+            except Exception:
+                pass
+            logger.info(f"Creating dictionary for dataset: {analysis_dataset_name}")
+            analysis_dataset = await analyst_db.get_dataset(analysis_dataset_name)
+            new_dictionary = await get_dictionary(analysis_dataset)
+            logger.info(new_dictionary.to_application_df())
+            del analysis_dataset
+            await analyst_db.register_data_dictionary(new_dictionary)
+            logger.info(f"Registered dictionary for dataset: {analysis_dataset_name}")
+            yield f"Registered data dictionary: {analysis_dataset_name}"
+            log_memory()
+            continue
+    except Exception:
+        logger.error("Failed to generate data dictionaries", exc_info=True)
+        yield "Failed to generate data dictionaries"
+        raise
+    log_memory()
+    # Final completion message
+    yield "Processing complete"

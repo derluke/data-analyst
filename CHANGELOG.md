@@ -9,10 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Shared app will use the user's API key if available
-- Chat sessions can be saved and loaded
+- Shared app will use the user's API key if available to query the data catalog
 - Polars added for faster big data processing
 - Duck Db integration
+- Datasets will be remembered as long as the session is active (the app did not restart)
+- Chat sessions will be remembered as long as the session is active (the app did not restart)
+- Added a button to clear the chat history
+- Added a button to clear the data
+- Added the ability to pick datasets used during the analysis step
+
+### Fixed
+- Memory usage cut by ~50%
+- Some JSON encoding errors during the analysis steps
+- Snowflake bug when table name included non-uppercase characters
+  
+### Changed
+- More consistent logging
+- use st.navigation
 
 ## [0.1.6] - 2025-02-18
 

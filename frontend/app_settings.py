@@ -13,9 +13,12 @@
 # limitations under the License.
 
 
+import sys
+
 import streamlit as st
 from streamlit_theme import st_theme
 
+sys.path.append("..")
 from utils.schema import AppInfra
 
 PAGE_ICON = "./datarobot_favicon.png"

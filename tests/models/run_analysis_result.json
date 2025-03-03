@@ -1,8 +1,9 @@
 {
+    "type": "analysis",
     "status": "success",
     "metadata": {
-        "duration": 4.556888,
-        "attempts": 1,
+        "duration": 5.971369,
+        "attempts": 2,
         "datasets_analyzed": 1,
         "total_rows_analyzed": 2000,
         "total_columns_analyzed": 51,
@@ -12,62 +13,76 @@
         "name": "analyst_dataset",
         "data_records": [
             {
-                "Length of Stay (Days)": 11,
-                "Readmission Rate": 0.5227272727272727
+                "time_in_hospital": 11,
+                "readmission_rate": 0.5227272727272727,
+                "average_length_of_stay": 11.0
             },
             {
-                "Length of Stay (Days)": 7,
-                "Readmission Rate": 0.509090909090909
+                "time_in_hospital": 7,
+                "readmission_rate": 0.509090909090909,
+                "average_length_of_stay": 7.0
             },
             {
-                "Length of Stay (Days)": 8,
-                "Readmission Rate": 0.4868421052631579
+                "time_in_hospital": 8,
+                "readmission_rate": 0.4868421052631579,
+                "average_length_of_stay": 8.0
             },
             {
-                "Length of Stay (Days)": 10,
-                "Readmission Rate": 0.475
+                "time_in_hospital": 10,
+                "readmission_rate": 0.475,
+                "average_length_of_stay": 10.0
             },
             {
-                "Length of Stay (Days)": 13,
-                "Readmission Rate": 0.45454545454545453
+                "time_in_hospital": 13,
+                "readmission_rate": 0.45454545454545453,
+                "average_length_of_stay": 13.0
             },
             {
-                "Length of Stay (Days)": 14,
-                "Readmission Rate": 0.44
+                "time_in_hospital": 14,
+                "readmission_rate": 0.44,
+                "average_length_of_stay": 14.0
             },
             {
-                "Length of Stay (Days)": 4,
-                "Readmission Rate": 0.43448275862068964
+                "time_in_hospital": 4,
+                "readmission_rate": 0.43448275862068964,
+                "average_length_of_stay": 4.0
             },
             {
-                "Length of Stay (Days)": 3,
-                "Readmission Rate": 0.4277286135693215
+                "time_in_hospital": 3,
+                "readmission_rate": 0.4277286135693215,
+                "average_length_of_stay": 3.0
             },
             {
-                "Length of Stay (Days)": 9,
-                "Readmission Rate": 0.3968253968253968
+                "time_in_hospital": 9,
+                "readmission_rate": 0.3968253968253968,
+                "average_length_of_stay": 9.0
             },
             {
-                "Length of Stay (Days)": 5,
-                "Readmission Rate": 0.3932038834951456
+                "time_in_hospital": 5,
+                "readmission_rate": 0.3932038834951456,
+                "average_length_of_stay": 5.0
             },
             {
-                "Length of Stay (Days)": 12,
-                "Readmission Rate": 0.3870967741935484
+                "time_in_hospital": 12,
+                "readmission_rate": 0.3870967741935484,
+                "average_length_of_stay": 12.0
             },
             {
-                "Length of Stay (Days)": 6,
-                "Readmission Rate": 0.38562091503267976
+                "time_in_hospital": 6,
+                "readmission_rate": 0.38562091503267976,
+                "average_length_of_stay": 6.0
             },
             {
-                "Length of Stay (Days)": 2,
-                "Readmission Rate": 0.32432432432432434
+                "time_in_hospital": 2,
+                "readmission_rate": 0.32432432432432434,
+                "average_length_of_stay": 2.0
             },
             {
-                "Length of Stay (Days)": 1,
-                "Readmission Rate": 0.30223880597014924
+                "time_in_hospital": 1,
+                "readmission_rate": 0.30223880597014924,
+                "average_length_of_stay": 1.0
             }
         ]
     },
-    "code": "def analyze_data(dfs):\n    import pandas as pd\n    \n    # Access the dataframe\n    df = dfs['10k_diabetes_20']\n    \n    # Filter necessary columns\n    df_filtered = df[['time_in_hospital', 'readmitted']]\n    \n    # Calculate readmission rate\n    readmission_rate = df_filtered.groupby('time_in_hospital')['readmitted'].mean().reset_index()\n    \n    # Sort by readmission rate\n    readmission_rate_sorted = readmission_rate.sort_values(by='readmitted', ascending=False)\n    \n    # Rename columns for clarity\n    readmission_rate_sorted.columns = ['Length of Stay (Days)', 'Readmission Rate']\n    \n    return {\"data\": readmission_rate_sorted}\n"
+    "code": "def analyze_data(dfs):\n    import polars as pl\n    \n    # Access the dataframe\n    df = dfs['10k_diabetes_20']\n    \n    # Calculate the readmission rate and average length of stay\n    result_df = df.group_by('time_in_hospital').agg([\n        pl.col('readmitted').mean().alias('readmission_rate'),\n        pl.col('time_in_hospital').mean().alias('average_length_of_stay')\n    ])\n    \n    # Sort the result by readmission rate in descending order\n    result_df = result_df.sort('readmission_rate', descending=True)\n    \n    return {\"data\": result_df}"
 }

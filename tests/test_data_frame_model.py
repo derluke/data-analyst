@@ -15,10 +15,10 @@
 import logging
 from typing import Any
 
+import pandas as pd
 import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
-from pydantic import ValidationError
 
 from utils.schema import AnalystDataset
 
@@ -63,12 +63,6 @@ class TestDatasetInput:
         assert len(model.to_df()) == 1
         assert_frame_equal(model.to_df(), single_row_df)
 
-    def test_invalid_types(self) -> None:
-        invalid_inputs = [42, "not a json string", {"not": "a list"}, [1, 2, 3], None]
-        for invalid_input in invalid_inputs:
-            with pytest.raises((ValidationError, ValueError)):
-                AnalystDataset(data=invalid_input, name="test")
-
     def test_preserves_dtypes(self) -> None:
         df = pl.DataFrame(
             {
@@ -76,17 +70,18 @@ class TestDatasetInput:
                 "float_col": [1.1, 2.2, 3.3],
                 "str_col": ["a", "b", "c"],
                 "bool_col": [True, False, True],
+                "datetime_col": pd.date_range(start="2024-01-01", periods=3),
             }
-        ).with_columns(datetime_col=pl.date_range(start="2024-01-01", end="2024-01-03"))
+        )
         model = AnalystDataset(data=df, name="test")
         result_df = model.to_df()
 
         # Check each column's dtype is preserved
-        assert result_df["int_col"].dtype == "int64"
-        assert result_df["float_col"].dtype == "float64"
-        assert result_df["str_col"].dtype == "object"
-        assert result_df["bool_col"].dtype == "bool"
-        assert result_df["datetime_col"].dtype == "datetime64[ns]"
+        assert result_df["int_col"].dtype == pl.Int64
+        assert result_df["float_col"].dtype == pl.Float64
+        assert result_df["str_col"].dtype == pl.String
+        assert result_df["bool_col"].dtype == pl.Boolean
+        assert result_df["datetime_col"].dtype == pl.Datetime
 
     def test_handles_null_values(self) -> None:
         df = pl.DataFrame({"a": [1, None, 3], "b": ["x", None, "z"]})

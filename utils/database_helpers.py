@@ -31,6 +31,7 @@ from openai.types.chat.chat_completion_system_message_param import (
 )
 from pydantic import ValidationError
 
+from utils.analyst_db import AnalystDB
 from utils.code_execution import InvalidGeneratedCode
 from utils.credentials import (
     GoogleCredentials,
@@ -83,9 +84,13 @@ class DatabaseOperator(ABC, Generic[T]):
         return []
 
     @abstractmethod
-    def get_data(
-        self, *table_names: str, sample_size: int = 5000, timeout: int | None = None
-    ) -> list[AnalystDataset]:
+    async def get_data(
+        self,
+        *table_names: str,
+        analyst_db: AnalystDB,
+        sample_size: int = 5000,
+        timeout: int | None = None,
+    ) -> list[str]:
         return []
 
     @abstractmethod
@@ -115,9 +120,13 @@ class NoDatabaseOperator(DatabaseOperator[NoDatabaseCredentialArgs]):
     def get_tables(self, timeout: int | None = 300) -> list[str]:
         return []
 
-    def get_data(
-        self, *table_names: str, sample_size: int = 5000, timeout: int | None = 300
-    ) -> list[AnalystDataset]:
+    async def get_data(
+        self,
+        *table_names: str,
+        analyst_db: AnalystDB,
+        sample_size: int = 5000,
+        timeout: int | None = 300,
+    ) -> list[str]:
         return []
 
     def get_system_prompt(self) -> ChatCompletionSystemMessageParam:
@@ -287,9 +296,13 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
             return []
 
     @functools.lru_cache(maxsize=8)
-    def get_data(
-        self, *table_names: str, sample_size: int = 5000, timeout: int | None = None
-    ) -> list[AnalystDataset]:
+    async def get_data(
+        self,
+        *table_names: str,
+        analyst_db: AnalystDB,
+        sample_size: int = 5000,
+        timeout: int | None = None,
+    ) -> list[str]:
         """Load selected tables from Snowflake as pandas DataFrames
 
         Args:
@@ -311,7 +324,7 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
 
                 for table in table_names:
                     try:
-                        qualified_table = f"{self._credentials.database}.{self._credentials.db_schema}.{table}"
+                        qualified_table = f'{self._credentials.database}.{self._credentials.db_schema}."{table}"'
                         logger.info(f"Fetching data from table: {qualified_table}")
                         cursor.execute(
                             f"ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = {timeout}"
@@ -352,8 +365,11 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
                         logger.error(f"Error type: {type(e)}")
                         logger.error(f"Error details: {str(e)}")
                         continue
-
-                return dataframes
+                names = []
+                for dataframe in dataframes:
+                    await analyst_db.register_dataset(dataframe)
+                    names.append(dataframe.name)
+                return names
 
         except Exception as e:
             logger.error(f"Error fetching Snowflake data: {str(e)}")
@@ -453,9 +469,13 @@ class BigQueryOperator(DatabaseOperator[BigQueryCredentialArgs]):
             return []
 
     @functools.lru_cache(maxsize=8)
-    def get_data(
-        self, *table_names: str, sample_size: int = 5000, timeout: int | None = None
-    ) -> list[AnalystDataset]:
+    async def get_data(
+        self,
+        *table_names: str,
+        analyst_db: AnalystDB,
+        sample_size: int = 5000,
+        timeout: int | None = None,
+    ) -> list[str]:
         timeout = timeout if timeout is not None else self.default_timeout
 
         dataframes = []
@@ -505,7 +525,12 @@ class BigQueryOperator(DatabaseOperator[BigQueryCredentialArgs]):
                         logger.error(f"Error details: {str(e)}")
                         continue
 
-                return dataframes
+                names = []
+                for dataframe in dataframes:
+                    await analyst_db.register_dataset(dataframe)
+                    names.append(dataframe.name)
+
+                return names
 
         except Exception as e:
             logger.error(f"Error fetching data: {str(e)}")

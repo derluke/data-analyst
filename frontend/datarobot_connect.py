@@ -21,10 +21,7 @@ from typing import Any, Generator, Optional, cast
 import datarobot as dr
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
-from streamlit.logger import get_logger
 from streamlit_javascript import st_javascript
-
-logger = get_logger(__name__)
 
 
 @dataclass
@@ -70,7 +67,6 @@ class DataRobotTokenManager:
         """Fetch data from DataRobot API using JavaScript."""
         js_command = self._JS_COMMAND_TEMPLATE.replace("URL", url)
         result = st_javascript(js_command, key=url)
-        logger.debug(result)
         data = {}
         try:
             data = json.loads(result)
@@ -97,7 +93,6 @@ class DataRobotTokenManager:
 
         # Fetch API keys
         apikeys_data = self._get_contents_from_url(self._API_URLS["apikeys"])
-        logger.info(f"API Keys Data: {apikeys_data}")
 
         api_token = None
         if "data" in apikeys_data:
@@ -157,7 +152,6 @@ class DataRobotTokenManager:
     @contextmanager
     def use_user_token(self) -> Generator[None, None, None]:
         """Context manager to temporarily use the user's DataRobot token."""
-        logger.info(f"Using user DataRobot credentials: token={self._user_creds.token}")
         if not self._user_creds.token:
             yield
             return
@@ -170,10 +164,6 @@ class DataRobotTokenManager:
     @contextmanager
     def use_app_token(self) -> Generator[None, None, None]:
         """Context manager to temporarily use the app's DataRobot token."""
-        logger.info(
-            f"Using app DataRobot credentials: token={self._original_creds.token}"
-        )
-
         with dr.Client(
             token=self._original_creds.token, endpoint=self._original_creds.endpoint
         ):

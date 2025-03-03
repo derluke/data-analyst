@@ -24,7 +24,6 @@ from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 sys.path.append("..")
 from app_settings import (
-    PAGE_ICON,
     DataSource,
     apply_custom_css,
     display_page_logo,
@@ -34,20 +33,19 @@ from app_settings import (
 from datarobot_connect import DataRobotTokenManager
 from helpers import state_empty, state_init
 
+from utils.analyst_db import AnalystDB
 from utils.api import (
-    cleanse_dataframes,
     download_catalog_datasets,
-    get_dictionaries,
     list_catalog_datasets,
+    log_memory,
+    process_data_and_update_state,
 )
-from utils.app_db import AnalystDatasetDuckDB
 from utils.database_helpers import Database, app_infra
 from utils.logging_helper import get_logger
 from utils.schema import (
     AiCatalogDataset,
     AnalystDataset,
     CleansedColumnReport,
-    CleansedDataset,
     DataDictionary,
 )
 
@@ -56,7 +54,7 @@ warnings.filterwarnings("ignore")
 logger = get_logger("DataAnalystFrontend")
 
 
-def process_uploaded_file(file: UploadedFile) -> list[AnalystDataset]:
+async def process_uploaded_file(file: UploadedFile) -> list[str]:
     """Process a single uploaded file and return a list of (dataset_name, dataframe) tuples
 
     Args:
@@ -70,7 +68,10 @@ def process_uploaded_file(file: UploadedFile) -> list[AnalystDataset]:
         results = []
 
         if file_extension == ".csv":
+            logger.info(f"Loading CSV: {file.name}")
+            log_memory()
             df = pl.read_csv(file, infer_schema_length=10000, low_memory=True)
+            log_memory()
             dataset_name = os.path.splitext(file.name)[0]
             results.append(AnalystDataset(name=dataset_name, data=df))
             logger.info(
@@ -92,7 +93,14 @@ def process_uploaded_file(file: UploadedFile) -> list[AnalystDataset]:
         else:
             raise ValueError(f"Unsupported file type: {file_extension}")
 
-        return results
+        analyst_db: AnalystDB = st.session_state.analyst_db
+        names = []
+        for result in results:
+            await analyst_db.register_dataset(result)
+            names.append(result.name)
+            del result
+        del results
+        return names
 
     except Exception as e:
         logger.error(f"Error loading {file.name}: {str(e)}", exc_info=True)
@@ -103,65 +111,8 @@ def clear_data_callback() -> None:
     """Callback function to clear all data from session state and cache"""
     # Clear session state
     state_empty()
+
     st.session_state.file_uploader_key += 1  # Used to clear file_uploader
-
-
-async def process_data_and_update_state(datasets: list[AnalystDataset]) -> None:
-    new_dataset_names = [ds.name for ds in datasets]
-
-    st.session_state.datasets_names = [
-        name
-        for name in st.session_state.datasets_names
-        if name not in new_dataset_names
-    ]
-    st.session_state.cleansed_data_names = [
-        name
-        for name in st.session_state.cleansed_data_names
-        if name not in new_dataset_names
-    ]
-    # Add the new (or updated) datasets to the session state
-
-    for ds in datasets:
-        st.success(f"✓ {ds.name}: {len(ds.to_df())} rows, {len(ds.columns)} columns")
-
-    analyst_db = cast(AnalystDatasetDuckDB, st.session_state.analyst_db)
-    # Process the new data
-    logger.info("Starting data processing")
-    analysis_datasets = datasets
-    if st.session_state.data_source != DataSource.DATABASE:
-        try:
-            cleansed_datasets = await cleanse_dataframes(datasets)
-            st.session_state.cleansed_data_names.extend(
-                [ds.name for ds in cleansed_datasets]
-            )
-
-            for dataset in cleansed_datasets:
-                analyst_db.register_cleansed_dataset(dataset)
-            analysis_datasets = [ds.dataset for ds in cleansed_datasets]
-        except Exception as e:
-            logger.error("Data processing failed")
-            st.error(f"❌ Error processing data: {str(e)}")
-
-    for ds in analysis_datasets:
-        st.session_state.datasets_names.append(ds.name)
-        analyst_db.register_dataset(ds)
-    logger.info("Data processing successful, generating dictionaries")
-
-    new_dictionaries = []
-
-    # Generate data dictionaries
-    try:
-        new_dictionaries = await get_dictionaries(analysis_datasets)
-
-        for d in new_dictionaries:
-            analyst_db.register_data_dictionary(d)
-
-    except Exception:
-        st.warning(
-            "⚠️ Data processed but there were issues generating some dictionaries"
-        )
-    if len(new_dictionaries) > 0:
-        st.toast("Data processed and dictionaries generated successfully!", icon="✅")
 
 
 # Add callback for AI Catalog dataset selection
@@ -178,9 +129,16 @@ async def catalog_download_callback() -> None:
                     ds["id"] for ds in st.session_state.selected_catalog_datasets
                 ]
                 with st.session_state.datarobot_connect.use_user_token():
-                    dataframes = download_catalog_datasets(*selected_ids)
+                    dataframes = await download_catalog_datasets(
+                        selected_ids, st.session_state.analyst_db
+                    )
 
-                await process_data_and_update_state(dataframes)
+                async for message in process_data_and_update_state(
+                    dataframes,
+                    st.session_state.analyst_db,
+                    st.session_state.data_source,
+                ):
+                    st.toast(message)
 
 
 async def load_from_database_callback() -> None:
@@ -193,13 +151,21 @@ async def load_from_database_callback() -> None:
     ):
         with st.sidebar:
             with st.spinner("Loading selected tables..."):
-                dataframes = Database.get_data(*st.session_state.selected_schema_tables)
+                dataframes = await Database.get_data(
+                    *st.session_state.selected_schema_tables,
+                    analyst_db=st.session_state.analyst_db,
+                )
 
                 if not dataframes:
                     st.error(f"Failed to load data from {app_infra.database}")
                     return
 
-                await process_data_and_update_state(dataframes)
+                async for message in process_data_and_update_state(
+                    dataframes,
+                    st.session_state.analyst_db,
+                    st.session_state.data_source,
+                ):
+                    st.toast(message)
 
 
 async def uploaded_file_callback(uploaded_files: list[UploadedFile]) -> None:
@@ -211,8 +177,19 @@ async def uploaded_file_callback(uploaded_files: list[UploadedFile]) -> None:
         # Process uploaded files
         for file in uploaded_files:
             if file.file_id not in st.session_state.processed_file_ids:
-                dataset_results = process_uploaded_file(file)
-                await process_data_and_update_state(dataset_results)
+                logger.info("Processing Uploaded Files")
+                log_memory()
+                dataset_results = await process_uploaded_file(file)
+                logger.info("Initiating Data cleansing and dictionary")
+                log_memory()
+                async for message in process_data_and_update_state(
+                    dataset_results,
+                    st.session_state.analyst_db,
+                    st.session_state.data_source,
+                ):
+                    st.toast(message)
+                logger.info("Done with processing files")
+                log_memory()
                 st.session_state.processed_file_ids.append(file.file_id)
 
 
@@ -221,30 +198,17 @@ def st_list_catalog_datasets() -> list[AiCatalogDataset]:
     return list_catalog_datasets()
 
 
-# Page config
-st.set_page_config(page_title="Connect Data", page_icon=PAGE_ICON, layout="wide")
-
-# Initialize session state variables
-state_init()
-
 # Custom CSS
 apply_custom_css()
 
-
 # Initialize session state variables
-
-datarobot_connect = DataRobotTokenManager()
-st.session_state.datarobot_connect = datarobot_connect
 
 
 async def main() -> None:
     # Sidebar for data upload and processing
+    await state_init()
     logger.info("Starting App")
     with st.sidebar:
-        user_info_container = st.container()
-
-        st.session_state.datarobot_connect.display_info(user_info_container)
-
         st.title("Connect")
 
         # Load Files expander containing file upload and AI Catalog
@@ -329,39 +293,33 @@ async def main() -> None:
                         await load_from_database_callback()
 
         # Add Clear Data button after the Database expander
-        st.sidebar.button(
+        if st.sidebar.button(
             "Clear Data",
             on_click=clear_data_callback,
             type="secondary",
             use_container_width=False,
-        )
+        ):
+            analyst_db: AnalystDB = st.session_state.analyst_db
+            await analyst_db.delete_all_tables()
 
     # Main content area
     display_page_logo()
     st.title("Explore")
+    analyst_db = cast(AnalystDB, st.session_state.analyst_db)
+    dataset_names = await analyst_db.list_analyst_datasets()
     # Main content area - conditional rendering based on cleansed data
-    if not st.session_state.datasets_names:
+    if not dataset_names:
         st.info("Upload and process your data using the sidebar to get started")
     else:
-        st.session_state.datasets_names = cast(
-            list[str], st.session_state.datasets_names
-        )
-        st.session_state.cleansed_data_names = cast(
-            list[str], st.session_state.cleansed_data_names
-        )
-        analyst_db = cast(AnalystDatasetDuckDB, st.session_state.analyst_db)
-        for ds_display_name in st.session_state.datasets_names:
+        for ds_display_name in dataset_names:
             tab1, tab2 = st.tabs(["Raw Data", "Data Dictionary"])
             with tab1:
-                ds_display = cast(
-                    AnalystDataset, analyst_db.get_dataset(ds_display_name)
-                )
+                ds_display = await analyst_db.get_dataset(ds_display_name)
                 st.subheader(f"{ds_display.name}")
                 cleaning_report: list[CleansedColumnReport] | None = None
                 try:
-                    ds_display_cleansed: CleansedDataset = cast(
-                        CleansedDataset,
-                        analyst_db.get_dataset(ds_display_name, cleansed=True),
+                    ds_display_cleansed = await analyst_db.get_cleansed_dataset(
+                        ds_display_name
                     )
                     cleaning_report = ds_display_cleansed.cleaning_report
 
@@ -470,15 +428,27 @@ async def main() -> None:
                     with col1:
                         csv = df_display.write_csv()
                         st.download_button(
-                            label="Download Cleansed Data",
+                            label="Download Data",
                             data=csv,
                             file_name=f"{ds_display.name}_cleansed.csv",
                             mime="text/csv",
                             key=f"download_{ds_display.name}",
                         )
+                    with col3:
+                        if st.button(
+                            "Delete Dataset",
+                            key=f"delete_{ds_display.name}",
+                            use_container_width=True,
+                        ):
+                            await analyst_db.delete_table(ds_display.name)
+                            st.rerun()
+
             with tab2:
                 try:
-                    dictionary = analyst_db.get_data_dictionary(ds_display.name)
+                    dictionary = await analyst_db.get_data_dictionary(ds_display.name)
+                    if dictionary is None:
+                        st.error("No data dictionary found for this dataset.")
+                        return
 
                     # Convert dictionary to DataFrame
                     dict_df = dictionary.to_application_df()
@@ -499,17 +469,16 @@ async def main() -> None:
                     col1, col2, col3 = st.columns([2, 3, 1])
 
                     with col3:
-                        st.button(
+                        if st.button(
                             label="Save changes",
-                            on_click=analyst_db.register_data_dictionary,
-                            args=(
+                            key=f"dict_save_{dictionary.name}",
+                            use_container_width=True,
+                        ):
+                            await analyst_db.register_data_dictionary(
                                 DataDictionary.from_application_df(
                                     edited_df, ds_display.name
                                 ),
-                            ),
-                            key=f"dict_save_{dictionary.name}",
-                            use_container_width=True,
-                        )
+                            )
 
                     with col1:
                         # Download button for dictionary
@@ -535,4 +504,11 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    datarobot_connect = DataRobotTokenManager()
+    st.session_state.datarobot_connect = datarobot_connect
+
     asyncio.run(main())
+else:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(main())

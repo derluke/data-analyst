@@ -63,20 +63,22 @@ def sample_datasets():
 
 @pytest.mark.asyncio
 async def test_empty_dataset():
-    from utils.api import cleanse_dataframes
+    from utils.api import cleanse_dataframe
 
     empty_df = pd.DataFrame()
-    empty_dataset = [AnalystDataset(name="empty", data=empty_df)]
+    empty_dataset = AnalystDataset(name="empty", data=empty_df)
 
     with pytest.raises(ValueError, match="Dataset empty is empty"):
-        await cleanse_dataframes(empty_dataset)
+        await cleanse_dataframe(empty_dataset)
 
 
 @pytest.mark.asyncio
 async def test_simple_numeric_conversion(sample_datasets):
-    from utils.api import cleanse_dataframes
+    from utils.api import cleanse_dataframe
 
-    results = await cleanse_dataframes(sample_datasets)
+    results = [
+        await cleanse_dataframe(sample_dataset) for sample_dataset in sample_datasets
+    ]
     basic_data = results[0].dataset.to_df()
 
     log.info(results[0].cleaning_report)
@@ -92,9 +94,11 @@ async def test_simple_numeric_conversion(sample_datasets):
 
 @pytest.mark.asyncio
 async def test_currency_conversion(sample_datasets):
-    from utils.api import cleanse_dataframes
+    from utils.api import cleanse_dataframe
 
-    results = await cleanse_dataframes(sample_datasets)
+    results = [
+        await cleanse_dataframe(sample_dataset) for sample_dataset in sample_datasets
+    ]
     basic_data = results[0].dataset.to_df()
 
     assert basic_data["currency"].dtype.is_numeric()
@@ -103,9 +107,11 @@ async def test_currency_conversion(sample_datasets):
 
 @pytest.mark.asyncio
 async def test_percentage_conversion(sample_datasets):
-    from utils.api import cleanse_dataframes
+    from utils.api import cleanse_dataframe
 
-    results = await cleanse_dataframes(sample_datasets)
+    results = [
+        await cleanse_dataframe(sample_dataset) for sample_dataset in sample_datasets
+    ]
     basic_data = results[0].dataset.to_df()
 
     assert basic_data["percentage"].dtype.is_numeric()
@@ -114,9 +120,11 @@ async def test_percentage_conversion(sample_datasets):
 
 @pytest.mark.asyncio
 async def test_magnitude_conversion(sample_datasets):
-    from utils.api import cleanse_dataframes
+    from utils.api import cleanse_dataframe
 
-    results = await cleanse_dataframes(sample_datasets)
+    results = [
+        await cleanse_dataframe(sample_dataset) for sample_dataset in sample_datasets
+    ]
     basic_data = results[0].dataset.to_df()
 
     assert basic_data["magnitude"].dtype.is_numeric()
@@ -128,9 +136,11 @@ async def test_magnitude_conversion(sample_datasets):
 
 @pytest.mark.asyncio
 async def test_date_conversion(sample_datasets):
-    from utils.api import cleanse_dataframes
+    from utils.api import cleanse_dataframe
 
-    results = await cleanse_dataframes(sample_datasets)
+    results = [
+        await cleanse_dataframe(sample_dataset) for sample_dataset in sample_datasets
+    ]
     basic_data = results[0].dataset.to_df()
 
     assert basic_data["dates_mdy"].dtype.is_temporal()
@@ -143,9 +153,11 @@ async def test_date_conversion(sample_datasets):
 
 @pytest.mark.asyncio
 async def test_edge_cases(sample_datasets):
-    from utils.api import cleanse_dataframes
+    from utils.api import cleanse_dataframe
 
-    results = await cleanse_dataframes(sample_datasets)
+    results = [
+        await cleanse_dataframe(sample_dataset) for sample_dataset in sample_datasets
+    ]
     edge_data = results[1].dataset.to_df()
 
     # Check that invalid text columns remain as object type
@@ -161,9 +173,11 @@ async def test_edge_cases(sample_datasets):
 
 @pytest.mark.asyncio
 async def test_column_report_generation(sample_datasets):
-    from utils.api import cleanse_dataframes
+    from utils.api import cleanse_dataframe
 
-    results = await cleanse_dataframes(sample_datasets)
+    results = [
+        await cleanse_dataframe(sample_dataset) for sample_dataset in sample_datasets
+    ]
     basic_report = results[0].cleaning_report
 
     # Find currency column report
@@ -183,7 +197,7 @@ async def test_column_report_generation(sample_datasets):
 
 @pytest.mark.asyncio
 async def test_column_name_cleaning():
-    from utils.api import cleanse_dataframes
+    from utils.api import cleanse_dataframe
 
     # Test column name cleaning with spaces and special characters
     df = pd.DataFrame(
@@ -193,10 +207,10 @@ async def test_column_name_cleaning():
             "Multiple    Spaces": [7, 8, 9],
         }
     )
-    dataset = [AnalystDataset(name="test", data=df)]
+    dataset = AnalystDataset(name="test", data=df)
 
-    results = await cleanse_dataframes(dataset)
-    cleaned_cols = results[0].dataset.to_df().columns
+    result = await cleanse_dataframe(dataset)
+    cleaned_cols = result.dataset.to_df().columns
 
     assert "Column Name" in cleaned_cols
     assert "Special!@#$Characters" in cleaned_cols
@@ -205,9 +219,8 @@ async def test_column_name_cleaning():
 
 @pytest.mark.asyncio
 async def test_10k_diabetes(dataset_loaded):
-    from utils.api import cleanse_dataframes
+    from utils.api import cleanse_dataframe
 
-    results = await cleanse_dataframes([dataset_loaded])
+    result = await cleanse_dataframe(dataset_loaded)
 
-    assert len(results) == 1
-    assert len(results[0].dataset.to_df()) > 0
+    assert len(result.dataset.to_df()) > 0

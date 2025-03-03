@@ -180,3 +180,4 @@ e2e/downloads/
 *.p8
 .env*
 !.env.template
+node_modules/

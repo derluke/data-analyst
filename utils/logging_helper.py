@@ -14,7 +14,6 @@
 
 import json
 import logging
-import time
 from datetime import datetime
 from functools import wraps
 from typing import Any, Callable, Coroutine, ParamSpec, TypeVar
@@ -73,47 +72,8 @@ def log_api_call(
             f"{separator}API CALL START: {func.__name__} [{request_id}]{separator}"
         )
         try:
-            formatted_args = [
-                arg.dict() if hasattr(arg, "dict") else arg for arg in args
-            ]
-            formatted_kwargs = {
-                k: v.dict() if hasattr(v, "dict") else v for k, v in kwargs.items()
-            }
-            input_log = (
-                f"INPUT PARAMETERS [{request_id}]\n"
-                "------------------------\n"
-                f"Function: {func.__name__}\n"
-                f"Timestamp: {datetime.now().isoformat()}\n\n"
-                "Arguments:\n"
-                f"{format_json(formatted_args)}\n\n"
-                "Keyword Arguments:\n"
-                f"{format_json(formatted_kwargs)}\n"
-            )
-            logger.debug(input_log)
-
-            start_time = time.time()
             result = await func(*args, **kwargs)
-            execution_time = time.time() - start_time
 
-            if hasattr(result, "request_options"):
-                request_options = result.request_options
-                formatted_options = {
-                    "method": request_options.get("method"),
-                    "url": request_options.get("url"),
-                    "files": request_options.get("files"),
-                    "json_data": request_options.get("json_data", {}),
-                }
-                logger.debug(f"Request options:\n{format_json(formatted_options)}\n")
-
-            output_log = (
-                f"OUTPUT RESULTS [{request_id}]\n"
-                "------------------------\n"
-                f"Function: {func.__name__}\n"
-                f"Execution Time: {execution_time:.2f} seconds\n\n"
-                "Response:\n"
-                f"{format_json(result)}\n"
-            )
-            logger.debug(output_log)
             logger.info(
                 f"{separator}API CALL COMPLETE: {func.__name__} [{request_id}]{separator}"
             )
