@@ -474,6 +474,7 @@ async def main() -> None:
                             key=f"dict_save_{dictionary.name}",
                             use_container_width=True,
                         ):
+                            await analyst_db.delete_dictionary(dictionary.name)
                             await analyst_db.register_data_dictionary(
                                 DataDictionary.from_application_df(
                                     edited_df, ds_display.name

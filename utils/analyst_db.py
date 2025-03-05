@@ -794,6 +794,10 @@ class AnalystDB:
         logger.info(f"Deleting table: {table_name} and related datasets")
         await self.dataset_handler.delete_dataset_with_related(table_name)
 
+    async def delete_dictionary(self, dataset_name: str) -> None:
+        logger.info(f"Deleting dictionary for: {dataset_name}")
+        await self.dataset_handler.delete_dataset(f"{dataset_name}_dict")
+
     async def delete_all_tables(self) -> None:
         await self.dataset_handler.delete_all_datasets()
 

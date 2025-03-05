@@ -12,11 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import List
+
 import streamlit as st
 from app_settings import PAGE_ICON
 from datarobot_connect import DataRobotTokenManager
+from streamlit.navigation.page import StreamlitPage
 
-pages = [
+pages: List[StreamlitPage] = [
     st.Page("01_connect_and_explore.py", title="Connect & Explore"),
     st.Page("02_chat_with_data.py", title="AI Data Analyst"),
 ]
@@ -32,5 +35,5 @@ st.session_state.datarobot_connect = datarobot_connect
 
 datarobot_connect.display_info(st.sidebar.container(key="user_info"))
 
-pg = st.navigation(pages)
+pg = st.navigation(pages)  # type: ignore
 pg.run()
