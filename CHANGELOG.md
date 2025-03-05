@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Memory usage cut by ~50%
 - Some JSON encoding errors during the analysis steps
 - Snowflake bug when table name included non-uppercase characters
+- pandas to polars conversion error when pandas.period is involved
   
 ### Changed
 - More consistent logging

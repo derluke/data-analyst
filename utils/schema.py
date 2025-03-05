@@ -79,6 +79,9 @@ class DataFrameWrapper:
         if isinstance(v, cls):
             return v
         if isinstance(v, pd.DataFrame):
+            for c in v.columns:
+                if "period" in str(v[c].dtype):
+                    v[c] = v[c].astype(str)
             df = pl.DataFrame._from_pandas(v)
             return cls(df)
         if isinstance(v, pl.DataFrame):
