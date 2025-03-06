@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Generator, Generic, TypeVar, cast
 
 import pandas as pd
+import polars as pl
 import snowflake.connector
 from google.cloud import bigquery
 from openai.types.chat.chat_completion_system_message_param import (
@@ -31,7 +32,7 @@ from openai.types.chat.chat_completion_system_message_param import (
 )
 from pydantic import ValidationError
 
-from utils.analyst_db import AnalystDB
+from utils.analyst_db import AnalystDB, DataSourceType
 from utils.code_execution import InvalidGeneratedCode
 from utils.credentials import (
     GoogleCredentials,
@@ -210,10 +211,10 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
                     except snowflake.connector.errors.ProgrammingError as e:
                         # Handle Snowflake-specific errors
                         raise InvalidGeneratedCode(
-                            f"Snowflake error: {str(e)}",
+                            f"Snowflake error: {str(e.msg)}",
                             code=query,
-                            exception=e,
-                            traceback_str=traceback.format_exc(),
+                            exception=None,
+                            traceback_str="",
                         )
 
         except Exception as e:
@@ -338,27 +339,15 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
 
                         columns = [desc[0] for desc in cursor.description]
                         data = cursor.fetchall()
-                        df = pd.DataFrame(data, columns=columns)
+                        pandas_df = pd.DataFrame(data=data, columns=columns, dtype=str)
+                        df = pl.DataFrame(
+                            data=pandas_df, schema={col: pl.String for col in columns}
+                        )
 
-                        # Convert date/datetime columns to string format
-                        for col in df.columns:
-                            if pd.api.types.is_datetime64_any_dtype(
-                                df[col]
-                            ) or isinstance(df[col].dtype, pd.DatetimeTZDtype):
-                                df[col] = df[col].dt.strftime("%Y-%m-%d %H:%M:%S")
-                            elif df[col].dtype == "object":
-                                try:
-                                    pd.to_datetime(df[col], errors="raise")
-                                    df[col] = pd.to_datetime(df[col]).dt.strftime(
-                                        "%Y-%m-%d"
-                                    )
-                                except (ValueError, TypeError):
-                                    continue
                         logger.info(
                             f"Successfully loaded table {table}: {len(df)} rows, {len(df.columns)} columns"
                         )
-                        data = cast(list[dict[str, Any]], df.to_dict("records"))
-                        dataframes.append(AnalystDataset(name=table, data=data))
+                        dataframes.append(AnalystDataset(name=table, data=df))
 
                     except Exception as e:
                         logger.error(f"Error loading table {table}: {str(e)}")
@@ -367,7 +356,9 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
                         continue
                 names = []
                 for dataframe in dataframes:
-                    await analyst_db.register_dataset(dataframe)
+                    await analyst_db.register_dataset(
+                        dataframe, DataSourceType.DATABASE
+                    )
                     names.append(dataframe.name)
                 return names
 
@@ -527,7 +518,9 @@ class BigQueryOperator(DatabaseOperator[BigQueryCredentialArgs]):
 
                 names = []
                 for dataframe in dataframes:
-                    await analyst_db.register_dataset(dataframe)
+                    await analyst_db.register_dataset(
+                        dataframe, DataSourceType.DATABASE
+                    )
                     names.append(dataframe.name)
 
                 return names

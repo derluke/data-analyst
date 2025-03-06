@@ -31,17 +31,19 @@ from streamlit.delta_generator import DeltaGenerator
 sys.path.append("..")
 # Import FastAPI functions directly
 from app_settings import (
+    DataSource,
     apply_custom_css,
     display_page_logo,
 )
 from datarobot_connect import DataRobotTokenManager
 from helpers import log_error_details, state_init
 
-from utils.analyst_db import AnalystDB
+from utils.analyst_db import AnalystDB, DataSourceType
 from utils.api import (
     AnalysisGenerationError,
     run_complete_analysis,
 )
+from utils.database_helpers import app_infra
 from utils.logging_helper import get_logger
 from utils.schema import (
     AnalysisError,
@@ -339,7 +341,9 @@ async def main() -> None:
     analyst_db: AnalystDB = st.session_state.analyst_db
     # Sidebar UI
     all_chats = await analyst_db.get_chat_names()
-    all_datasets = await analyst_db.list_analyst_datasets()
+    all_datasets = await analyst_db.list_analyst_datasets(
+        data_source=DataSourceType(st.session_state.data_source)
+    )
     st.session_state.datasets_names = all_datasets
     if (
         "current_chat_name" not in st.session_state
@@ -358,6 +362,30 @@ async def main() -> None:
     with st.sidebar:
         st.title("Chat Controls")
 
+        if app_infra.database != "no_database":
+
+            def set_database_mode() -> None:
+                if st.session_state.database_mode == "Local":
+                    st.session_state.data_source = DataSource.FILE
+                else:
+                    st.session_state.data_source = DataSource.DATABASE
+
+            st.radio(
+                "Database Mode",
+                options=["Local", app_infra.database.title()],
+                key="database_mode",
+                horizontal=True,
+                on_change=set_database_mode,
+                index=1 if st.session_state.data_source == DataSource.DATABASE else 0,
+            )
+
+        # Chat History in expander
+        if len(all_datasets) > 0:
+            with st.expander("Available Datasets", expanded=True):
+                for dataset_name in all_datasets:
+                    st.checkbox(dataset_name, key=f"dataset_{dataset_name}", value=True)
+
+            st.divider()
         st.checkbox(
             "Generate charts in conversation",
             value=True,
@@ -393,12 +421,6 @@ async def main() -> None:
                         chat_messages=st.session_state.chat_messages
                     )
                     st.rerun()
-        # Chat History in expander
-        with st.expander("Available Datasets", expanded=False):
-            for dataset_name in all_datasets:
-                st.checkbox(dataset_name, key=f"dataset_{dataset_name}", value=True)
-
-        st.divider()
 
         # List all saved chats
         if len(all_chats) == 0:

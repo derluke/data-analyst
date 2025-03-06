@@ -33,7 +33,7 @@ from app_settings import (
 from datarobot_connect import DataRobotTokenManager
 from helpers import state_empty, state_init
 
-from utils.analyst_db import AnalystDB
+from utils.analyst_db import AnalystDB, DataSourceType
 from utils.api import (
     download_catalog_datasets,
     list_catalog_datasets,
@@ -96,7 +96,7 @@ async def process_uploaded_file(file: UploadedFile) -> list[str]:
         analyst_db: AnalystDB = st.session_state.analyst_db
         names = []
         for result in results:
-            await analyst_db.register_dataset(result)
+            await analyst_db.register_dataset(result, DataSourceType.FILE)
             names.append(result.name)
             del result
         del results

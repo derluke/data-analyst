@@ -39,13 +39,20 @@ logger = get_logger("ApplicationDB")
 
 # increment this number if the database schema has changed to prevent conflicts with existing deployments
 # this will force reinitialisation - all tables will be dropped
-ANALYST_DATABASE_VERSION = 1
+ANALYST_DATABASE_VERSION = 2
 
 
 class DatasetType(Enum):
     STANDARD = "standard"
     CLEANSED = "cleansed"
     DICTIONARY = "dictionary"
+
+
+class DataSourceType(Enum):
+    FILE = "file"
+    DATABASE = "database"
+    CATALOG = "catalog"
+    GENERATED = "generated"
 
 
 @dataclass
@@ -58,6 +65,7 @@ class DatasetMetadata:
     created_at: datetime
     columns: list[str]
     row_count: int
+    data_source: DataSourceType
 
 
 class BaseDuckDBHandler(ABC):
@@ -69,7 +77,8 @@ class BaseDuckDBHandler(ABC):
         user_id: str | None = None,
         db_path: Path | None = None,
         name: str | None = None,
-        db_version: int = 1,  # should be updated after updating db tables structure
+        db_version: int
+        | None = 1,  # should be updated after updating db tables structure
     ) -> None:
         """Initialize database path and create tables."""
         self.db_version = db_version
@@ -180,7 +189,8 @@ class DatasetHandler(BaseDuckDBHandler):
                     original_name VARCHAR,
                     created_at TIMESTAMP,
                     columns JSON,
-                    row_count INTEGER
+                    row_count INTEGER,
+                    data_source VARCHAR,
                 )
                 """,
             )
@@ -201,6 +211,7 @@ class DatasetHandler(BaseDuckDBHandler):
         df: pl.DataFrame,
         name: str,
         dataset_type: DatasetType,
+        data_source: DataSourceType,
         original_name: str | None = None,
     ) -> None:
         """
@@ -211,6 +222,7 @@ class DatasetHandler(BaseDuckDBHandler):
             name: Name for the table
             dataset_type: Type of dataset (STANDARD, CLEANSED, or DICTIONARY)
             original_name: For CLEANSED/DICTIONARY types, the name of the original dataset
+            data_source: The source of the data (DataSourceType.FILE, DataSourceType.DATABASE, or DataSourceType.CATALOG)
         """
         logger.info(f"Registering dataframe {name} as {dataset_type.value}")
 
@@ -245,14 +257,15 @@ class DatasetHandler(BaseDuckDBHandler):
                 created_at=datetime.now(),
                 columns=list(df.columns),
                 row_count=len(df),
+                data_source=data_source,
             )
 
             await self.execute_query(
                 conn,
                 """
                 INSERT INTO dataset_metadata
-                (table_name, dataset_type, original_name, created_at, columns, row_count)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (table_name, dataset_type, original_name, created_at, columns, row_count, data_source)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     metadata.name,
@@ -261,28 +274,45 @@ class DatasetHandler(BaseDuckDBHandler):
                     metadata.created_at,
                     json.dumps(metadata.columns),
                     metadata.row_count,
+                    metadata.data_source.value,
                 ],
             )
 
     async def list_datasets(
-        self, dataset_type: DatasetType | None = None
+        self,
+        dataset_type: DatasetType | None = None,
+        data_source: DataSourceType | None = None,
     ) -> list[DatasetMetadata]:
         """
-        List all datasets, optionally filtered by type.
-        Returns full metadata for each dataset.
+        List all datasets, optionally filtered by dataset type and/or data source.
+
+        Args:
+            dataset_type: Optional filter by dataset type (STANDARD, CLEANSED, DICTIONARY)
+            data_source: Optional filter by data source (FILE, DATABASE, CATALOG)
+
+        Returns:
+            List of DatasetMetadata for matching datasets
         """
         async with self._get_connection() as conn:
             query = """
                 SELECT
                     table_name, dataset_type, original_name,
-                    created_at, columns, row_count
+                    created_at, columns, row_count, data_source
                 FROM dataset_metadata
             """
             params = []
+            where_clauses = []
 
             if dataset_type:
-                query += " WHERE dataset_type = ?"
+                where_clauses.append("dataset_type = ?")
                 params.append(dataset_type.value)
+
+            if data_source:
+                where_clauses.append("data_source = ?")
+                params.append(data_source.value)
+
+            if where_clauses:
+                query += " WHERE " + " AND ".join(where_clauses)
 
             result = await self.execute_query(conn, query, params)
             rows = await asyncio.get_running_loop().run_in_executor(
@@ -297,6 +327,7 @@ class DatasetHandler(BaseDuckDBHandler):
                     created_at=row[3],
                     columns=json.loads(row[4]),
                     row_count=row[5],
+                    data_source=DataSourceType(row[6]),
                 )
                 for row in rows
             ]
@@ -527,6 +558,7 @@ class ChatHandler(BaseDuckDBHandler):
 
     async def _initialize_database(self) -> None:
         """Initialize chat-related tables."""
+        await super()._initialize_database()
         async with self._get_connection() as conn:
             await self.execute_query(
                 conn,
@@ -689,7 +721,7 @@ class AnalystDB:
         db_path: Path,
         dataset_db_name: str = "dataset",
         chat_db_name: str = "chat",
-        db_version: int = ANALYST_DATABASE_VERSION,
+        db_version: int | None = ANALYST_DATABASE_VERSION,
     ) -> "AnalystDB":
         self = cls.__new__(cls)
         self.dataset_handler = DatasetHandler(
@@ -714,7 +746,11 @@ class AnalystDB:
         await self.chat_handler._initialize_database()
 
     # Dataset operations
-    async def register_dataset(self, df: AnalystDataset | CleansedDataset) -> None:
+    async def register_dataset(
+        self,
+        df: AnalystDataset | CleansedDataset,
+        data_source: DataSourceType = DataSourceType.GENERATED,
+    ) -> None:
         if isinstance(df, CleansedDataset):
             is_cleansed = True
             await self.dataset_handler.store_cleansing_report(
@@ -729,6 +765,7 @@ class AnalystDB:
                 dataset_type=(
                     DatasetType.CLEANSED if is_cleansed else DatasetType.STANDARD
                 ),
+                data_source=data_source,
                 original_name=df.name,
             )
         except Exception as e:
@@ -764,6 +801,7 @@ class AnalystDB:
                 data_dictionary.to_application_df(),
                 name=f"{data_dictionary.name}_dict",
                 dataset_type=DatasetType.DICTIONARY,
+                data_source=DataSourceType.GENERATED,
                 original_name=data_dictionary.name,
             )
         except Exception as e:
@@ -786,8 +824,21 @@ class AnalystDB:
     ) -> list[CleansedColumnReport] | None:
         return await self.dataset_handler.get_cleansing_report(dataset_name)
 
-    async def list_analyst_datasets(self) -> list[str]:
-        datasets = await self.dataset_handler.list_datasets(DatasetType.STANDARD)
+    async def list_analyst_datasets(
+        self, data_source: DataSourceType | None = None
+    ) -> list[str]:
+        """
+        List all standard datasets, optionally filtered by data source.
+
+        Args:
+            data_source: Optional filter by data source (FILE, DATABASE, CATALOG)
+
+        Returns:
+            List of dataset names
+        """
+        datasets = await self.dataset_handler.list_datasets(
+            dataset_type=DatasetType.STANDARD, data_source=data_source
+        )
         return [dataset.name for dataset in datasets]
 
     async def delete_table(self, table_name: str) -> None:

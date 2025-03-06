@@ -56,7 +56,7 @@ from pydantic import ValidationError
 
 sys.path.append("..")
 from utils import prompts, tools
-from utils.analyst_db import AnalystDB
+from utils.analyst_db import AnalystDB, DataSourceType
 from utils.code_execution import (
     InvalidGeneratedCode,
     MaxReflectionAttempts,
@@ -261,7 +261,7 @@ async def download_catalog_datasets(
             continue
     names = []
     for result_dataset in result_datasets:
-        await analyst_db.register_dataset(result_dataset)
+        await analyst_db.register_dataset(result_dataset, DataSourceType.DATABASE)
         names.append(result_dataset.name)
     return names
 
@@ -1440,7 +1440,9 @@ async def run_complete_analysis(
 
 
 async def process_data_and_update_state(
-    new_dataset_names: list[str], analyst_db: AnalystDB, data_source: str
+    new_dataset_names: list[str],
+    analyst_db: AnalystDB,
+    data_source: str | DataSourceType,
 ) -> AsyncGenerator[str, None]:
     """Process datasets and yield progress updates asynchronously."""
     # Start processing and yield initial message
@@ -1449,7 +1451,13 @@ async def process_data_and_update_state(
     yield "Starting data processing"
 
     # Handle data cleansing based on the source
-    if data_source != "database":
+    # Convert string data_source to DataSourceType if needed
+    data_source_type = (
+        data_source
+        if isinstance(data_source, DataSourceType)
+        else DataSourceType(data_source)
+    )
+    if data_source_type != DataSourceType.DATABASE:
         try:
             logger.info("Cleansing datasets")
             yield "Cleansing datasets"
@@ -1458,7 +1466,9 @@ async def process_data_and_update_state(
                     analysis_dataset_name, max_rows=None
                 )
                 cleansed_dataset = await cleanse_dataframe(analysis_dataset)
-                await analyst_db.register_dataset(cleansed_dataset)
+                await analyst_db.register_dataset(
+                    cleansed_dataset, data_source=DataSourceType.GENERATED
+                )
                 yield f"Cleansed dataset: {analysis_dataset_name}"
                 del cleansed_dataset
                 del analysis_dataset
