@@ -341,8 +341,12 @@ async def main() -> None:
     analyst_db: AnalystDB = st.session_state.analyst_db
     # Sidebar UI
     all_chats = await analyst_db.get_chat_names()
-    all_datasets = await analyst_db.list_analyst_datasets(
-        data_source=DataSourceType(st.session_state.data_source)
+    all_datasets = (
+        await analyst_db.list_analyst_datasets(
+            data_source=DataSourceType(st.session_state.data_source)
+        )
+        if st.session_state.data_source
+        else []
     )
     st.session_state.datasets_names = all_datasets
     if (

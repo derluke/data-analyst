@@ -261,7 +261,7 @@ async def download_catalog_datasets(
             continue
     names = []
     for result_dataset in result_datasets:
-        await analyst_db.register_dataset(result_dataset, DataSourceType.DATABASE)
+        await analyst_db.register_dataset(result_dataset, DataSourceType.CATALOG)
         names.append(result_dataset.name)
     return names
 
