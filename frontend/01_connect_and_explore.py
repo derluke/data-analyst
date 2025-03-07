@@ -24,7 +24,6 @@ from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 sys.path.append("..")
 from app_settings import (
-    DataSource,
     apply_custom_css,
     display_page_logo,
     get_database_loader_message,
@@ -122,7 +121,8 @@ async def catalog_download_callback() -> None:
         "selected_catalog_datasets" in st.session_state
         and st.session_state.selected_catalog_datasets
     ):
-        st.session_state.data_source = DataSource.CATALOG
+        st.session_state.data_source = DataSourceType.CATALOG
+
         with st.sidebar:  # Use sidebar context
             with st.spinner("Loading selected datasets..."):
                 selected_ids = [
@@ -144,7 +144,7 @@ async def catalog_download_callback() -> None:
 async def load_from_database_callback() -> None:
     """Callback function for Database table download"""
     # Set flag to indicate data source is a database
-    st.session_state.data_source = DataSource.DATABASE
+    st.session_state.data_source = DataSourceType.DATABASE
     if (
         "selected_schema_tables" in st.session_state
         and st.session_state.selected_schema_tables
@@ -171,7 +171,7 @@ async def load_from_database_callback() -> None:
 async def uploaded_file_callback(uploaded_files: list[UploadedFile]) -> None:
     """Callback function for file uploads"""
     # Set flag to indicate data source is a file
-    st.session_state.data_source = DataSource.FILE
+    st.session_state.data_source = DataSourceType.FILE
 
     with st.spinner("Loading and processing files..."):
         # Process uploaded files
@@ -223,7 +223,6 @@ async def main() -> None:
                 "Select 1 or multiple files",
                 type=["csv", "xlsx", "xls"],
                 accept_multiple_files=True,
-                disabled=st.session_state.data_source == DataSource.DATABASE,
                 key=st.session_state.file_uploader_key,
             )
             if uploaded_files:
@@ -246,13 +245,11 @@ async def main() -> None:
                     format_func=lambda x: f"{x['name']} ({x['size']})",
                     help="You can select multiple datasets",
                     key="selected_catalog_datasets",
-                    disabled=st.session_state.data_source == DataSource.DATABASE,
                 )
 
                 # Form submit button
                 submit_button = st.form_submit_button(
                     "Load Datasets",
-                    disabled=st.session_state.data_source == DataSource.DATABASE,
                 )
 
                 # Process form submission
@@ -274,16 +271,12 @@ async def main() -> None:
                     options=schema_tables,
                     help="You can select multiple tables",
                     key="selected_schema_tables",
-                    disabled=st.session_state.data_source is not None
-                    and st.session_state.data_source != DataSource.DATABASE,
                 )
 
                 # Form submit button
                 submit_button = st.form_submit_button(
                     "Load Selected Tables",
                     use_container_width=False,
-                    disabled=st.session_state.data_source is not None
-                    and st.session_state.data_source != DataSource.DATABASE,
                 )
 
                 if submit_button:

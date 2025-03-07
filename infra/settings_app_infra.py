@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
 import textwrap
 from typing import List, Sequence, Tuple
 
@@ -95,5 +96,14 @@ def get_app_files(
                 source_files.append(
                     (str(snowflake_file), credentials.snowflake_key_path)
                 )
+
+    EXCLUDE_PATTERNS = [re.compile(pattern) for pattern in [r".*\.pyc"]]
+    source_files = [
+        (file_path, file_name)
+        for file_path, file_name in source_files
+        if not any(
+            exclude_pattern.match(file_name) for exclude_pattern in EXCLUDE_PATTERNS
+        )
+    ]
 
     return source_files

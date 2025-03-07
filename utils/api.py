@@ -1316,7 +1316,7 @@ async def execute_business_analysis_and_charts(
 
 async def run_complete_analysis(
     chat_request: ChatRequest,
-    data_source: str,
+    data_source: DataSourceType,
     datasets_names: list[str],
     analyst_db: AnalystDB,
     current_chat_name: str,
@@ -1347,7 +1347,7 @@ async def run_complete_analysis(
     # Run main analysis
     logger.info("Start main analysis")
     try:
-        is_database = data_source == "database"
+        is_database = data_source == DataSourceType.DATABASE
         logger.info("Getting analysis result...")
         log_memory()
 

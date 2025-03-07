@@ -18,7 +18,7 @@ import plotly.graph_objects as go
 import pytest
 import pytest_asyncio
 
-from utils.analyst_db import AnalystDB
+from utils.analyst_db import AnalystDB, DataSourceType
 from utils.schema import (
     AnalystDataset,
     CleansedDataset,
@@ -42,7 +42,7 @@ async def dataset_cleansed(
     )
 
     result = await cleanse_dataframe(dataset_loaded)
-    await analyst_db.register_dataset(result)
+    await analyst_db.register_dataset(result, data_source=DataSourceType.FILE)
     return result
 
 

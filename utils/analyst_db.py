@@ -747,9 +747,7 @@ class AnalystDB:
 
     # Dataset operations
     async def register_dataset(
-        self,
-        df: AnalystDataset | CleansedDataset,
-        data_source: DataSourceType = DataSourceType.GENERATED,
+        self, df: AnalystDataset | CleansedDataset, data_source: DataSourceType
     ) -> None:
         if isinstance(df, CleansedDataset):
             is_cleansed = True

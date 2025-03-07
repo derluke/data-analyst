@@ -31,7 +31,6 @@ from streamlit.delta_generator import DeltaGenerator
 sys.path.append("..")
 # Import FastAPI functions directly
 from app_settings import (
-    DataSource,
     apply_custom_css,
     display_page_logo,
 )
@@ -341,13 +340,17 @@ async def main() -> None:
     analyst_db: AnalystDB = st.session_state.analyst_db
     # Sidebar UI
     all_chats = await analyst_db.get_chat_names()
-    all_datasets = (
-        await analyst_db.list_analyst_datasets(
+    if not st.session_state.data_source:
+        all_datasets = []
+    elif st.session_state.data_source == DataSourceType.DATABASE:
+        all_datasets = await analyst_db.list_analyst_datasets(
             data_source=DataSourceType(st.session_state.data_source)
         )
-        if st.session_state.data_source
-        else []
-    )
+    else:
+        all_datasets = await analyst_db.list_analyst_datasets(
+            data_source=DataSourceType.FILE
+        ) + await analyst_db.list_analyst_datasets(data_source=DataSourceType.CATALOG)
+
     st.session_state.datasets_names = all_datasets
     if (
         "current_chat_name" not in st.session_state
@@ -370,9 +373,9 @@ async def main() -> None:
 
             def set_database_mode() -> None:
                 if st.session_state.database_mode == "Local":
-                    st.session_state.data_source = DataSource.FILE
+                    st.session_state.data_source = DataSourceType.FILE
                 else:
-                    st.session_state.data_source = DataSource.DATABASE
+                    st.session_state.data_source = DataSourceType.DATABASE
 
             st.radio(
                 "Database Mode",
@@ -380,7 +383,9 @@ async def main() -> None:
                 key="database_mode",
                 horizontal=True,
                 on_change=set_database_mode,
-                index=1 if st.session_state.data_source == DataSource.DATABASE else 0,
+                index=1
+                if st.session_state.data_source == DataSourceType.DATABASE
+                else 0,
             )
 
         # Chat History in expander

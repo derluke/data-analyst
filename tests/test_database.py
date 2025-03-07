@@ -56,7 +56,7 @@ async def test_drop_tables(url_diabetes: str, dataset_loaded: AnalystDataset) ->
         data=df,
     )
     new_db = await get_analyst_db(ANALYST_DATABASE_VERSION + 1)
-    await new_db.register_dataset(dataset)
+    await new_db.register_dataset(dataset, data_source=DataSourceType.FILE)
 
     assert len(await new_db.list_analyst_datasets()) == 1
 

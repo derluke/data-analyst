@@ -57,9 +57,3 @@ def apply_custom_css() -> None:
     with open("./style.css") as f:
         css = f.read()
         st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
-
-
-class DataSource(object):
-    DATABASE = "database"
-    FILE = "file"
-    CATALOG = "catalog"

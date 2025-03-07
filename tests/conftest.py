@@ -26,7 +26,7 @@ import pytest
 import pytest_asyncio
 from dotenv import dotenv_values
 
-from utils.analyst_db import AnalystDB
+from utils.analyst_db import AnalystDB, DataSourceType
 from utils.resources import LLMDeployment
 from utils.schema import AnalystDataset
 
@@ -194,7 +194,7 @@ async def dataset_loaded(url_diabetes: str, analyst_db: AnalystDB) -> AnalystDat
         name=os.path.splitext(os.path.basename(url_diabetes))[0],
         data=df,
     )
-    await analyst_db.register_dataset(dataset)
+    await analyst_db.register_dataset(dataset, data_source=DataSourceType.FILE)
     return dataset
 
 
