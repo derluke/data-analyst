@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [0.1.7] - 2025-03-07
+
 ### Added
 
 - Shared app will use the user's API key if available to query the data catalog
