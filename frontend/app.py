@@ -15,7 +15,7 @@
 from typing import List
 
 import streamlit as st
-from app_settings import PAGE_ICON
+from app_settings import PAGE_ICON, apply_custom_css
 from datarobot_connect import DataRobotTokenManager
 from streamlit.navigation.page import StreamlitPage
 
@@ -29,6 +29,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+apply_custom_css()
 datarobot_connect = DataRobotTokenManager()
 st.session_state.datarobot_connect = datarobot_connect
 

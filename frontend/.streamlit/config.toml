@@ -5,4 +5,4 @@ maxMessageSize = 200
 base = "light"
 primaryColor = "#909BF5"
 textColor = "#0B0B0B"
-font = "sans serif"
+font = "sans-serif"
