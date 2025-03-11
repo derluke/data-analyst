@@ -36,5 +36,5 @@ st.session_state.datarobot_connect = datarobot_connect
 
 datarobot_connect.display_info(st.sidebar.container(key="user_info"))
 
-pg = st.navigation(pages)  # type: ignore
+pg = st.navigation(pages)
 pg.run()
