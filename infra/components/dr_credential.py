@@ -31,6 +31,7 @@ from utils.credentials import (
     DRCredentials,
     GoogleCredentials,
     NoDatabaseCredentials,
+    SAPDatasphereCredentials,
     SnowflakeCredentials,
 )
 from utils.schema import (
@@ -157,6 +158,33 @@ def get_credential_runtime_parameter_values(
                 "key": "SNOWFLAKE_KEY_PATH",
                 "type": "string",
                 "value": credentials.snowflake_key_path,
+            },
+        ]
+        credential_rtp_dicts = [rtp for rtp in rtps if rtp["value"] is not None]
+    elif isinstance(credentials, SAPDatasphereCredentials):
+        rtps = [
+            {
+                "key": "db_credential",
+                "type": "basic_credential",
+                "value": {
+                    "user": credentials.user,
+                    "password": credentials.password,
+                },
+            },
+            {
+                "key": "SAP_DATASPHERE_HOST",
+                "type": "string",
+                "value": credentials.host,
+            },
+            {
+                "key": "SAP_DATASPHERE_PORT",
+                "type": "string",
+                "value": credentials.port,
+            },
+            {
+                "key": "SAP_DATASPHERE_SCHEMA",
+                "type": "string",
+                "value": credentials.db_schema,
             },
         ]
         credential_rtp_dicts = [rtp for rtp in rtps if rtp["value"] is not None]
@@ -383,8 +411,18 @@ def get_llm_credentials(llm: LLMConfig, test_credentials: bool = True) -> DRCred
 def get_database_credentials(
     database: DatabaseConnectionType,
     test_credentials: bool = True,
-) -> SnowflakeCredentials | GoogleCredentials | NoDatabaseCredentials:
-    credentials: SnowflakeCredentials | GoogleCredentials | NoDatabaseCredentials
+) -> (
+    SnowflakeCredentials
+    | GoogleCredentials
+    | SAPDatasphereCredentials
+    | NoDatabaseCredentials
+):
+    credentials: (
+        SnowflakeCredentials
+        | GoogleCredentials
+        | SAPDatasphereCredentials
+        | NoDatabaseCredentials
+    )
 
     try:
         if database == "no_database":
@@ -443,6 +481,25 @@ def get_database_credentials(
                 )
                 bq_con = google.cloud.bigquery.Client(credentials=google_credentials)
                 bq_con.close()  # type: ignore
+            return credentials
+        elif database == "sap":
+            credentials = SAPDatasphereCredentials()
+            if test_credentials:
+                from hdbcli import dbapi
+
+                connect_params = {
+                    "address": credentials.host,
+                    "port": credentials.port,
+                    "user": credentials.user,
+                    "password": credentials.password,
+                }
+
+                # Connect to SAP Data Sphere
+                try:
+                    connection = dbapi.connect(**connect_params)
+                    connection.close()
+                except Exception as e:
+                    raise ValueError("Failed to connect to SAP Data Sphere.") from e
             return credentials
 
     except pydantic.ValidationError as exc:

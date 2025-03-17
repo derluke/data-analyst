@@ -145,6 +145,16 @@ The Talk to my Data Agent supports connecting to BigQuery.
       source set_env.sh  # On windows use `set_env.bat`
       pulumi up
       ```
+#### SAP Datasphere
+
+The Talk to my Data Agent supports connecting to SAP Datasphere.
+1. Modify the `DATABASE_CONNECTION_TYPE` setting in `infra/settings_database.py` by changing `DATABASE_CONNECTION_TYPE = "no_database"` to `DATABASE_CONNECTION_TYPE = "sap"`. 
+2. Provide the required SAP credentials in `.env`.
+3. Run `pulumi up` to update your stack (Or rerun your quickstart).
+      ```bash
+      source set_env.sh  # On windows use `set_env.bat`
+      pulumi up
+      ```
 
 ## Tools
 
