@@ -124,6 +124,8 @@ Your data privacy is important to us. Data handling is governed by the DataRobot
       source set_env.sh  # On windows use `set_env.bat`
       pulumi up
       ```
+> **⚠️ Caveat:**  
+> If you run into an error using a NIM model that requires the feature flag **Enable Custom Model GPU Inference**, contact your account team or administrator to check if this feature is enabled for your deployment.
 
 ### Change the database
 
