@@ -8,7 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Added
-
+- Support for NIMs
+- Support for existing TextGen deployments
 - SAP Datasphere support 
 
 ## [0.1.7] - 2025-03-07

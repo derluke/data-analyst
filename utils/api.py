@@ -149,8 +149,8 @@ except ValidationError as e:
         "If running in DataRobot, verify your runtime parameters have been set correctly."
     ) from e
 
-ALTERNATIVE_LLM_BIG = "gpt-4o"
-ALTERNATIVE_LLM_SMALL = "gpt-4o-mini"
+ALTERNATIVE_LLM_BIG = "datarobot-deployed-llm"
+ALTERNATIVE_LLM_SMALL = "datarobot-deployed-llm"
 DICTIONARY_BATCH_SIZE = 10
 MAX_AI_CATALOG_DATASET_SIZE = 400e6  # aligns to 400MB set in streamlit config.toml
 DISK_CACHE_LIMIT_BYTES = 512e6
