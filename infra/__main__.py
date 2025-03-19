@@ -173,7 +173,6 @@ db_runtime_parameter_values = get_credential_runtime_parameter_values(
 )
 app_runtime_parameters += db_runtime_parameter_values  # type: ignore[arg-type]
 
-
 app_source = datarobot.ApplicationSource(
     files=settings_app_infra.get_app_files(
         runtime_parameter_values=app_runtime_parameters
