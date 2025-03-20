@@ -30,6 +30,7 @@ from utils.credentials import (
     AzureOpenAICredentials,
     DRCredentials,
     GoogleCredentials,
+    GoogleCredentialsBQ,
     NoDatabaseCredentials,
     SAPDatasphereCredentials,
     SnowflakeCredentials,
@@ -88,10 +89,27 @@ def get_credential_runtime_parameter_values(
             rtps.append(
                 {"key": "GOOGLE_REGION", "type": "string", "value": credentials.region}
             )
+        credential_rtp_dicts = [rtp for rtp in rtps if rtp["value"] is not None]
+    elif isinstance(credentials, GoogleCredentialsBQ):
+        rtps = [
+            {
+                "key": "GOOGLE_SERVICE_ACCOUNT_BQ",
+                "type": "google_credential",
+                "value": {"gcpKey": json.dumps(credentials.service_account_key)},
+            }
+        ]
+        if credentials.region:
+            rtps.append(
+                {
+                    "key": "GOOGLE_REGION_BQ",
+                    "type": "string",
+                    "value": credentials.region,
+                }
+            )
         if credential_type == "db":
             rtps.append(
                 {
-                    "key": "GOOGLE_DB_SCHEMA",
+                    "key": "GOOGLE_DB_SCHEMA_BQ",
                     "type": "string",
                     "value": credentials.db_schema,
                 }
@@ -419,13 +437,13 @@ def get_database_credentials(
     test_credentials: bool = True,
 ) -> (
     SnowflakeCredentials
-    | GoogleCredentials
+    | GoogleCredentialsBQ
     | SAPDatasphereCredentials
     | NoDatabaseCredentials
 ):
     credentials: (
         SnowflakeCredentials
-        | GoogleCredentials
+        | GoogleCredentialsBQ
         | SAPDatasphereCredentials
         | NoDatabaseCredentials
     )
@@ -474,7 +492,7 @@ def get_database_credentials(
             return credentials
 
         elif database == "bigquery":
-            credentials = GoogleCredentials()
+            credentials = GoogleCredentialsBQ()
             if test_credentials:
                 import google.cloud.bigquery
                 from google.oauth2 import service_account

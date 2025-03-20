@@ -36,7 +36,7 @@ from pydantic import ValidationError
 from utils.analyst_db import AnalystDB, DataSourceType
 from utils.code_execution import InvalidGeneratedCode
 from utils.credentials import (
-    GoogleCredentials,
+    GoogleCredentialsBQ,
     NoDatabaseCredentials,
     SAPDatasphereCredentials,
     SnowflakeCredentials,
@@ -65,7 +65,7 @@ class SnowflakeCredentialArgs:
 
 @dataclass
 class BigQueryCredentialArgs:
-    credentials: GoogleCredentials
+    credentials: GoogleCredentialsBQ
 
 
 @dataclass
@@ -393,7 +393,7 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
 class BigQueryOperator(DatabaseOperator[BigQueryCredentialArgs]):
     def __init__(
         self,
-        credentials: GoogleCredentials,
+        credentials: GoogleCredentialsBQ,
         default_timeout: int = _DEFAULT_DB_QUERY_TIMEOUT,
     ):
         self._credentials = credentials
@@ -406,7 +406,7 @@ class BigQueryOperator(DatabaseOperator[BigQueryCredentialArgs]):
         from google.oauth2 import service_account
 
         google_credentials = service_account.Credentials.from_service_account_info(  # type: ignore
-            GoogleCredentials().service_account_key,
+            GoogleCredentialsBQ().service_account_key,
             scopes=["https://www.googleapis.com/auth/cloud-platform"],
         )
         client = bigquery.Client(
@@ -493,33 +493,22 @@ class BigQueryOperator(DatabaseOperator[BigQueryCredentialArgs]):
                         )
                         logger.info(f"Fetching data from table: {qualified_table}")
 
-                        df: pd.DataFrame = conn.query(
+                        pandas_df: pd.DataFrame = conn.query(
                             f"""
                             SELECT * FROM `{qualified_table}`
                             LIMIT {sample_size}
                         """,
                             timeout=timeout,
                         ).to_dataframe()
-
-                        # Convert date/datetime columns to string format
-                        for col in df.columns:
-                            if pd.api.types.is_datetime64_any_dtype(
-                                df[col]
-                            ) or isinstance(df[col].dtype, pd.DatetimeTZDtype):
-                                df[col] = df[col].dt.strftime("%Y-%m-%d %H:%M:%S")
-                            elif df[col].dtype == "object":
-                                try:
-                                    pd.to_datetime(df[col], errors="raise")
-                                    df[col] = pd.to_datetime(df[col]).dt.strftime(
-                                        "%Y-%m-%d"
-                                    )
-                                except (ValueError, TypeError):
-                                    continue
+                        df = pl.DataFrame(
+                            data=pandas_df,
+                            schema={col: pl.String for col in pandas_df.columns},
+                        )
                         logger.info(
                             f"Successfully loaded table {table}: {len(df)} rows, {len(df.columns)} columns"
                         )
-                        data = cast(list[dict[str, Any]], df.to_dict("records"))
-                        dataframes.append(AnalystDataset(name=table, data=data))
+
+                        dataframes.append(AnalystDataset(name=table, data=df))
 
                     except Exception as e:
                         logger.error(f"Error loading table {table}: {str(e)}")
@@ -772,13 +761,13 @@ class SAPDatasphereOperator(DatabaseOperator[SAPDatasphereCredentialArgs]):
 def get_database_operator(app_infra: AppInfra) -> DatabaseOperator[Any]:
     if app_infra.database == "bigquery":
         credentials: (
-            GoogleCredentials
+            GoogleCredentialsBQ
             | SnowflakeCredentials
             | SAPDatasphereCredentials
             | NoDatabaseCredentials
         )
         try:
-            credentials = GoogleCredentials()
+            credentials = GoogleCredentialsBQ()
             if credentials.service_account_key and credentials.db_schema:
                 return BigQueryOperator(credentials)
         except (ValidationError, ValueError):
