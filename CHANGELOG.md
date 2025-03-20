@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+- Support separate google creds for vertexAI and BQ
+
 ### Added
 - Support for NIMs
 - Support for existing TextGen deployments
