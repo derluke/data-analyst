@@ -1,5 +1,5 @@
 # infra
-pulumi>=3.143.0,<4
+pulumi==3.153.0
 pulumi-datarobot>=0.8.15,<0.9
 jinja2>=3.1.5,<4.0
 PyYAML>=6.0.2,<7.0
