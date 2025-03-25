@@ -180,9 +180,7 @@ app_source = datarobot.ApplicationSource(
     runtime_parameter_values=app_runtime_parameters,
     base_environment_id=GlobalRuntimeEnvironment.PYTHON_312_APPLICATION_BASE.value.id,
     resources=datarobot.ApplicationSourceResourcesArgs(
-        replicas=2,
         resource_label="cpu.xlarge",
-        session_affinity=True,
     ),
     **settings_app_infra.app_source_args,
 )
