@@ -298,6 +298,9 @@ async def main() -> None:
     # Main content area
     display_page_logo()
     st.title("Explore")
+    if not hasattr(st.session_state, "analyst_db"):
+        return
+
     analyst_db = cast(AnalystDB, st.session_state.analyst_db)
     dataset_names = await analyst_db.list_analyst_datasets()
     # Main content area - conditional rendering based on cleansed data
