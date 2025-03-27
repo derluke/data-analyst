@@ -193,9 +193,14 @@ async def uploaded_file_callback(uploaded_files: list[UploadedFile]) -> None:
                 st.session_state.processed_file_ids.append(file.file_id)
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl="60s", show_spinner=False)
 def st_list_catalog_datasets() -> list[AiCatalogDataset]:
     return list_catalog_datasets()
+
+
+@st.cache_data(ttl="60s", show_spinner=False)
+def st_list_database_tables() -> list[str]:
+    return Database.get_tables()
 
 
 # Custom CSS
@@ -262,7 +267,7 @@ async def main() -> None:
         with st.expander("Database", expanded=False):
             get_database_logo(app_infra)
 
-            schema_tables = Database.get_tables()
+            schema_tables = st_list_database_tables()
 
             # Create form for Database table selection
             with st.form("table_selection_form", border=False):

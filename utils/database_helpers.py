@@ -236,7 +236,6 @@ class SnowflakeOperator(DatabaseOperator[SnowflakeCredentialArgs]):
                 traceback_str=traceback.format_exc(),
             )
 
-    @functools.lru_cache(maxsize=1)
     def get_tables(self, timeout: int | None = None) -> list[str]:
         """Fetch list of tables from Snowflake schema"""
         timeout = timeout if timeout is not None else self.default_timeout
@@ -441,7 +440,6 @@ class BigQueryOperator(DatabaseOperator[BigQueryCredentialArgs]):
                 traceback_str=traceback.format_exc(),
             )
 
-    @functools.lru_cache(maxsize=1)
     def get_tables(self, timeout: int | None = None) -> list[str]:
         """Fetch list of tables from BigQuery schema"""
         timeout = timeout if timeout is not None else self.default_timeout
@@ -633,7 +631,6 @@ class SAPDatasphereOperator(DatabaseOperator[SAPDatasphereCredentialArgs]):
                 traceback_str=traceback.format_exc(),
             )
 
-    @functools.lru_cache(maxsize=1)
     def get_tables(self, timeout: int | None = None) -> list[str]:
         """Fetch list of tables from SAP Data Sphere schema"""
         timeout = timeout if timeout is not None else self.default_timeout
