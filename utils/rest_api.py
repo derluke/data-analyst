@@ -55,13 +55,12 @@ sys.path.append("..")
 
 from utils.api import (
     AnalysisGenerationError,
-    download_catalog_datasets,
-    list_catalog_datasets,
+    download_registry_datasets,
+    list_registry_datasets,
     process_data_and_update_state,
     run_complete_analysis,
 )
 from utils.schema import (
-    AiCatalogDataset,
     AnalystChatMessage,
     AnalystDataset,
     ChatCreate,
@@ -71,6 +70,7 @@ from utils.schema import (
     ChatUpdate,
     CleansedDataset,
     DataDictionary,
+    DataRegistryDataset,
     DictionaryCellUpdate,
     FileUploadResponse,
     LoadDatabaseRequest,
@@ -106,7 +106,7 @@ app = FastAPI(
     title="Data Analyst API",
     description="""
     An intelligent API for data analysis that provides capabilities including:
-    - Dataset management (upload CSV/Excel files, connect to databases, access AI catalog)
+    - Dataset management (upload CSV/Excel files, connect to databases, access the Data Registry)
     - Data cleansing and standardization
     - Data dictionary creation and management
     - Chat-based data analysis conversations
@@ -115,7 +115,7 @@ app = FastAPI(
     - Business insights generation
     
     Available endpoint groups:
-    - /api/v1/catalog: Access AI catalog datasets
+    - /api/v1/catalog: Access Data Registry datasets
     - /api/v1/database: Database connection and table management
     - /api/v1/datasets: Upload, retrieve, and manage datasets
     - /api/v1/dictionaries: Manage data dictionaries
@@ -361,9 +361,9 @@ def _set_session_cookie(
         response.set_cookie(key="session_fastapi", value=session_id, httponly=True)
 
 
-@router.get("/catalog/datasets")
-async def get_catalog_datasets(limit: int = 100) -> list[AiCatalogDataset]:
-    return list_catalog_datasets(limit)
+@router.get("/registry/datasets")
+async def get_registry_datasets(limit: int = 100) -> list[DataRegistryDataset]:
+    return list_registry_datasets(limit)
 
 
 @router.get("/database/tables")
@@ -386,7 +386,7 @@ async def upload_files(
     background_tasks: BackgroundTasks,
     analyst_db: AnalystDB = Depends(get_initialized_db),
     files: List[UploadFile] | None = None,
-    catalog_ids: str | None = Form(None),
+    registry_ids: str | None = Form(None),
 ) -> list[FileUploadResponse]:
     dataset_names = []
     response: list[FileUploadResponse] = []
@@ -479,13 +479,13 @@ async def upload_files(
             process_and_update, dataset_names, analyst_db, DataSourceType.FILE
         )
 
-    if catalog_ids:
-        id_list: list[str] = json.loads(catalog_ids)
+    if registry_ids:
+        id_list: list[str] = json.loads(registry_ids)
         if id_list:
             with use_user_token(request):
-                dataframes = await download_catalog_datasets(id_list, analyst_db)
+                dataframes = await download_registry_datasets(id_list, analyst_db)
                 background_tasks.add_task(
-                    process_and_update, dataframes, analyst_db, DataSourceType.CATALOG
+                    process_and_update, dataframes, analyst_db, DataSourceType.REGISTRY
                 )
 
     return response
@@ -726,7 +726,7 @@ async def get_chats(
         {
             "id": chat["id"],
             "name": chat["name"],
-            "data_source": chat.get("data_source", "catalog"),
+            "data_source": chat.get("data_source", "registry"),
             "created_at": chat["created_at"],
         }
         for chat in chat_list
@@ -993,7 +993,7 @@ async def run_complete_analysis_task(
         datasets_names = await analyst_db.list_analyst_datasets(source)
     else:
         datasets_names = (
-            await analyst_db.list_analyst_datasets(DataSourceType.CATALOG)
+            await analyst_db.list_analyst_datasets(DataSourceType.REGISTRY)
         ) + (await analyst_db.list_analyst_datasets(DataSourceType.FILE))
     run_analysis_iterator = run_complete_analysis(
         chat_request=chat_request,

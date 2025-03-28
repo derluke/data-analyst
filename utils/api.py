@@ -71,7 +71,6 @@ from utils.database_helpers import Database
 from utils.logging_helper import get_logger, log_api_call
 from utils.resources import LLMDeployment
 from utils.schema import (
-    AiCatalogDataset,
     AnalysisError,
     AnalystChatMessage,
     AnalystDataset,
@@ -84,6 +83,7 @@ from utils.schema import (
     DatabaseAnalysisCodeGeneration,
     DataDictionary,
     DataDictionaryColumn,
+    DataRegistryDataset,
     DictionaryGeneration,
     EnhancedQuestionGeneration,
     GetBusinessAnalysisMetadata,
@@ -152,7 +152,7 @@ except ValidationError as e:
 ALTERNATIVE_LLM_BIG = "datarobot-deployed-llm"
 ALTERNATIVE_LLM_SMALL = "datarobot-deployed-llm"
 DICTIONARY_BATCH_SIZE = 10
-MAX_AI_CATALOG_DATASET_SIZE = 400e6  # aligns to 400MB set in streamlit config.toml
+MAX_REGISTRY_DATASET_SIZE = 400e6  # aligns to 400MB set in streamlit config.toml
 DISK_CACHE_LIMIT_BYTES = 512e6
 
 _memory = Memory(tempfile.gettempdir(), verbose=0)
@@ -196,9 +196,9 @@ def cache(f: T) -> T:
 
 
 # This can be large as we are not storing the actual datasets in memory, just metadata
-def list_catalog_datasets(limit: int = 100) -> list[AiCatalogDataset]:
+def list_registry_datasets(limit: int = 100) -> list[DataRegistryDataset]:
     """
-    Fetch datasets from AI Catalog with specified limit
+    Fetch datasets from Data Registry with specified limit
 
     Args:
         limit: int
@@ -211,7 +211,7 @@ def list_catalog_datasets(limit: int = 100) -> list[AiCatalogDataset]:
     datasets = dr.client.get_client().get(url).json()["data"]
 
     return [
-        AiCatalogDataset(
+        DataRegistryDataset(
             id=ds["datasetId"],
             name=ds["name"],
             created=(
@@ -227,7 +227,7 @@ def list_catalog_datasets(limit: int = 100) -> list[AiCatalogDataset]:
     ]
 
 
-async def download_catalog_datasets(
+async def download_registry_datasets(
     dataset_ids: list[str], analyst_db: AnalystDB
 ) -> list[str]:
     """Load selected datasets as pandas DataFrames
@@ -241,10 +241,10 @@ async def download_catalog_datasets(
     datasets = [dr.Dataset.get(id_) for id_ in dataset_ids]
     if (
         sum([ds.size for ds in datasets if ds.size is not None])
-        > MAX_AI_CATALOG_DATASET_SIZE
+        > MAX_REGISTRY_DATASET_SIZE
     ):
         raise ValueError(
-            f"The requested AI Catalog datasets must total <= {int(MAX_AI_CATALOG_DATASET_SIZE)} bytes"
+            f"The requested Data Registry datasets must total <= {int(MAX_REGISTRY_DATASET_SIZE)} bytes"
         )
 
     result_datasets: list[AnalystDataset] = []
@@ -262,7 +262,7 @@ async def download_catalog_datasets(
     names = []
     for result_dataset in result_datasets:
         await analyst_db.register_dataset(
-            result_dataset, DataSourceType.CATALOG, dataset.size or 0
+            result_dataset, DataSourceType.REGISTRY, dataset.size or 0
         )
         names.append(result_dataset.name)
     return names

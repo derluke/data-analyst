@@ -51,7 +51,7 @@ class LLMDeploymentSettings(BaseModel):
     prompt_feature_name: str = "promptText"
 
 
-class AiCatalogDataset(BaseModel):
+class DataRegistryDataset(BaseModel):
     id: str
     name: str
     created: str
