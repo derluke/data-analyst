@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 from __future__ import annotations
 
 import ast
@@ -24,10 +23,11 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
-from types import ModuleType
+from types import ModuleType, TracebackType
 from typing import (
     Any,
     AsyncGenerator,
+    Type,
     TypeVar,
     cast,
 )
@@ -138,7 +138,12 @@ try:
             )
             return self.client
 
-        async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:  # type:ignore
+        async def __aexit__(
+            self,
+            exc_type: Type[BaseException] | None,
+            exc_val: BaseException | None,
+            exc_tb: TracebackType | None,
+        ) -> None:
             await self.openai_client.close()  # Properly close the client
 
 except ValidationError as e:
@@ -188,7 +193,7 @@ def cache(f: T) -> T:
                 _memory.reduce_size(DISK_CACHE_LIMIT_BYTES)
             else:
                 logger.info(
-                    f"Using previously cached result for function `{f.__name__}`"  # type: ignore
+                    f"Using previously cached result for function `{f.__name__}`"  # type: ignore[attr-defined]
                 )
             return result
 

@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 from __future__ import annotations
 
 import asyncio
@@ -214,7 +213,7 @@ def use_user_token(request: Request) -> Generator[None, None, None]:
 
 
 @app.middleware("http")
-async def add_session_middleware(request: Request, call_next):  # type: ignore
+async def add_session_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
     request_methods = ["GET", "POST", "PUT", "PATCH", "DELETE"]
     if request.method in request_methods:
         # Initialize the session
@@ -531,7 +530,7 @@ async def get_dictionaries(
             dictionaries.append(dictionary)
         else:
             dictionaries.append(
-                {"name": name, "column_descriptions": [], "in_progress": True}  # type: ignore
+                {"name": name, "column_descriptions": [], "in_progress": True}  # type: ignore[arg-type]
             )
 
     return dictionaries if dictionaries else []
