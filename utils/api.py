@@ -892,7 +892,7 @@ async def _run_charts(
         exception_history = []
 
     code = await _generate_run_charts_python_code(
-        request, next(iter(exception_history), None)
+        request, next(iter(exception_history[::-1]), None)
     )
     try:
         result = execute_python(
@@ -1050,7 +1050,7 @@ async def _run_analysis(
     code = await _generate_run_analysis_python_code(
         request,
         analyst_db,
-        next(iter(exception_history), None),
+        next(iter(exception_history[::-1]), None),
         attempt=len(exception_history),
     )
     logger.info("Code generated, preparing execution")
@@ -1231,7 +1231,7 @@ async def _run_database_analysis(
         exception_history = []
 
     sql_code = await _generate_database_analysis_code(
-        request, analyst_db, next(iter(exception_history), None)
+        request, analyst_db, next(iter(exception_history[::-1]), None)
     )
     try:
         results = Database.execute_query(query=sql_code)

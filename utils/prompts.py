@@ -165,11 +165,12 @@ NECESSARY CONSIDERATIONS:
 - You may perform advanced analysis using statsmodels, scipy, numpy, pandas, polars and scikit-learn.
 - If the user mentions anything about charting, plotting or graphing the data, you do not need to include code to actually visualize the data. You only need to ensure that the data will be available in the dataframe for downstream analysis and charting later. 
 - Please try to be memory efficient if the data is large (more than 1M rows)
+- polars DataFrame use `group_by` instead of `groupby`
 
 REATTEMPT:
-It's possible that your code will fail due to a SQL error or return an empty result set.
-If this happens, you will be provided the failed query and the error message.
-Take this failed SQL code and error message into consideration when building your query so that the problem doesn't happen again.
+It's possible that your code will fail due to a python error or return an empty result set.
+If this happens, you will be provided the failed code and the error message.
+Take this failed python code and error message into consideration when creating your script so that the problem doesn't happen again.
 """
 
 SYSTEM_PROMPT_SNOWFLAKE = """
@@ -214,11 +215,15 @@ For example, seemingly numeric columns might contain non-numeric formatting such
 When performing date operations on a date column, consider casting that column as a DATE for error redundancy.
 To ensure case sensitivity of column names, use quotes around column names.
 This query will be executed using the Snowflake Python Connector. Make sure the query will be compatible with the Snowflake Python Connector.
+Always reference tables fully quoted and qualified, as in '{database}.{schema}."TABLE_NAME"' and quote any column names in the query.
+
 
 REATTEMPT:
 It's possible that your query will fail due to a SQL error or return an empty result set.
 If this happens, you will be provided the failed query and the error message.
 Take this failed SQL code and error message into consideration when building your query so that the problem doesn't happen again.
+
+Remember that snowflake is case sensitive, and assumes ANY unquoted identifier are UPPER_CASE. Quote everything!
 """
 
 SYSTEM_PROMPT_BIGQUERY = """
