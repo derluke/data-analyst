@@ -66,7 +66,7 @@ Codespace users can **skip steps 1 and 2**. For local development, follow all of
    ```bash
    python quickstart.py YOUR_PROJECT_NAME  # Windows users may have to use `py` instead of `python`
    ```
-   Python 3.9+ is required.
+   Python 3.10 - 12 are supported
 
 
 Advanced users desiring control over virtual environment creation, dependency installation, environment variable setup
