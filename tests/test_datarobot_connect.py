@@ -13,11 +13,14 @@
 # limitations under the License.
 
 import json
+import sys
 from typing import Dict, Generator, MutableMapping
 from unittest.mock import MagicMock, patch
 
 import pytest
 import streamlit as st
+
+sys.path.append("frontend")
 
 from frontend.datarobot_connect import (
     DataRobotCredentials,
