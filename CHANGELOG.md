@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Code generation inflection logic didn't quote the last but first error at retry
 - Python generation prompt referred to SQL
+- Fixed error when user doesn't have a last name
 
 ### Changed
 
