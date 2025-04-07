@@ -7,15 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [0.1.9] - 2025-04-07
+
 ### Fixed
 - Code generation inflection logic didn't quote the last but first error at retry
 - Python generation prompt referred to SQL
 - Fixed error when user doesn't have a last name
 
-### Changed
+### Added
+- Added test suite for each supported Python version
 
+### Changed
 - Installed [the datarobot-pulumi-utils library](https://github.com/datarobot-oss/datarobot-pulumi-utils) to incorporate majority of reused logic in the `infra.*` subpackages.
 - Snowflake prompt more robust to lower case table and column names
+- More robust code generation
 
 ## [0.1.8] - 2025-03-27
 
