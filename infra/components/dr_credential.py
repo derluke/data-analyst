@@ -123,46 +123,60 @@ def get_credential_runtime_parameter_values(
     elif isinstance(credentials, NoDatabaseCredentials):
         credential_rtp_dicts = []  # No credentials to add for NoDatabaseCredentials
     elif isinstance(credentials, SnowflakeCredentials):
-        rtps = [
-            {
-                "key": "db_credential",
-                "type": "basic_credential",
-                "value": {
-                    "user": credentials.user,
-                    "password": credentials.password,
+        rtps = (
+            [
+                {
+                    "key": "db_credential",
+                    "type": "basic_credential",
+                    "value": {
+                        "user": credentials.user,
+                        "password": credentials.password,
+                    },
+                }
+            ]
+            if credentials.user and credentials.password
+            else [
+                {
+                    "key": "SNOWFLAKE_USER",
+                    "type": "string",
+                    "value": credentials.user,
+                }
+            ]
+        )
+        rtps.extend(
+            [
+                {
+                    "key": "SNOWFLAKE_ACCOUNT",
+                    "type": "string",
+                    "value": credentials.account,
                 },
-            },
-            {
-                "key": "SNOWFLAKE_ACCOUNT",
-                "type": "string",
-                "value": credentials.account,
-            },
-            {
-                "key": "SNOWFLAKE_WAREHOUSE",
-                "type": "string",
-                "value": credentials.warehouse,
-            },
-            {
-                "key": "SNOWFLAKE_DATABASE",
-                "type": "string",
-                "value": credentials.database,
-            },
-            {
-                "key": "SNOWFLAKE_SCHEMA",
-                "type": "string",
-                "value": credentials.db_schema,
-            },
-            {
-                "key": "SNOWFLAKE_ROLE",
-                "type": "string",
-                "value": credentials.role,
-            },
-            {
-                "key": "SNOWFLAKE_KEY_PATH",
-                "type": "string",
-                "value": credentials.snowflake_key_path,
-            },
-        ]
+                {
+                    "key": "SNOWFLAKE_WAREHOUSE",
+                    "type": "string",
+                    "value": credentials.warehouse,
+                },
+                {
+                    "key": "SNOWFLAKE_DATABASE",
+                    "type": "string",
+                    "value": credentials.database,
+                },
+                {
+                    "key": "SNOWFLAKE_SCHEMA",
+                    "type": "string",
+                    "value": credentials.db_schema,
+                },
+                {
+                    "key": "SNOWFLAKE_ROLE",
+                    "type": "string",
+                    "value": credentials.role,
+                },
+                {
+                    "key": "SNOWFLAKE_KEY_PATH",
+                    "type": "string",
+                    "value": credentials.snowflake_key_path,
+                },
+            ]
+        )
         credential_rtp_dicts = [rtp for rtp in rtps if rtp["value"] is not None]
     elif isinstance(credentials, SAPDatasphereCredentials):
         rtps = [
