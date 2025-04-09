@@ -1,0 +1,14 @@
+---
+pipeline:
+  name: communityRelease
+  identifier: communityRelease
+  projectIdentifier: dataanalyst
+  orgIdentifier: No_Code_Apps
+  tags: {}
+  stages:
+    - stage:
+        name: communityRelease
+        identifier: communityRelease
+        template:
+          templateRef: org.communityRelease
+          versionLabel: v0.1.0

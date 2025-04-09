@@ -1,13 +1,14 @@
-name: Check License
+---
+name: License Header Check
 
-on: [push]
+on: push
 
 jobs:
-  build:
+  license-header-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Check License Header
+      - uses: actions/checkout@v4
+      - name: License Header Check
         uses: apache/skywalking-eyes/header@main
         with:
           config: .github/.licenserc.yaml

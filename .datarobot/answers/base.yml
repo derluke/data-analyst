@@ -1,8 +1,11 @@
 # Changes here will be overwritten by Copier
-_commit: cdf9c34
+_commit: 5f4ec4e
 _src_path: https://github.com/datarobot/af-component-base
 copyright_year: 2024
 github_owner_group: '@datarobot/customer-engineering'
+harness_org_id: No_Code_Apps
+oss_repo_name: talk-to-my-data-agent
+private_repo_name: data-analyst
 template_description: "**Talk to My Data** delivers a seamless **talk-to-your-data**\
     \ experience, transforming files, spreadsheets, and cloud data into actionable\
     \ insights. Simply upload data, connect to Snowflake or BigQuery, or access datasets\
