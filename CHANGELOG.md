@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fixed a bug where snowflake ssh keyfile was not working correctly
+- Fixed the incorrect max_completion_length validation in the LLMSettings schema
+
+### Changed
+
+- Changed the LLMSettings schema for LLM proxy settings instead of Pulumi class
 
 ### Changed
 

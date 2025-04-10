@@ -23,7 +23,12 @@ from datarobot_pulumi_utils.schema.custom_models import (
     RegisteredModelArgs,
 )
 from datarobot_pulumi_utils.schema.exec_envs import RuntimeEnvironments
-from datarobot_pulumi_utils.schema.llms import LLMBlueprintArgs, LLMs, PlaygroundArgs, LLMSettings
+from datarobot_pulumi_utils.schema.llms import (
+    LLMBlueprintArgs,
+    LLMs,
+    LLMSettings,
+    PlaygroundArgs,
+)
 
 from utils.schema import LLMDeploymentSettings
 
