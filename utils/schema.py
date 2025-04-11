@@ -239,6 +239,10 @@ class DataDictionary(BaseModel):
         )
 
 
+class DataDictionaryResponse(DataDictionary):
+    in_progress: bool = False
+
+
 class DictionaryGeneration(BaseModel):
     """Validates LLM responses for data dictionary generation
 
