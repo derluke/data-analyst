@@ -452,8 +452,16 @@ def get_database_credentials(
         if database == "snowflake":
             credentials = SnowflakeCredentials()
             if not credentials.is_configured():
-                logger.warning("Snowflake credentials not fully configured")
-                return NoDatabaseCredentials()
+                logger.error("Snowflake credentials not fully configured")
+                raise ValueError(
+                    textwrap.dedent(
+                        f"""
+                        Your Snowflake credentials and environment variables were not configured properly.
+                        
+                        Please validate your environment variables or check {__file__} for details.
+                        """
+                    )
+                )
 
             if test_credentials:
                 import snowflake.connector
@@ -474,17 +482,33 @@ def get_database_credentials(
                 elif credentials.password:
                     connect_params["password"] = credentials.password
                 else:
-                    logger.warning(
+                    logger.error(
                         "No valid authentication method configured for Snowflake"
                     )
-                    return NoDatabaseCredentials()
+                    raise ValueError(
+                        textwrap.dedent(
+                            f"""
+                            No authentication method was configured for Snowflake.
+
+                            Please validate your credentials or check {__file__} for details.
+                            """
+                        )
+                    )
 
                 try:
                     sf_con = snowflake.connector.connect(**connect_params)
                     sf_con.close()
                 except Exception as e:
-                    logger.warning(f"Failed to test Snowflake connection: {str(e)}")
-                    return NoDatabaseCredentials()
+                    logger.exception("Failed to test Snowflake connection")
+                    raise ValueError(
+                        textwrap.dedent(
+                            f"""
+                            Unable to run a successful test of snowflake with the given credentials.
+
+                            Please validate your credentials or check {__file__} for details.
+                            """
+                        )
+                    ) from e
 
             return credentials
 
@@ -525,7 +549,21 @@ def get_database_credentials(
 
     except pydantic.ValidationError as exc:
         msg = "Validation errors in database credentials. Using no database configuration.\n"
-        logger.warning(msg + str(exc))
-        return NoDatabaseCredentials()
+        logger.exception(msg)
+        raise ValueError(
+            textwrap.dedent(
+                f"""
+                There was an error validating the database credentials.
 
-    return NoDatabaseCredentials()
+                Please validate your credentials or check {__file__} for details.
+                """
+            )
+        ) from exc
+
+    raise ValueError(
+        textwrap.dedent(
+            f"""
+            The supplied database of {database} did not correspond to a supported database.
+            """
+        )
+    )
