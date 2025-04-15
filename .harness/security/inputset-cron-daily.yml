@@ -1,0 +1,15 @@
+---
+inputSet:
+  name: daily
+  identifier: daily
+  projectIdentifier: dataanalyst
+  orgIdentifier: No_Code_Apps
+  pipeline:
+    identifier: trivyScan
+    properties:
+      ci:
+        codebase:
+          build:
+            type: branch
+            spec:
+              branch: main

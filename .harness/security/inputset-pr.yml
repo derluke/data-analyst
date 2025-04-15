@@ -1,0 +1,15 @@
+---
+inputSet:
+  name: github
+  identifier: github
+  projectIdentifier: dataanalyst
+  orgIdentifier: No_Code_Apps
+  pipeline:
+    identifier: trivyScan
+    properties:
+      ci:
+        codebase:
+          build:
+            type: branch
+            spec:
+              branch: <+trigger.sourceBranch>

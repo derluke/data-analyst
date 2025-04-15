@@ -5,6 +5,15 @@ on:
     paths:
       - '**.yaml'
       - '**.yml'
+    branches:
+      - main
+      - 'release/*'
+  pull_request:
+    paths:
+      - '**.yaml'
+      - '**.yml'
+  workflow_dispatch:
+
 jobs:
   yaml-formatter:
     name: yamlfmt

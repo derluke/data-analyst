@@ -1,0 +1,20 @@
+---
+pipeline:
+  name: trivyScan
+  identifier: trivyScan
+  projectIdentifier: dataanalyst
+  orgIdentifier: No_Code_Apps
+  tags: {}
+  properties:
+    ci:
+      codebase:
+        connectorRef: account.svc_harness_git1
+        repoName: data-analyst
+        build: <+input>
+  stages:
+    - stage:
+        name: trivyScan
+        identifier: trivyScan
+        template:
+          templateRef: org.runTrivyScan
+          versionLabel: v0.1.0
