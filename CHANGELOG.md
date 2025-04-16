@@ -8,16 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Fixed
-
 - Fixed a bug where snowflake ssh keyfile was not working correctly
 - Fixed the incorrect max_completion_length validation in the LLMSettings schema
 
+### Added
+- Allow users to use the app without an API token when it is externally shared
+
 ### Changed
-
-- Changed the LLMSettings schema for LLM proxy settings instead of Pulumi class
-
-### Changed
-
 - Changed the LLMSettings schema for LLM proxy settings instead of Pulumi class
 
 ## [0.1.9] - 2025-04-07

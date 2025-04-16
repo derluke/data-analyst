@@ -250,11 +250,16 @@ async def main() -> None:
                     format_func=lambda x: f"{x['name']} ({x['size']})",
                     help="You can select multiple datasets",
                     key="selected_registry_datasets",
+                    disabled=(
+                        "analyst_db" not in st.session_state
+                        or "datarobot_uid" not in st.session_state
+                    ),
                 )
 
                 # Form submit button
                 submit_button = st.form_submit_button(
                     "Load Datasets",
+                    disabled="analyst_db" not in st.session_state,
                 )
 
                 # Process form submission
@@ -276,12 +281,14 @@ async def main() -> None:
                     options=schema_tables,
                     help="You can select multiple tables",
                     key="selected_schema_tables",
+                    disabled="analyst_db" not in st.session_state,
                 )
 
                 # Form submit button
                 submit_button = st.form_submit_button(
                     "Load Selected Tables",
                     use_container_width=False,
+                    disabled="analyst_db" not in st.session_state,
                 )
 
                 if submit_button:
