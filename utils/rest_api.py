@@ -26,7 +26,6 @@ from pathlib import Path
 from typing import Any, Generator, List, Union, cast
 
 import datarobot as dr
-import pandas as pd
 import polars as pl
 from fastapi import (
     APIRouter,
@@ -47,7 +46,7 @@ from openai.types.chat.chat_completion_user_message_param import (
 )
 
 from utils.analyst_db import AnalystDB, DatasetMetadata, DataSourceType
-from utils.database_helpers import Database
+from utils.database_helpers import get_external_database
 from utils.logging_helper import get_logger
 
 sys.path.append("..")
@@ -241,13 +240,22 @@ async def add_session_middleware(request: Request, call_next):  # type: ignore[n
             if request.state.session.datarobot_api_skoped_token != token:
                 request.state.session.datarobot_api_skoped_token = token
 
+        account_info = {}
         if not request.state.session.datarobot_account_info:
-            with use_user_token(request):
-                reply = dr.client.get_client().get("account/info/")
-                account_info = reply.json()
-                dr_uid = account_info.get("uid")
-                request.state.session.datarobot_account_info = account_info
+            try:
+                if (
+                    request.state.session.datarobot_api_token
+                    or request.state.session.datarobot_api_skoped_token
+                ):
+                    with use_user_token(request):
+                        reply = dr.client.get_client().get("account/info/")
+                        account_info = reply.json()
+            except Exception as e:
+                logger.info(f"Error fetching account info: {e}")
+        else:
+            account_info = request.state.session.datarobot_account_info
 
+        request.state.session.datarobot_account_info = account_info
         dr_uid = request.state.session.datarobot_account_info.get("uid")
 
         # Initialize database in the session
@@ -294,7 +302,11 @@ async def _initialize_session(
             pass  # If decoding fails, continue without user_id
 
     # Generate a new user ID if needed
-    new_user_id = str(uuid.uuid4())[:36]
+    email_header = request.headers.get("x-user-email")
+    if email_header:
+        new_user_id = str(uuid.uuid5(uuid.NAMESPACE_OID, email_header))[:36]
+    else:
+        new_user_id = str(uuid.uuid4())[:36]
 
     # Determine session ID
     if session_fastapi_cookie:
@@ -346,7 +358,7 @@ async def get_registry_datasets(
 
 @router.get("/database/tables")
 async def get_database_tables() -> list[str]:
-    return Database.get_tables()
+    return get_external_database().get_tables()
 
 
 async def process_and_update(
@@ -379,10 +391,9 @@ async def upload_files(
                 file_extension = os.path.splitext(file.filename)[1].lower()
 
                 if file_extension == ".csv":
-                    df = pd.read_csv(io.StringIO(contents.decode("utf-8")))
+                    df = pl.read_csv(io.StringIO(contents.decode("utf-8")))
                     dataset_name = os.path.splitext(file.filename)[0]
-                    data = cast(list[dict[str, Any]], df.to_dict(orient="records"))
-                    dataset = AnalystDataset(name=dataset_name, data=data)
+                    dataset = AnalystDataset(name=dataset_name, data=df)
 
                     # Register dataset with the database
                     await analyst_db.register_dataset(
@@ -404,12 +415,11 @@ async def upload_files(
                     base_name = os.path.splitext(file.filename)[0]
                     contents = await file.read()
                     excel_file = io.BytesIO(contents)
-                    sheet_names = pl.read_excel(
+                    excel_dataset = pl.read_excel(
                         excel_file, sheet_id=None
                     )  # Get available sheet names
-                    if isinstance(sheet_names, dict):
-                        for sheet_name in sheet_names:
-                            data = pl.read_excel(excel_file, sheet_name=sheet_name)
+                    if isinstance(excel_dataset, dict):
+                        for sheet_name, data in excel_dataset.items():
                             dataset_name = f"{base_name}_{sheet_name}"
                             dataset = AnalystDataset(name=dataset_name, data=data)
                             await analyst_db.register_dataset(
@@ -425,9 +435,9 @@ async def upload_files(
                                 "dataset_name": dataset_name,
                             }
                             response.append(excel_sheet_response)
-                    else:
+                    elif isinstance(excel_dataset, pl.DataFrame):
                         dataset_name = base_name
-                        dataset = AnalystDataset(name=dataset_name, data=data)
+                        dataset = AnalystDataset(name=dataset_name, data=excel_dataset)
                         await analyst_db.register_dataset(
                             dataset, DataSourceType.FILE, file_size=file_size
                         )
@@ -480,7 +490,7 @@ async def load_from_database(
 
     # Load the data from the database
     if data.table_names:
-        dataframes = await Database.get_data(
+        dataframes = await get_external_database().get_data(
             *data.table_names, analyst_db=analyst_db, sample_size=sample_size
         )
         dataset_names.extend(dataframes)
@@ -579,13 +589,11 @@ async def get_cleansed_dataset(
         if skip > 0 and cleansed_dataset.dataset.to_df().shape[0] > skip:
             # Create a new dataset with skipped rows
             skipped_df = cleansed_dataset.dataset.to_df().slice(skip, limit)
-            cleansed_dataset.dataset = AnalystDataset(
-                name=cleansed_dataset.name, data=skipped_df
-            )
+            cleansed_dataset.dataset = AnalystDataset(name=name, data=skipped_df)
         elif skip > 0:
             # If skip is greater than the number of rows, return an empty dataset
             cleansed_dataset.dataset = AnalystDataset(
-                name=cleansed_dataset.name,
+                name=name,
                 data=cleansed_dataset.dataset.to_df().slice(0, 0),
             )
 
@@ -1019,9 +1027,6 @@ async def store_datarobot_account(
     request: Request,
 ) -> dict[str, Any]:
     request_data = await request.json()
-
-    if "account_info" in request_data and request_data["account_info"]:
-        request.state.session.datarobot_account_info = request_data["account_info"]
 
     if "api_token" in request_data and request_data["api_token"]:
         request.state.session.datarobot_api_token = request_data["api_token"]

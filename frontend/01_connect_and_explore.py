@@ -39,7 +39,7 @@ from utils.api import (
     log_memory,
     process_data_and_update_state,
 )
-from utils.database_helpers import Database, app_infra
+from utils.database_helpers import get_external_database, load_app_infra
 from utils.logging_helper import get_logger
 from utils.schema import (
     AnalystDataset,
@@ -51,6 +51,8 @@ from utils.schema import (
 warnings.filterwarnings("ignore")
 
 logger = get_logger("DataAnalystFrontend")
+app_infra = load_app_infra()
+Database = get_external_database()
 
 
 async def process_uploaded_file(file: UploadedFile) -> list[str]:

@@ -51,6 +51,89 @@ def test_dataset_is_cleansed(dataset_cleansed: CleansedDataset) -> None:
 
 
 @pytest_asyncio.fixture(scope="module")
+async def cleansed_dataset_from_api(
+    pulumi_up: Any,
+    dataset_loaded: AnalystDataset,
+    analyst_db: AnalystDB,
+    dataset_cleansed: CleansedDataset,
+) -> CleansedDataset:
+    from utils.rest_api import get_cleansed_dataset
+
+    # We need to register the dataset first to ensure it exists in the database
+    cleansed_dataset = await get_cleansed_dataset(
+        name=dataset_loaded.name, skip=0, limit=10000, analyst_db=analyst_db
+    )
+    return cleansed_dataset
+
+
+@pytest_asyncio.fixture(scope="module")
+async def cleansed_dataset_with_pagination(
+    pulumi_up: Any,
+    dataset_loaded: AnalystDataset,
+    analyst_db: AnalystDB,
+    dataset_cleansed: CleansedDataset,
+) -> tuple[CleansedDataset, CleansedDataset, CleansedDataset]:
+    from utils.rest_api import get_cleansed_dataset
+
+    # Get with skip=0, limit=2
+    dataset1 = await get_cleansed_dataset(
+        name=dataset_loaded.name, skip=0, limit=2, analyst_db=analyst_db
+    )
+
+    # Get with skip=2, limit=2
+    dataset2 = await get_cleansed_dataset(
+        name=dataset_loaded.name, skip=2, limit=2, analyst_db=analyst_db
+    )
+
+    # Get with skip exceeding dataset size
+    dataset3 = await get_cleansed_dataset(
+        name=dataset_loaded.name, skip=10000, limit=2, analyst_db=analyst_db
+    )
+
+    return dataset1, dataset2, dataset3
+
+
+def test_get_cleansed_dataset_by_name_api(
+    dataset_cleansed: CleansedDataset, cleansed_dataset_from_api: CleansedDataset
+) -> None:
+    # Verify we can retrieve the cleansed dataset by name
+    assert cleansed_dataset_from_api is not None
+    assert cleansed_dataset_from_api.name == dataset_cleansed.name
+    assert len(cleansed_dataset_from_api.cleaning_report) == len(
+        dataset_cleansed.cleaning_report
+    )
+
+    # Check that the dataframes have the same shape
+    assert cleansed_dataset_from_api.to_df().shape == dataset_cleansed.to_df().shape
+
+
+def test_get_cleansed_dataset_with_pagination(
+    dataset_cleansed: CleansedDataset,
+    cleansed_dataset_with_pagination: tuple[
+        CleansedDataset, CleansedDataset, CleansedDataset
+    ],
+) -> None:
+    dataset1, dataset2, dataset3 = cleansed_dataset_with_pagination
+
+    # First dataset should have at most 2 rows
+    assert dataset1.dataset.to_df().shape[0] <= 2
+
+    # Second dataset should have skip=2, so it should start from the 3rd row of the original dataset
+    if dataset_cleansed.dataset.to_df().shape[0] > 2:
+        # Only verify if the original dataset has enough rows
+        first_row_of_second_batch = dataset2.dataset.to_df().row(0, named=True)
+        third_row_of_original = dataset_cleansed.dataset.to_df().row(2, named=True)
+
+        # Compare a few columns to verify they match
+        for col in dataset2.dataset.to_df().columns[:3]:  # Check first 3 columns
+            if col in third_row_of_original and col in first_row_of_second_batch:
+                assert first_row_of_second_batch[col] == third_row_of_original[col]
+
+    # Third dataset should be empty (skip > dataset size)
+    assert dataset3.dataset.to_df().shape[0] == 0
+
+
+@pytest_asyncio.fixture(scope="module")
 async def data_dictionary(
     pulumi_up: Any,
     dataset_loaded: AnalystDataset,

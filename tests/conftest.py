@@ -14,11 +14,14 @@
 
 # mypy: ignore-errors
 
+import contextlib
 import logging
 import os
 import subprocess
+import sys
 import uuid
-from typing import Callable
+from pathlib import Path
+from typing import Any, Callable
 
 import datarobot as dr
 import pandas as pd
@@ -207,3 +210,41 @@ async def analyst_db() -> AnalystDB:
         chat_db_name="chats",
     )
     return analyst_db
+
+
+@contextlib.contextmanager
+def cd(new_dir: Path) -> Any:
+    """Changes the current working directory to the given path and restores the old directory on exit."""
+    prev_dir = os.getcwd()
+    os.chdir(new_dir)
+    try:
+        yield
+    finally:
+        os.chdir(prev_dir)
+
+
+@pytest.fixture
+def setup_pulumi_stack(
+    pulumi_up: Any,
+    subprocess_runner: Callable[[list[str]], subprocess.CompletedProcess[str]],
+    directory: str = "frontend",
+) -> Any:
+    """Common fixture to set up Pulumi stack and change to the specified directory.
+
+    Args:
+        pulumi_up: Fixture to set up Pulumi
+        subprocess_runner: Fixture to run subprocess commands
+        directory: The directory to change to (default: 'frontend')
+    """
+    stack_name = subprocess.check_output(
+        ["pulumi", "stack", "--show-name"],
+        text=True,
+    ).split("\n")[0]
+    with cd(Path(directory)):
+        subprocess_runner(
+            ["pulumi", "stack", "select", stack_name, "--non-interactive"]
+        )
+        # and ensure we can access the directory as if we were running from inside
+        sys.path.append(".")
+        logger.info(subprocess.check_output(["pulumi", "stack", "output"]))
+        yield
