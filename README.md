@@ -76,7 +76,7 @@ and `pulumi` invocation see [here](#setup-for-advanced-users).
 
 ## Architecture overview
 
-![image](https://github.com/user-attachments/assets/2ca66231-9321-48fe-abdb-f2d35687dff6)
+![image](https://s3.us-east-1.amazonaws.com/datarobot_public/drx/ttmd2-schematic.jpg)
 
 
 App templates contain three families of complementary logic:
