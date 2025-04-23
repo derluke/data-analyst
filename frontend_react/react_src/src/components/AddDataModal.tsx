@@ -69,10 +69,7 @@ export const AddDataModal = () => {
           <Separator className="border-t" />
           <DialogDescription></DialogDescription>
         </DialogHeader>
-        <DataSourceSelector
-          value={dataSource}
-          onChange={setDataSource}
-        />
+        <DataSourceSelector value={dataSource} onChange={setDataSource} />
         <Separator className="my-4 border-t" />
         {dataSource == DATA_SOURCES.FILE && (
           <>
@@ -101,6 +98,7 @@ export const AddDataModal = () => {
               defaultValue={selectedDatasets}
               placeholder="Select one or more items."
               variant="inverted"
+              modalPopover
               animation={2}
               maxCount={3}
             />
@@ -124,6 +122,7 @@ export const AddDataModal = () => {
               defaultValue={selectedTables}
               placeholder="Select one or more items."
               variant="inverted"
+              modalPopover
               animation={2}
               maxCount={3}
             />
@@ -131,7 +130,9 @@ export const AddDataModal = () => {
         )}
         <Separator className="border-t mt-6" />
         <DialogFooter>
-          <Button variant={"ghost"}>Cancel</Button>
+          <Button variant={"ghost"} onClick={() => setIsOpen(false)}>
+            Cancel
+          </Button>
           <Button
             type="submit"
             variant="secondary"

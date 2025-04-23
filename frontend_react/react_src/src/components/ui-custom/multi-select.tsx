@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { TruncatedText } from "@/components/ui-custom/truncated-text";
+
 import {
   Popover,
   PopoverContent,
@@ -141,7 +143,7 @@ export const MultiSelect = React.forwardRef<
                         style={{ animationDuration: `${animation}s` }}
                         variant="secondary"
                       >
-                        {option?.label}
+                        <TruncatedText>{option?.label}</TruncatedText>
                         {option?.postfix && (
                           <span className="ml-1">{option?.postfix}</span>
                         )}
@@ -210,7 +212,7 @@ export const MultiSelect = React.forwardRef<
               placeholder="Search..."
               onKeyDown={handleInputKeyDown}
             />
-            <CommandList>
+            <CommandList className="max-w-[800px]">
               <CommandEmpty>No results found.</CommandEmpty>
               <CommandGroup>
                 {options.map((option) => {
