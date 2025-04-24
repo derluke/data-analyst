@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+- Fixed AI Catalog dropdown for long dataset names
+- Fixed horizontal scrolling in the raw rows view
+- Fixed issue with certain CSV file uploads and improved error messaging for failed uploads
+
 ## [0.1.10] - 2025-04-17
 
 ### Fixed

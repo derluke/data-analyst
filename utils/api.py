@@ -86,6 +86,7 @@ from utils.schema import (
     DataDictionaryColumn,
     DataRegistryDataset,
     DictionaryGeneration,
+    DownloadedRegistryDataset,
     EnhancedQuestionGeneration,
     GetBusinessAnalysisMetadata,
     GetBusinessAnalysisRequest,
@@ -234,7 +235,7 @@ def list_registry_datasets(limit: int = 100) -> list[DataRegistryDataset]:
 
 async def download_registry_datasets(
     dataset_ids: list[str], analyst_db: AnalystDB
-) -> list[str]:
+) -> list[DownloadedRegistryDataset]:
     """Load selected datasets as pandas DataFrames
 
     Args:
@@ -243,6 +244,7 @@ async def download_registry_datasets(
     Returns:
         list[AnalystDataset]: Dictionary of dataset names and data
     """
+    downloaded_datasets = []
     datasets = [dr.Dataset.get(id_) for id_ in dataset_ids]
     if (
         sum([ds.size for ds in datasets if ds.size is not None])
@@ -263,14 +265,16 @@ async def download_registry_datasets(
             logger.info(f"Successfully downloaded {dataset.name}")
         except Exception as e:
             logger.error(f"Failed to read dataset {dataset.name}: {str(e)}")
+            downloaded_datasets.append(
+                DownloadedRegistryDataset(name=dataset.name, error=str(e))
+            )
             continue
-    names = []
     for result_dataset in result_datasets:
         await analyst_db.register_dataset(
             result_dataset, DataSourceType.REGISTRY, dataset.size or 0
         )
-        names.append(result_dataset.name)
-    return names
+        downloaded_datasets.append(DownloadedRegistryDataset(name=result_dataset.name))
+    return downloaded_datasets
 
 
 async def _get_dictionary_batch(

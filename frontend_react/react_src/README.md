@@ -20,7 +20,7 @@ This application provides a modern React-based frontend for the **Talk to My Dat
 
 ## Development
 
-To start the development server (cd into the frontend_react directory):
+To start the development server (cd into the `frontend_react/react_src` directory first):
 
 ```bash
 npm i

@@ -55,6 +55,7 @@ from utils.api import (
     AnalysisGenerationError,
     download_registry_datasets,
     list_registry_datasets,
+    log_memory,
     process_data_and_update_state,
     run_complete_analysis,
 )
@@ -391,7 +392,14 @@ async def upload_files(
                 file_extension = os.path.splitext(file.filename)[1].lower()
 
                 if file_extension == ".csv":
-                    df = pl.read_csv(io.StringIO(contents.decode("utf-8")))
+                    logger.info(f"Loading CSV: {file.filename}")
+                    log_memory()
+                    df = pl.read_csv(
+                        io.StringIO(contents.decode("utf-8")),
+                        infer_schema_length=10000,
+                        low_memory=True,
+                    )
+                    log_memory()
                     dataset_name = os.path.splitext(file.filename)[0]
                     dataset = AnalystDataset(name=dataset_name, data=df)
 
@@ -472,9 +480,21 @@ async def upload_files(
         if id_list:
             with use_user_token(request):
                 dataframes = await download_registry_datasets(id_list, analyst_db)
+                dataset_names = [
+                    dataset.name for dataset in dataframes if not dataset.error
+                ]
                 background_tasks.add_task(
-                    process_and_update, dataframes, analyst_db, DataSourceType.REGISTRY
+                    process_and_update,
+                    dataset_names,
+                    analyst_db,
+                    DataSourceType.REGISTRY,
                 )
+                for dts in dataframes:
+                    dts_response: FileUploadResponse = {
+                        "dataset_name": dts.name,
+                        "error": dts.error,
+                    }
+                    response.append(dts_response)
 
     return response
 

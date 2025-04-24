@@ -20,10 +20,13 @@ import {
   useGetDatabaseTables,
   useLoadFromDatabaseMutation,
 } from "@/api-state/database/hooks";
-import { useFileUploadMutation } from "@/api-state/datasets/hooks";
+import { useFileUploadMutation, UploadError } from "@/api-state/datasets/hooks";
 import { Separator } from "@radix-ui/react-separator";
 import loader from "@/assets/loader.svg";
 import { useAppState } from "@/state/hooks";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AxiosError } from "axios";
+import { TruncatedText } from "./ui-custom/truncated-text";
 
 export const AddDataModal = () => {
   const { data } = useFetchAllDatasets();
@@ -34,14 +37,18 @@ export const AddDataModal = () => {
   const [files, setFiles] = useState<File[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const { mutate, progress } = useFileUploadMutation({
     onSuccess: () => {
       setIsPending(false);
+      setError(null);
       setIsOpen(false);
     },
-    onError: (error: Error) => {
+    onError: (error: UploadError | AxiosError) => {
       setIsPending(false);
       console.error(error);
+      setError(error.message || "An error occurred while uploading files");
     },
   });
 
@@ -57,7 +64,15 @@ export const AddDataModal = () => {
   });
 
   return (
-    <Dialog defaultOpen={isOpen} onOpenChange={setIsOpen} open={isOpen}>
+    <Dialog
+      defaultOpen={isOpen}
+      onOpenChange={(open) => {
+        setIsOpen(open);
+        setError(null);
+        setFiles([]);
+      }}
+      open={isOpen}
+    >
       <DialogTrigger asChild>
         <Button variant="outline">
           <FontAwesomeIcon icon={faPlus} /> Add Data
@@ -102,6 +117,13 @@ export const AddDataModal = () => {
               animation={2}
               maxCount={3}
             />
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>
+                  <TruncatedText maxLength={100}>{error}</TruncatedText>
+                </AlertDescription>
+              </Alert>
+            )}
           </>
         )}
 
@@ -138,6 +160,7 @@ export const AddDataModal = () => {
             variant="secondary"
             disabled={isPending}
             onClick={() => {
+              setError(null);
               setIsPending(true);
               if (dataSource === DATA_SOURCES.DATABASE) {
                 if (selectedTables.length > 0) {

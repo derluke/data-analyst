@@ -135,7 +135,7 @@ To change the frontend:
 > npm install
 > npm run build
 > ```
-> The built files will be placed in `frontend_react/deploy/dist/` which will be used by the deployment. See [React Frontend README](frontend_react/react_src/README.md) for more details on developing and building the React frontend.
+> The built files will be placed in `frontend_react/deploy/dist/` which will be used by the deployment. See `frontend_react/react_src/README.md` for more details on developing and building the React frontend.
 
 ### Change the LLM
 

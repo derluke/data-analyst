@@ -592,7 +592,7 @@ class ChatHistory(BaseModel):
 
 
 class FileUploadResponse(TypedDict, total=False):
-    filename: str
+    filename: Optional[str]
     content_type: Optional[str]
     size: Optional[int]
     dataset_name: Optional[str]
@@ -629,3 +629,8 @@ class ChatMessagePayload(BaseModel):
     enable_chart_generation: bool = True
     enable_business_insights: bool = True
     data_source: str = "file"
+
+
+class DownloadedRegistryDataset(BaseModel):
+    name: str = ""
+    error: Optional[str] = None
