@@ -79,11 +79,12 @@ export const MultiSelect = React.forwardRef<
     const [selectedValues, setSelectedValues] =
       React.useState<string[]>(defaultValue);
     const [isPopoverOpen, setIsPopoverOpen] = React.useState(false);
+    const [isComposing, setIsComposing] = React.useState(false);
 
     const handleInputKeyDown = (
       event: React.KeyboardEvent<HTMLInputElement>
     ) => {
-      if (event.key === "Enter") {
+      if (event.key === "Enter" && !isComposing) {
         setIsPopoverOpen(true);
       } else if (event.key === "Backspace" && !event.currentTarget.value) {
         toggleOption(selectedValues[selectedValues.length - 1]);
@@ -211,6 +212,8 @@ export const MultiSelect = React.forwardRef<
             <CommandInput
               placeholder="Search..."
               onKeyDown={handleInputKeyDown}
+              onCompositionStart={() => setIsComposing(true)}
+              onCompositionEnd={() => setIsComposing(false)}
             />
             <CommandList className="max-w-[800px]">
               <CommandEmpty>No results found.</CommandEmpty>

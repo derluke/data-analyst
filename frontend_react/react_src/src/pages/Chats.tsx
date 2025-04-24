@@ -85,7 +85,7 @@ export const Chats: React.FC = () => {
       <>
         <ScrollArea className="flex flex-1 flex-col overflow-y-hidden pr-2 pb-4">
           {messages?.map((message, index) => (
-            <div key={index} className="flex flex-col">
+            <div key={index} className="table table-fixed w-full">
               {message.role === "user" ? (
                 <>
                   <UserMessage
