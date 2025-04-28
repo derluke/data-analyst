@@ -26,10 +26,12 @@ from utils.rest_api import (
     _initialize_session,
     _set_session_cookie,
     app,
+    delete_chat_message,
     get_datarobot_account,
     store_datarobot_account,
     use_user_token,
 )
+from utils.schema import AnalystChatMessage
 
 
 @pytest.fixture
@@ -263,3 +265,77 @@ def test_authorization_header_integration(
     else:
         # For short tokens, they remain as-is
         assert response.json()["datarobot_api_skoped_token"] == "test_token_123"
+
+
+@pytest.mark.asyncio
+async def test_delete_chat_message(
+    setup_pulumi_stack: Any,
+    pulumi_up: Any,
+    mock_request: MagicMockType,
+    mock_analyst_db: AsyncMock,
+) -> None:
+    mock_request.state.session = MagicMock()
+    mock_analyst_db.chat_handler = AsyncMock()
+
+    # Set up the mocks for the new function signature
+    mock_message = AnalystChatMessage(
+        id="message_id",
+        role="user",
+        content="User message 1",
+        components=[],
+        chat_id="test_chat_id",
+    )
+    mock_analyst_db.get_chat_message.return_value = mock_message
+    mock_analyst_db.delete_chat_message.return_value = True
+
+    test_messages = [
+        AnalystChatMessage(role="user", content="User message 1", components=[]),
+        AnalystChatMessage(
+            role="assistant", content="Assistant message 1", components=[]
+        ),
+        AnalystChatMessage(role="user", content="User message 2", components=[]),
+        AnalystChatMessage(
+            role="assistant", content="Assistant message 2", components=[]
+        ),
+    ]
+    mock_analyst_db.get_chat_messages.return_value = test_messages.copy()
+
+    # Test successful deletion
+    result = await delete_chat_message(mock_request, "message_id", mock_analyst_db)
+
+    # Verify the mock interactions and results
+    mock_analyst_db.get_chat_message.assert_called_once_with(message_id="message_id")
+    mock_analyst_db.delete_chat_message.assert_called_once_with(message_id="message_id")
+    mock_analyst_db.get_chat_messages.assert_called_once_with(chat_id="test_chat_id")
+    assert result == test_messages.copy()
+
+    # Reset mocks for next test
+    mock_analyst_db.get_chat_message.reset_mock()
+    mock_analyst_db.delete_chat_message.reset_mock()
+    mock_analyst_db.get_chat_messages.reset_mock()
+
+    # Test when message not found
+    mock_analyst_db.get_chat_message.return_value = None
+
+    result = await delete_chat_message(
+        mock_request, "missing_message_id", mock_analyst_db
+    )
+
+    # Should return an empty list when message not found
+    assert isinstance(result, list)
+    assert len(result) == 0
+    mock_analyst_db.delete_chat_message.assert_not_called()
+
+    # Reset mocks for next test
+    mock_analyst_db.get_chat_message.reset_mock()
+    mock_analyst_db.delete_chat_message.reset_mock()
+
+    # Test when an exception occurs
+    mock_analyst_db.get_chat_message.return_value = mock_message
+    mock_analyst_db.delete_chat_message.side_effect = Exception("Test exception")
+
+    result = await delete_chat_message(mock_request, "message_id", mock_analyst_db)
+
+    # Should return an empty list when an exception occurs
+    assert isinstance(result, list)
+    assert len(result) == 0

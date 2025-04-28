@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Generator, Literal, Optional, Union
@@ -536,6 +537,8 @@ class AnalystChatMessage(BaseModel):
     components: list[Component]
     in_progress: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    chat_id: str | None = None
 
     def to_openai_message_param(self) -> ChatCompletionMessageParam:
         if self.role == "user":
@@ -579,7 +582,6 @@ class ChatJSONEncoder(json.JSONEncoder):
 class ChatHistory(BaseModel):
     user_id: str
     chat_name: str
-    chat_messages: list[AnalystChatMessage]
     data_source: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

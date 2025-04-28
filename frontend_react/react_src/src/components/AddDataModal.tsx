@@ -97,7 +97,7 @@ export const AddDataModal = () => {
               </div>
             </div>
             <FileUploader onFilesChange={setFiles} progress={progress} />
-            <h4>DataRobot AI Catalog</h4>
+            <h4>Data Registry</h4>
             <h6>Select one or more catalog items</h6>
             <MultiSelect
               options={

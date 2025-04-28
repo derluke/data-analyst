@@ -7,7 +7,7 @@ This application provides a modern React-based frontend for the **Talk to My Dat
 - Interactive chat interface for data analysis
 - Data visualization with interactive plots
 - Dataset management and cleansing
-- Support for multiple data sources (CSV, AI Catalog, Snowflake, Google Cloud)
+- Support for multiple data sources (CSV, Data Registry, Snowflake, Google Cloud)
 - Code execution and insights generation
 
 ## Tech Stack
