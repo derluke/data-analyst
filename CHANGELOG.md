@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [0.1.11] - 2025-04-29
+
 ### Fixed
 
 - Fixed AI Catalog dropdown for long dataset names
@@ -14,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed issue with certain CSV file uploads and improved error messaging for failed uploads
 - Fixed scroll area for collapsible panel with Code preview
 - Fixed issue with composing message for complex character sets (Japanese/Chinese/Korean)
+- Fixed issue with constantly creating new db file for each request in some cases (rest_api)
 
 ## [0.1.10] - 2025-04-17
 
@@ -21,7 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed a bug where snowflake ssh keyfile was not working correctly
 - Fixed the incorrect max_completion_length validation in the LLMSettings schema
-- Fixed issue with constantly creating new db file for each request in some cases (rest_api)
 
 ### Added
 
