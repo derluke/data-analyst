@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed a bug where snowflake ssh keyfile was not working correctly
 - Fixed the incorrect max_completion_length validation in the LLMSettings schema
+- Fixed issue with constantly creating new db file for each request in some cases (rest_api)
 
 ### Added
 

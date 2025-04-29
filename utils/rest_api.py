@@ -258,18 +258,23 @@ async def add_session_middleware(request: Request, call_next):  # type: ignore[n
 
         request.state.session.datarobot_account_info = account_info
         dr_uid = request.state.session.datarobot_account_info.get("uid")
+        if session_id is None and dr_uid is not None:
+            session_id = base64.b64encode(dr_uid.encode()).decode()
+            user_id = dr_uid
 
         # Initialize database in the session
-        await _initialize_database(request, dr_uid or user_id)
+        if user_id:
+            await _initialize_database(request, user_id)
 
     # Process the request
     response: Response = await call_next(request)
 
     if request.method in request_methods:
         # Set session cookie if needed
-        _set_session_cookie(
-            response, user_id, session_id, request.cookies.get("session_fastapi")
-        )
+        if session_id:
+            _set_session_cookie(
+                response, user_id, session_id, request.cookies.get("session_fastapi")
+            )
 
     return response
 
@@ -278,8 +283,8 @@ async def _initialize_session(
     request: Request,
 ) -> tuple[
     SessionState,
-    str,
-    str,
+    str | None,
+    str | None,
 ]:
     """Initialize the session state and return the session ID and user ID."""
     # Create a new session state with default values
@@ -303,26 +308,28 @@ async def _initialize_session(
             pass  # If decoding fails, continue without user_id
 
     # Generate a new user ID if needed
+    new_user_id = None
     email_header = request.headers.get("x-user-email")
     if email_header:
         new_user_id = str(uuid.uuid5(uuid.NAMESPACE_OID, email_header))[:36]
-    else:
-        new_user_id = str(uuid.uuid4())[:36]
 
     # Determine session ID
+    session_id = None
     if session_fastapi_cookie:
         session_id = session_fastapi_cookie
-    else:
+    elif new_user_id:
         session_id = base64.b64encode(new_user_id.encode()).decode()
 
     # Get or create session in store
-    async with session_lock:
-        existing_session = session_store.get(session_id)
-        if existing_session:
-            return existing_session, session_id, user_id or new_user_id
-        else:
-            session_store[session_id] = session_state
-            return session_state, session_id, user_id or new_user_id
+    if session_id:
+        async with session_lock:
+            existing_session = session_store.get(session_id)
+            if existing_session:
+                return existing_session, session_id, user_id or new_user_id
+            else:
+                session_store[session_id] = session_state
+
+    return session_state, session_id, user_id or new_user_id
 
 
 async def _initialize_database(request: Request, user_id: str) -> None:
