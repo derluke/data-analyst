@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+
+- Improved Registry / File / Database toggle functionality (react)
+- Fixed React App now accepts local xlsx files (react)
+
 ## [0.1.12] - 2025-04-30
 
 ### Changed
