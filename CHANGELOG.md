@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+
+- Data cleansing now automatically removes leading and trailing whitespace from string columns
+
 ### Changed
 
 - Improved error handling when prompting (react)

@@ -238,6 +238,29 @@ def try_datetime_conversion(
     return False, series, warnings
 
 
+def try_string_trim(
+    series: pl.Series,
+    sample_series: pl.Series,
+    original_nulls: pl.Series,
+) -> tuple[bool, pl.Series, list[str]]:
+    """
+    Trim leading and trailing whitespace from string values.
+    Only applies if whitespace trimming actually changes the data.
+    """
+    warnings = []
+
+    sample_cleaned = sample_series.str.strip_chars()
+    original_values = sample_series.cast(pl.String)
+    has_whitespace = (original_values != sample_cleaned).any()
+
+    if has_whitespace:
+        cleaned_series = series.str.strip_chars()
+        warnings.append("Removed leading and trailing whitespace from string values")
+        return True, cleaned_series, warnings
+
+    return False, series, warnings
+
+
 def add_summary_statistics(
     df: pl.DataFrame, report: list[CleansedColumnReport]
 ) -> None:
@@ -284,6 +307,7 @@ def process_column(
             ("simple_clean", try_simple_numeric_conversion),
             ("unit_conversion", try_unit_conversion),
             ("datetime", try_datetime_conversion),
+            ("string_trim", try_string_trim),
         ]
 
         # Run conversion attempts in parallel using ThreadPoolExecutor

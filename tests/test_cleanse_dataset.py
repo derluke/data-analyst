@@ -21,6 +21,7 @@ import pandas as pd
 import polars as pl
 import pytest
 
+from utils.data_cleansing_helpers import try_string_trim
 from utils.schema import AnalystDataset
 
 log = logging.getLogger(__name__)
@@ -224,3 +225,74 @@ async def test_10k_diabetes(dataset_loaded):
     result = await cleanse_dataframe(dataset_loaded)
 
     assert len(result.dataset.to_df()) > 0
+
+
+@pytest.mark.asyncio
+async def test_string_trim_conversion():
+    from utils.api import cleanse_dataframe
+
+    # Create a dataset with whitespace in string values
+    df = pd.DataFrame(
+        {
+            "whitespace_strings": ["  abc  ", "def   ", "   ghi", "jkl"],
+            "clean_strings": ["abc", "def", "ghi", "jkl"],
+            "mixed_content": ["  123  ", "   abc", "def   ", "ghi"],
+        }
+    )
+    dataset = AnalystDataset(name="whitespace_test", data=df)
+
+    result = await cleanse_dataframe(dataset)
+    cleaned_data = result.dataset.to_df()
+
+    # Test that whitespace was trimmed from string values
+    assert cleaned_data["whitespace_strings"].to_list() == ["abc", "def", "ghi", "jkl"]
+
+    # Test that already clean strings remain unchanged
+    assert cleaned_data["clean_strings"].to_list() == ["abc", "def", "ghi", "jkl"]
+
+    # Check the cleaning report to ensure string_trim was used
+    whitespace_report = next(
+        r for r in result.cleaning_report if r.new_column_name == "whitespace_strings"
+    )
+    assert whitespace_report.original_dtype == "string"
+    assert (
+        whitespace_report.new_dtype == "string"
+        or whitespace_report.new_dtype == "String"
+    )
+    assert whitespace_report.conversion_type == "string_trim"
+    assert any(
+        "whitespace" in warning.lower() for warning in whitespace_report.warnings
+    )
+
+
+def test_try_string_trim_direct():
+    # Series with whitespace that needs trimming
+    series1 = pl.Series(["  abc  ", "def   ", "   ghi", "jkl"])
+    original_nulls1 = series1.is_null()
+    success1, result1, warnings1 = try_string_trim(series1, series1, original_nulls1)
+
+    assert success1 is True
+    assert result1.to_list() == ["abc", "def", "ghi", "jkl"]
+    assert len(warnings1) == 1
+    assert "whitespace" in warnings1[0].lower()
+
+    # Series without whitespace that needs trimming
+    series2 = pl.Series(["abc", "def", "ghi", "jkl"])
+    original_nulls2 = series2.is_null()
+    success2, result2, warnings2 = try_string_trim(series2, series2, original_nulls2)
+
+    assert success2 is False
+    assert result2.to_list() == ["abc", "def", "ghi", "jkl"]
+    assert len(warnings2) == 0
+
+    # Series with null values
+    series3 = pl.Series(["  abc  ", None, "   ghi", "jkl"])
+    original_nulls3 = series3.is_null()
+    success3, result3, warnings3 = try_string_trim(series3, series3, original_nulls3)
+
+    assert success3 is True
+    assert result3.is_null()[1]  # Null value preserved
+    assert result3[0] == "abc"
+    assert result3[2] == "ghi"
+    assert result3[3] == "jkl"
+    assert len(warnings3) == 1
