@@ -97,7 +97,7 @@ async def get_initialized_db(request: Request) -> AnalystDB:
     ):
         raise HTTPException(
             status_code=400,
-            detail="Database not initialized. Please call /initialize first.",
+            detail="Database not initialized.",
         )
 
     return cast(AnalystDB, request.state.session.analyst_db)

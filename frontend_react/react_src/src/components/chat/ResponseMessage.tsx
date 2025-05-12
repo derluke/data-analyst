@@ -184,6 +184,12 @@ export const ResponseMessage: React.FC<ResponseMessageProps> = ({
             <div className="mb-3">{enhancedUserMessage}</div>
           )}
 
+          {message?.error && (
+            <div className="max-h-[300px] overflow-x-auto overflow-y-auto max-w-full">
+              <span className="text-destructive text-sm">{message?.error}</span>
+            </div>
+          )}
+
           <ResponseTabs
             value={activeTab}
             onValueChange={setActiveTab}

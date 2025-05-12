@@ -539,6 +539,7 @@ class AnalystChatMessage(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     chat_id: str | None = None
+    error: str | None = None
 
     def to_openai_message_param(self) -> ChatCompletionMessageParam:
         if self.role == "user":

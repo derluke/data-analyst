@@ -108,6 +108,8 @@ logger = get_logger()
 logging.getLogger("openai").setLevel(logging.WARNING)
 logging.getLogger("openai.http_client").setLevel(logging.WARNING)
 
+VALUE_ERROR_MESSAGE = "Input data cannot be empty (no dataset provided)"
+
 
 def log_memory() -> None:
     process = psutil.Process()
@@ -889,7 +891,7 @@ async def _run_charts(
     start_time = datetime.now()
 
     if not request.dataset:
-        raise ValueError("Input data cannot be empty")
+        raise ValueError(VALUE_ERROR_MESSAGE)
 
     df = request.dataset.to_df().to_pandas()
     if exception_history is None:
@@ -1046,7 +1048,7 @@ async def _run_analysis(
     start_time = datetime.now()
 
     if not request.dataset_names:
-        raise ValueError("Input data cannot be empty")
+        raise ValueError(VALUE_ERROR_MESSAGE)
 
     if exception_history is None:
         exception_history = []
@@ -1238,7 +1240,7 @@ async def _run_database_analysis(
 ) -> RunDatabaseAnalysisResult:
     start_time = datetime.now()
     if not request.dataset_names:
-        raise ValueError("Input data cannot be empty")
+        raise ValueError(VALUE_ERROR_MESSAGE)
 
     if exception_history is None:
         exception_history = []
@@ -1284,6 +1286,15 @@ async def run_database_analysis(
                 duration=e.duration,
                 attempts=len(e.exception_history) if e.exception_history else 0,
                 exception=AnalysisError.from_max_reflection_exception(e),
+            ),
+        )
+    except ValueError as e:
+        return RunDatabaseAnalysisResult(
+            status="error",
+            metadata=RunDatabaseAnalysisResultMetadata(
+                duration=0,
+                attempts=1,
+                exception=AnalysisError.from_value_error(e),
             ),
         )
 
@@ -1344,31 +1355,42 @@ async def run_complete_analysis(
     enable_chart_generation: bool = True,
     enable_business_insights: bool = True,
 ) -> AsyncGenerator[Component | AnalysisGenerationError, None]:
+    user_message = await analyst_db.get_chat_message(message_id=message_id)
+    if user_message is None or user_message.role != "user":
+        yield AnalysisGenerationError("Message not found")
+
+        return
     # Get enhanced message
     try:
         logger.info("Getting rephrased question...")
         enhanced_message = await rephrase_message(chat_request)
         logger.info("Getting rephrased question done")
+
         yield enhanced_message
+
     except ValidationError:
-        yield AnalysisGenerationError("LLM Error, please retry")
+        user_message.error = "LLM Error, please retry"
+        user_message.in_progress = False
+        await analyst_db.update_chat_message(
+            message_id=message_id,
+            message=user_message,
+        )
+        yield AnalysisGenerationError(user_message.error)
+
         return
+
     assistant_message = AnalystChatMessage(
         role="assistant",
         content=enhanced_message,
         components=[EnhancedQuestionGeneration(enhanced_user_message=enhanced_message)],
     )
-    user_message = await analyst_db.get_chat_message(message_id=message_id)
-    if user_message:
-        if user_message.role == "user":
-            user_message.in_progress = False
-            await analyst_db.update_chat_message(
-                message_id=message_id,
-                message=user_message,
-            )
-            await analyst_db.add_chat_message(
-                chat_id=chat_id, message=assistant_message
-            )
+
+    user_message.in_progress = False
+    await analyst_db.update_chat_message(
+        message_id=message_id,
+        message=user_message,
+    )
+    await analyst_db.add_chat_message(chat_id=chat_id, message=assistant_message)
     # Run main analysis
     logger.info("Start main analysis")
     try:
@@ -1400,13 +1422,14 @@ async def run_complete_analysis(
 
         if isinstance(analysis_result, BaseException):
             error_message = f"Error running initial analysis. Try rephrasing: {str(analysis_result)}"
-
-            yield AnalysisGenerationError(error_message)
-
             assistant_message.in_progress = False
+            assistant_message.error = error_message
             await analyst_db.update_chat_message(
                 message_id=assistant_message.id, message=assistant_message
             )
+
+            yield AnalysisGenerationError(error_message)
+
             return
 
         yield analysis_result
@@ -1418,13 +1441,14 @@ async def run_complete_analysis(
 
     except Exception as e:
         error_message = f"Error running initial analysis. Try rephrasing: {str(e)}"
-
-        yield AnalysisGenerationError(error_message)
-
         assistant_message.in_progress = False
+        assistant_message.error = error_message
         await analyst_db.update_chat_message(
             message_id=assistant_message.id, message=assistant_message
         )
+
+        yield AnalysisGenerationError(error_message)
+
         return
 
     # Only proceed with additional analysis if we have valid initial results
@@ -1451,31 +1475,32 @@ async def run_complete_analysis(
         # Handle chart results
         if isinstance(charts_result, BaseException):
             error_message = "Error generating charts"
-
-            yield AnalysisGenerationError(error_message)
-
+            assistant_message.error = error_message
             await analyst_db.update_chat_message(
                 message_id=assistant_message.id, message=assistant_message
             )
 
+            yield AnalysisGenerationError(error_message)
+
         elif charts_result is not None:
-            yield charts_result
             assistant_message.components.append(charts_result)
             await analyst_db.update_chat_message(
                 message_id=assistant_message.id, message=assistant_message
             )
 
+            yield charts_result
+
         # Handle business analysis results
         if isinstance(business_result, BaseException):
             error_message = "Error generating business insights"
-
-            yield AnalysisGenerationError("Error generating business insights")
-
+            assistant_message.error = error_message
             await analyst_db.update_chat_message(
                 message_id=assistant_message.id, message=assistant_message
             )
+
+            yield AnalysisGenerationError(error_message)
+
         elif business_result is not None:
-            yield business_result
             assistant_message.components.append(business_result)
             assistant_message.in_progress = False
 
@@ -1483,15 +1508,17 @@ async def run_complete_analysis(
                 message_id=assistant_message.id, message=assistant_message
             )
 
+            yield business_result
+
     except Exception as e:
         error_message = f"Error setting up additional analysis: {str(e)}"
-
-        yield AnalysisGenerationError(error_message)
-
         assistant_message.in_progress = False
+        assistant_message.error = error_message
         await analyst_db.update_chat_message(
             message_id=assistant_message.id, message=assistant_message
         )
+
+        yield AnalysisGenerationError(error_message)
 
 
 async def process_data_and_update_state(

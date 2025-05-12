@@ -19,7 +19,7 @@ export const ErrorPanel: React.FC<ErrorPanelProps> = ({
   errors,
   componentType = "Component",
 }) => {
-  if (!errors) return null;
+  if (!errors || errors.length === 0) return null;
 
   return (
     <>
@@ -31,6 +31,9 @@ export const ErrorPanel: React.FC<ErrorPanelProps> = ({
       {errors.map((e) => {
         const { code, exception_str, stderr, stdout, traceback_str } = e;
         const hasDetails = !!(code || stderr || stdout || traceback_str);
+        const error = `${componentType} Error: ${
+          exception_str || "An error occurred during execution"
+        }`;
 
         return (
           <div className="my-4 w-full">
@@ -41,10 +44,7 @@ export const ErrorPanel: React.FC<ErrorPanelProps> = ({
                     icon={faExclamationTriangle}
                     className="mr-2 flex-shrink-0"
                   />
-                  <span className="font-semibold truncate">
-                    {componentType} Error:{" "}
-                    {exception_str || "An error occurred during execution"}
-                  </span>
+                  <span className="font-semibold">{error}</span>
                 </div>
               }
             >
