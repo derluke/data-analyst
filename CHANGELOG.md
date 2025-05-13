@@ -10,11 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Data cleansing now automatically removes leading and trailing whitespace from string columns
+- Fixed chat endpoint when DATAROBOT_ENDPOINT has a trailing slash
 
 ### Changed
 
 - Improved error handling when prompting (react)
-- Use urljoin to ensure robust endpoint
 
 ## [0.1.13] - 2025-05-06
 

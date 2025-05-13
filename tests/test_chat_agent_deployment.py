@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from typing import Any
-from urllib.parse import urljoin
 
 import pytest
 from datarobot.rest import RESTClientObject
@@ -23,8 +22,8 @@ from openai import OpenAI
 def chat_client(
     pulumi_up: Any, llm_deployment_id: str, dr_client: RESTClientObject
 ) -> OpenAI:
-    deployment_chat_base_url = urljoin(
-        dr_client.endpoint, f"/deployments/{llm_deployment_id}/"
+    deployment_chat_base_url = (
+        f"{dr_client.endpoint.rstrip('/')}/deployments/{llm_deployment_id}/"
     )
 
     client = OpenAI(api_key=dr_client.token, base_url=deployment_chat_base_url)
