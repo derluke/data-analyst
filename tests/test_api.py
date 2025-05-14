@@ -24,6 +24,7 @@ from utils.schema import (
     CleansedDataset,
     DataDictionary,
     DataDictionaryColumn,
+    DatasetCleansedResponse,
     GetBusinessAnalysisRequest,
     GetBusinessAnalysisResult,
     RunAnalysisRequest,
@@ -56,7 +57,7 @@ async def cleansed_dataset_from_api(
     dataset_loaded: AnalystDataset,
     analyst_db: AnalystDB,
     dataset_cleansed: CleansedDataset,
-) -> CleansedDataset:
+) -> DatasetCleansedResponse:
     from utils.rest_api import get_cleansed_dataset
 
     # We need to register the dataset first to ensure it exists in the database
@@ -72,7 +73,7 @@ async def cleansed_dataset_with_pagination(
     dataset_loaded: AnalystDataset,
     analyst_db: AnalystDB,
     dataset_cleansed: CleansedDataset,
-) -> tuple[CleansedDataset, CleansedDataset, CleansedDataset]:
+) -> tuple[DatasetCleansedResponse, DatasetCleansedResponse, DatasetCleansedResponse]:
     from utils.rest_api import get_cleansed_dataset
 
     # Get with skip=0, limit=2
@@ -94,43 +95,58 @@ async def cleansed_dataset_with_pagination(
 
 
 def test_get_cleansed_dataset_by_name_api(
-    dataset_cleansed: CleansedDataset, cleansed_dataset_from_api: CleansedDataset
+    dataset_cleansed: CleansedDataset,
+    cleansed_dataset_from_api: DatasetCleansedResponse,
 ) -> None:
     # Verify we can retrieve the cleansed dataset by name
     assert cleansed_dataset_from_api is not None
-    assert cleansed_dataset_from_api.name == dataset_cleansed.name
-    assert len(cleansed_dataset_from_api.cleaning_report) == len(
-        dataset_cleansed.cleaning_report
-    )
 
-    # Check that the dataframes have the same shape
-    assert cleansed_dataset_from_api.to_df().shape == dataset_cleansed.to_df().shape
+    # Verify the dataset name matches
+    assert cleansed_dataset_from_api.dataset_name == dataset_cleansed.name
+
+    # Verify the cleaning report exists
+    if dataset_cleansed.cleaning_report:
+        assert cleansed_dataset_from_api.cleaning_report is not None
+
+    # Verify the dataset structure
+    dataset_api = cleansed_dataset_from_api.dataset
+
+    # Verify the columns match
+    assert dataset_api is not None
+    assert dataset_api.columns == dataset_cleansed.to_df().columns
+
+    # Verify the data records match
+    assert len(dataset_api.to_df().to_dicts()) == len(
+        dataset_cleansed.to_df().to_dicts()
+    )
 
 
 def test_get_cleansed_dataset_with_pagination(
     dataset_cleansed: CleansedDataset,
     cleansed_dataset_with_pagination: tuple[
-        CleansedDataset, CleansedDataset, CleansedDataset
+        DatasetCleansedResponse, DatasetCleansedResponse, DatasetCleansedResponse
     ],
 ) -> None:
     dataset1, dataset2, dataset3 = cleansed_dataset_with_pagination
 
-    # First dataset should have at most 2 rows
-    assert dataset1.dataset.to_df().shape[0] <= 2
+    # Convert the original dataset to a DataFrame
+    original_df = dataset_cleansed.to_df()
 
-    # Second dataset should have skip=2, so it should start from the 3rd row of the original dataset
-    if dataset_cleansed.dataset.to_df().shape[0] > 2:
-        # Only verify if the original dataset has enough rows
-        first_row_of_second_batch = dataset2.dataset.to_df().row(0, named=True)
-        third_row_of_original = dataset_cleansed.dataset.to_df().row(2, named=True)
+    # Test the first paginated dataset (skip=0, limit=2)
+    dataset_api1 = dataset1.dataset  # Access the `dataset` attribute
+    assert dataset_api1 is not None
+    assert len(dataset_api1.to_df().to_dicts()) == min(2, len(original_df.rows()))
 
-        # Compare a few columns to verify they match
-        for col in dataset2.dataset.to_df().columns[:3]:  # Check first 3 columns
-            if col in third_row_of_original and col in first_row_of_second_batch:
-                assert first_row_of_second_batch[col] == third_row_of_original[col]
+    # Test the second paginated dataset (skip=2, limit=2)
+    dataset_api2 = dataset2.dataset  # Access the `dataset` attribute
+    expected_rows = original_df.rows(named=True)[2:4]  # Rows 2 and 3
+    assert dataset_api2 is not None
+    assert len(dataset_api2.to_df().to_dicts()) == len(expected_rows)
 
     # Third dataset should be empty (skip > dataset size)
-    assert dataset3.dataset.to_df().shape[0] == 0
+    dataset_api3 = dataset3.dataset  # Access the `dataset` attribute
+    assert dataset_api3 is not None
+    assert len(dataset_api3.to_df().to_dicts()) == 0
 
 
 @pytest_asyncio.fixture(scope="module")

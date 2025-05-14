@@ -67,10 +67,10 @@ from utils.schema import (
     ChatRequest,
     ChatResponse,
     ChatUpdate,
-    CleansedDataset,
     DataDictionary,
     DataDictionaryResponse,
     DataRegistryDataset,
+    DatasetCleansedResponse,
     DictionaryCellUpdate,
     FileUploadResponse,
     LoadDatabaseRequest,
@@ -586,7 +586,7 @@ async def get_cleansed_dataset(
     skip: int = 0,
     limit: int = 10000,
     analyst_db: AnalystDB = Depends(get_initialized_db),
-) -> CleansedDataset:
+) -> DatasetCleansedResponse:
     """
     Get a cleansed dataset by name from the database with pagination support.
 
@@ -596,38 +596,55 @@ async def get_cleansed_dataset(
         limit: Maximum number of records to return (for pagination)
 
     Returns:
-        The cleansed dataset with cleaning report, containing a subset of records based on skip and limit
+        A dictionary containing the cleaning report (if available) and the dataset as a list of records.
 
     Raises:
         HTTPException: If the dataset doesn't exist or cannot be retrieved
     """
     try:
-        # Calculate max_rows based on skip + limit
-        max_rows = skip + limit if skip + limit > 0 else None
+        ds_display = await analyst_db.get_dataset(name)
 
-        # Retrieve the dataset with the calculated max_rows
-        cleansed_dataset = await analyst_db.get_cleansed_dataset(
-            name, max_rows=max_rows
+        # Initialize the response structure
+        response = DatasetCleansedResponse(
+            dataset_name=name,
+            cleaning_report=None,
+            dataset=None,
         )
 
-        # Apply skip if needed (max_rows in get_cleansed_dataset only handles the limit)
-        if skip > 0 and cleansed_dataset.dataset.to_df().shape[0] > skip:
-            # Create a new dataset with skipped rows
-            skipped_df = cleansed_dataset.dataset.to_df().slice(skip, limit)
-            cleansed_dataset.dataset = AnalystDataset(name=name, data=skipped_df)
-        elif skip > 0:
-            # If skip is greater than the number of rows, return an empty dataset
-            cleansed_dataset.dataset = AnalystDataset(
-                name=name,
-                data=cleansed_dataset.dataset.to_df().slice(0, 0),
-            )
+        # Attempt to fetch the cleaning report
+        try:
+            ds_display_cleansed = await analyst_db.get_cleansed_dataset(name)
+            response.cleaning_report = ds_display_cleansed.generate_cleaning_report()
 
-        return cleansed_dataset
+        except ValueError:
+            # Cleaning report is not available
+            response.cleaning_report = None
+
+        # Convert the dataset to a DataFrame
+        df_display = ds_display.to_df()
+
+        # Apply pagination (skip and limit)
+        if skip > 0 or limit > 0:
+            df_display = df_display.slice(skip, limit)
+
+        # Create an instance of AnalystDataset
+        dataset = AnalystDataset(
+            name=name,
+            columns=df_display.columns,
+            data=df_display.to_dicts(),  # Convert rows to a list of dictionaries
+        )
+
+        # Add the dataset to the response
+        response.dataset = dataset
+
+        return response
+
     except ValueError as e:
         raise HTTPException(
-            status_code=404, detail=f"Cleansed dataset not found: {str(e)}"
+            status_code=404, detail=f"Dataset '{name}' not found: {str(e)}"
         )
     except Exception as e:
+        logger.error(f"Error retrieving cleansed dataset '{name}': {str(e)}")
         raise HTTPException(
             status_code=500, detail=f"Error retrieving cleansed dataset: {str(e)}"
         )
