@@ -3,11 +3,31 @@ import { defineConfig, UserConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
+import { VITE_DEFAULT_PORT } from "./src/constants/dev";
 
-// https://vite.dev/config/
+
+let base: string = '';
+// if NOTEBOOK_ID is set, use /notebook-sessions/${NOTEBOOK_ID}/ports/5173/ as the base
+if (process.env.NOTEBOOK_ID) {
+  const notebookId = process.env.NOTEBOOK_ID;
+  base = `/notebook-sessions/${notebookId}/ports/${VITE_DEFAULT_PORT}/`;
+}
+const proxyBase: string = base === '' ? '/' : base;
+
 export default defineConfig(({ command }) => {
   const config: UserConfig = {
-    base: "./",
+    base,
+    server: {
+      host: true,
+      allowedHosts: ["localhost", "127.0.0.1", ".datarobot.com"],
+      proxy: {
+        [`${proxyBase}api/`]: {
+          target: 'http://localhost:8080',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(new RegExp(`^${proxyBase}`), ''),
+        }
+      }
+    },
     plugins: [
       react(),
       tailwindcss(),
@@ -16,6 +36,18 @@ export default defineConfig(({ command }) => {
         // for plotly.js
         protocolImports: true,
       }),
+      {
+        name: 'strip-base',
+        apply: 'serve',
+        configureServer({ middlewares }) {
+          middlewares.use((req, res, next) => {
+            if (base !== '' && !req.url?.startsWith(base)) {
+              req.url = base.slice(0, -1) + req.url;
+            }
+            next();
+          });
+        },
+      },
     ],
     resolve: {
       alias: {
