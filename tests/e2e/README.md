@@ -5,7 +5,6 @@ This document provides instructions on how to run the end-to-end (E2E) tests for
 ## Prerequisites
 
 Ensure you have the following installed:
-
 - Docker
 - Python 3.11
 - Chrome browser and ChromeDriver
@@ -15,18 +14,17 @@ Ensure you have the following installed:
   Create a `.env` file in the `tests/e2e` directory and add the following environment variables:
 
     ```sh
-    APP_USERNAME="your_username"
-    APP_PASSWORD="your_password"
-    APP_ID="your_app_id"
-    DR_HOST="https://......."
-    APP_URL="your_app_url"  # Optional
-    RUN_VISUAL="False"  # Set to "True" to run tests with a visible browser
-    CHROME_BINARY_LOCATION="" # Optional
-    CHROMEDRIVER_BINARY_LOCATION="" # Optional
+    APP_USERNAME=your_username
+    APP_PASSWORD=your_password
+    APP_ID=your_app_id
+    DR_HOST=https://.......
+    APP_URL=your_app_url  # Optional
+    RUN_VISUAL=False  # Set to "True" to run tests with a visible browser
+    CHROME_BINARY_LOCATION=/usr/bin/chromium-browser
+    CHROMEDRIVER_BINARY_LOCATION=/usr/bin/chromedriver
     ```
 
 3. **Build the Docker image:**
-
   ```sh
   cd tests/e2e
   docker build -t e2e-tests .
@@ -35,13 +33,11 @@ Ensure you have the following installed:
 ## Running the Tests
 
 1. **Run the tests using Docker:**
-
   ```sh
-  docker run --rm --env-file ./e2e/.env e2e-tests
+  docker run -it --rm --env-file ./tests/e2e/.env -v "$(pwd)/tests:/tests" e2e-tests python3 -m pytest -vvvs tests/e2e
   ```
 
 2. **Run the tests locally:**
-
   ```sh
   pytest tests/e2e
   ```
