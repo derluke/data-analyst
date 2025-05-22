@@ -28,7 +28,7 @@ from utils.credentials import SnowflakeCredentials
 from .settings_main import PROJECT_ROOT
 
 FRONTEND_PATHS = {
-    "react": Path("frontend_react") / "deploy",
+    "react": Path("app_backend"),
     "streamlit": Path("frontend"),
 }
 

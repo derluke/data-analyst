@@ -818,9 +818,7 @@ def load_app_infra() -> AppInfra:
             return app_infra
         except (FileNotFoundError, ValidationError):
             try:
-                with open(
-                    "frontend_react/deploy/app_infra.json", "r"
-                ) as infra_selection:
+                with open("app_backend/app_infra.json", "r") as infra_selection:
                     app_infra = AppInfra(**json.load(infra_selection))
                 return app_infra
             except (FileNotFoundError, ValidationError) as e:

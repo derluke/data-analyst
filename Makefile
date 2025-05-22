@@ -24,3 +24,9 @@ lint: ## Lint the code
 	mypy --pretty .
 
 check-all: check-licenses lint ## Run all checks
+
+run-local-dev-backend:
+	PYTHONPATH=app_backend IS_PROD=False python -m uvicorn app.main:app --port 8080 --proxy-headers --reload --log-level debug
+
+run-local-static-backend:
+	PYTHONPATH=app_backend python -m uvicorn app.main:app --port 8080 --proxy-headers --reload --log-level debug
