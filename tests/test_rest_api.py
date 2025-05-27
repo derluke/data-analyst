@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import io
 from typing import Any, Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 from unittest.mock import MagicMock as MagicMockType
@@ -19,7 +19,9 @@ from unittest.mock import MagicMock as MagicMockType
 import pytest
 from fastapi import Request, Response
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 
+import utils.rest_api
 from utils.analyst_db import AnalystDB  # noqa: E402
 from utils.rest_api import (
     SessionState,
@@ -339,3 +341,31 @@ async def test_delete_chat_message(
     # Should return an empty list when an exception occurs
     assert isinstance(result, list)
     assert len(result) == 0
+
+
+@pytest.mark.asyncio
+async def test_save_chat_history_to_xlsx(
+    example_chat_file_content: list[dict[str, Any]],
+    test_client: TestClient,
+) -> None:
+    user_name = "data_analyst_app_user@datarobot.com"
+    # Make a request with Authorization header
+    chat_history = [
+        AnalystChatMessage.model_validate(chat) for chat in example_chat_file_content
+    ]
+    mock_analyst_db = AsyncMock()
+    mock_analyst_db.get_chat_messages = AsyncMock(return_value=chat_history)
+    app.dependency_overrides[utils.rest_api.get_initialized_db] = (
+        lambda: mock_analyst_db
+    )
+    response = test_client.get(
+        "/api/v1/chats/chat_id_123/messages/download/",
+        headers={
+            "Authorization": "Bearer test_token_123",
+            "x-user-email": user_name,
+        },
+    )
+    assert response.status_code == 200, response.json()
+    wb = load_workbook(filename=io.BytesIO(response.content), read_only=True)
+    # Just verify we're getting data back
+    assert wb

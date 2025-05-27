@@ -913,7 +913,7 @@ class ChatHandler(BaseDuckDBHandler):
             )
 
             if not exists:
-                logger.warning(f"Chat with ID {chat_id} does not exist")
+                logger.error(f"Chat with ID {chat_id} does not exist")
                 return ""
 
             # Insert the new message

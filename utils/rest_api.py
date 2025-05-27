@@ -19,6 +19,7 @@ import io
 import json
 import os
 import sys
+import tempfile
 import uuid
 from contextlib import contextmanager
 from copy import deepcopy
@@ -26,7 +27,9 @@ from pathlib import Path
 from typing import Any, Generator, List, Union, cast
 
 import datarobot as dr
+import pandas as pd
 import polars as pl
+import polars.dataframe.frame
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -40,10 +43,14 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import StreamingResponse
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
 from openai.types.chat.chat_completion_user_message_param import (
     ChatCompletionUserMessageParam,
 )
+from openpyxl import Workbook
+from openpyxl.drawing.image import Image as XLImage
+from openpyxl.utils.dataframe import dataframe_to_rows
 
 from utils.analyst_db import AnalystDB, DatasetMetadata, DataSourceType
 from utils.database_helpers import get_external_database
@@ -73,7 +80,10 @@ from utils.schema import (
     DatasetCleansedResponse,
     DictionaryCellUpdate,
     FileUploadResponse,
+    GetBusinessAnalysisResult,
     LoadDatabaseRequest,
+    RunAnalysisResult,
+    RunChartsResult,
 )
 
 logger = get_logger()
@@ -95,6 +105,8 @@ async def get_initialized_db(request: Request) -> AnalystDB:
         not hasattr(request.state.session, "analyst_db")
         or request.state.session.analyst_db is None
     ):
+        if not request.headers.get("x-user-email"):
+            logger.error("x-user-email is required in order to initialize the database")
         raise HTTPException(
             status_code=400,
             detail="Database not initialized.",
@@ -976,6 +988,121 @@ async def create_chat_message(
     }
 
     return chat
+
+
+@router.get("/chats/{chat_id}/messages/download/")
+async def save_chat_messages(
+    request: Request,
+    chat_id: str,
+    analyst_db: AnalystDB = Depends(get_initialized_db),
+) -> StreamingResponse:
+    """
+    This API controller saves a chat ID to an excel spreadsheet which
+    saves key information, then is streamed back to the user.
+    """
+    chat_messages: List[AnalystChatMessage] = await analyst_db.get_chat_messages(
+        chat_id=chat_id
+    )
+    if not chat_messages:
+        raise HTTPException(detail="No chat messages found.", status_code=404)
+    if any(msg.in_progress for msg in chat_messages):
+        raise HTTPException(
+            detail="Cannot download while a chat is in progress.", status_code=425
+        )
+    analysis_workbook = Workbook()
+    data_sheets = 0
+    charts_sheets = 0
+    sheet = analysis_workbook.active
+    sheet["A1"] = "Analysis Report"
+    for chat_message in chat_messages:
+        if chat_message.role == "user":
+            # We ignore the user prompt, and the assistant comes up with an "enhanced prompt"
+            pass
+        elif chat_message.role == "assistant":
+            sheet["A3"] = "Question"
+            sheet["A4"] = chat_message.content
+            business_components: list[GetBusinessAnalysisResult] = [
+                component
+                for component in chat_message.components
+                if isinstance(component, GetBusinessAnalysisResult)
+            ]
+            for index, business_component in enumerate(business_components):
+                cell_index = index + 1  # Excel uses 1 indexing
+                sheet.cell(6, cell_index).value = "Bottom Line"
+                sheet.cell(7, cell_index).value = business_component.bottom_line
+
+                sheet.cell(9, cell_index).value = "Additional Insights"
+                sheet.cell(
+                    10, cell_index
+                ).value = business_component.additional_insights
+
+                sheet.cell(12, cell_index).value = "Follow-up Questions:"
+                for q_index, followup_question in enumerate(
+                    business_component.follow_up_questions
+                ):
+                    sheet.cell(13 + q_index, cell_index).value = followup_question
+            # The "Data" sheet
+            run_analysis_components: List[RunAnalysisResult] = [
+                component
+                for component in chat_message.components
+                if isinstance(component, RunAnalysisResult)
+            ]
+            data_sheet = analysis_workbook.create_sheet(
+                f"Data {data_sheets}" if data_sheets else "Data"
+            )
+            data_sheets += 1
+            for run_analysis_component in run_analysis_components:
+                if not run_analysis_component.dataset:
+                    continue
+                dataset: polars.dataframe.frame.DataFrame = (
+                    run_analysis_component.dataset.data.df
+                )
+                for r in dataframe_to_rows(
+                    dataset.to_pandas(), index=False, header=True
+                ):
+                    data_sheet.append(r)
+            # The Tables
+            run_charts_components: List[RunChartsResult] = [
+                component
+                for component in chat_message.components
+                if isinstance(component, RunChartsResult)
+            ]
+            for run_chart_component in run_charts_components:
+                for f, js in [
+                    (run_chart_component.fig1, run_chart_component.fig1_json),
+                    (run_chart_component.fig2, run_chart_component.fig2_json),
+                ]:
+                    if not js or not f:
+                        continue
+                    charts_sheets += 1
+                    charts_sheet = analysis_workbook.create_sheet(
+                        f"Chart {charts_sheets}"
+                    )
+                    # Save the chart data by removing the some keys from this field
+                    # We don't know what exactly is going to be graphed, so this is an easy way of covering
+                    # ourselves
+                    fig_json = json.loads(js).get("data", [{}])[0]
+                    [fig_json.pop(k, None) for k in ["marker", "name", "type"]]
+                    df = pd.DataFrame(fig_json)
+                    for r in dataframe_to_rows(df, index=False, header=True):
+                        charts_sheet.append(r)
+                    with tempfile.NamedTemporaryFile(
+                        suffix=".png", delete=False
+                    ) as tmpfile:
+                        f.write_image(tmpfile.name)
+                        img = XLImage(tmpfile.name)
+                        charts_sheet.add_image(img, "F3")
+    output = io.BytesIO()
+    analysis_workbook.save(output)
+    output.seek(0)
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename=chat_{chat_id}_messages.xlsx"
+        },
+    )
 
 
 async def run_complete_analysis_task(

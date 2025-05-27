@@ -15,6 +15,7 @@
 # mypy: ignore-errors
 
 import contextlib
+import json
 import logging
 import os
 import subprocess
@@ -248,3 +249,11 @@ def setup_pulumi_stack(
         sys.path.append(".")
         logger.info(subprocess.check_output(["pulumi", "stack", "output"]))
         yield
+
+
+@pytest.fixture
+def example_chat_file_content() -> dict:
+    with open(
+        os.path.join(os.path.dirname(__file__), "models", "example_chat.json"), "r"
+    ) as f:
+        return json.load(f)

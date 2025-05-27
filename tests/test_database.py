@@ -29,10 +29,11 @@ from utils.schema import (
 
 async def get_analyst_db(
     db_version: int | None = ANALYST_DATABASE_VERSION,
+    user_id: str = "test_user_123",
 ) -> AnalystDB:
     """Get a test database instance."""
     analyst_db = await AnalystDB.create(
-        user_id="test_user_123",
+        user_id=user_id,
         db_path=Path("."),
         dataset_db_name="datasets",
         chat_db_name="chats",
