@@ -31,8 +31,11 @@ export const DatasetCardDescriptionPanel: React.FC<
 > = ({ dictionary, isProcessing = true, viewMode = "description" }) => {
   const { mutate: deleteDictionary } = useDeleteGeneratedDictionary();
   const { mutate: updateCell } = useUpdateDictionaryCell();
-  const { mutate: downloadDictionary, isPending: isDownloading } = useDownloadDictionary();
-  const { data: metadata, isLoading: isLoadingMetadata } = useDatasetMetadata(dictionary.name);
+  const { mutate: downloadDictionary, isPending: isDownloading } =
+    useDownloadDictionary();
+  const { data: metadata, isLoading: isLoadingMetadata } = useDatasetMetadata(
+    dictionary.name
+  );
 
   // Format file size from bytes to KB/MB/GB as appropriate
   const formatFileSize = (bytes: number): string => {
@@ -45,7 +48,9 @@ export const DatasetCardDescriptionPanel: React.FC<
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
-  const size = metadata?.file_size ? formatFileSize(metadata.file_size) : "0 MB"
+  const size = metadata?.file_size
+    ? formatFileSize(metadata.file_size)
+    : "0 MB";
 
   return (
     <div
@@ -60,18 +65,14 @@ export const DatasetCardDescriptionPanel: React.FC<
         <div className="flex justify-between pt-1">
           <div className="flex gap-2 my-1">
             <Badge variant="secondary" className="leading-tight text-sm">
-              {isLoadingMetadata ? (
-                "Loading..."
-              ) : (
-                `${metadata?.columns?.length || 0} features`
-              )}
+              {isLoadingMetadata
+                ? "Loading..."
+                : `${metadata?.columns?.length || 0} features`}
             </Badge>
             <Badge variant="secondary" className="leading-tight text-sm">
-              {isLoadingMetadata ? (
-                "Loading..."
-              ) : (
-                `${metadata?.row_count?.toLocaleString() || 0} rows`
-              )}
+              {isLoadingMetadata
+                ? "Loading..."
+                : `${metadata?.row_count?.toLocaleString() || 0} rows`}
             </Badge>
             <Badge variant="secondary" className="leading-tight text-sm">
               {isLoadingMetadata ? "Loading..." : size}
@@ -89,7 +90,11 @@ export const DatasetCardDescriptionPanel: React.FC<
                 Processing...
               </Badge>
             ) : (
-              <Badge variant="success" className="leading-tight text-sm">
+              <Badge
+                variant="success"
+                testId="data-processed-badge"
+                className="leading-tight text-sm"
+              >
                 <FontAwesomeIcon className="mr-2 w-4 h-4 " icon={faCheck} />
                 Processed
               </Badge>
@@ -105,7 +110,11 @@ export const DatasetCardDescriptionPanel: React.FC<
               disabled={isProcessing || isDownloading}
             >
               {isDownloading ? (
-                <img src={loader} alt="downloading" className="w-4 h-4 animate-spin" />
+                <img
+                  src={loader}
+                  alt="downloading"
+                  className="w-4 h-4 animate-spin"
+                />
               ) : (
                 <FontAwesomeIcon icon={faDownload} />
               )}

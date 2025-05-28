@@ -55,6 +55,7 @@ interface MultiSelectProps
   modalPopover?: boolean;
   asChild?: boolean;
   className?: string;
+  testId?: string;
 }
 
 export const MultiSelect = React.forwardRef<
@@ -72,6 +73,7 @@ export const MultiSelect = React.forwardRef<
       maxCount = 3,
       modalPopover = false,
       className,
+      testId,
       ...props
     },
     ref
@@ -131,6 +133,7 @@ export const MultiSelect = React.forwardRef<
               "flex w-full p-1 rounded-md border min-h-10 h-auto items-center justify-between bg-inherit hover:bg-inherit [&_svg]:pointer-events-auto",
               className
             )}
+            testId={testId}
           >
             {selectedValues.length > 0 ? (
               <div className="flex justify-between items-center w-full">
@@ -222,6 +225,7 @@ export const MultiSelect = React.forwardRef<
                   const isSelected = selectedValues.includes(option.value);
                   return (
                     <CommandItem
+                      data-testid={`multi-select-option-${option.value}`}
                       key={option.value}
                       onSelect={() => toggleOption(option.value)}
                       className="cursor-pointer"
@@ -265,6 +269,7 @@ export const MultiSelect = React.forwardRef<
                   </>
                 )}
                 <CommandItem
+                  data-testid="multi-select-close"
                   onSelect={() => setIsPopoverOpen(false)}
                   className="flex-1 justify-center cursor-pointer max-w-full"
                 >

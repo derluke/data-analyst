@@ -210,7 +210,11 @@ export const Chats: React.FC = () => {
             <DataSourceToggle multipleMetadata={multipleMetadata} />
           )}
         </div>
-        <Button variant="ghost" onClick={handleDeleteChat}>
+        <Button
+          variant="ghost"
+          onClick={handleDeleteChat}
+          testId="delete-all-chats-button"
+        >
           <FontAwesomeIcon icon={faTrash} />
           <span className="ml-2">Delete chat</span>
         </Button>

@@ -43,6 +43,7 @@ export const WelcomeModal = () => {
         <Separator className="border-t mt-6" />
         <DialogFooter>
           <Button
+            testId="welcome-modal-hide-button"
             onClick={() => {
               setOpen(false);
               hideWelcomeModal();

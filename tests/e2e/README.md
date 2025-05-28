@@ -22,6 +22,7 @@ Ensure you have the following installed:
     RUN_VISUAL=False  # Set to "True" to run tests with a visible browser
     CHROME_BINARY_LOCATION=/usr/bin/chromium-browser
     CHROMEDRIVER_BINARY_LOCATION=/usr/bin/chromedriver
+    FRONTEND_TYPE=react # Set the app type streamlit or react
     ```
 
 3. **Build the Docker image:**

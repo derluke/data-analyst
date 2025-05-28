@@ -8,18 +8,24 @@ interface ClearDatasetsButtonProps {
   onClear?: () => void;
 }
 
-export const ClearDatasetsButton: React.FC<ClearDatasetsButtonProps> = ({ onClear }) => {
+export const ClearDatasetsButton: React.FC<ClearDatasetsButtonProps> = ({
+  onClear,
+}) => {
   const { mutate } = useDeleteAllDatasets();
-  
+
   const handleClick = () => {
     mutate();
     if (onClear) {
       onClear();
     }
   };
-  
+
   return (
-    <Button variant="ghost" onClick={handleClick}>
+    <Button
+      testId="clear-datasets-button"
+      variant="ghost"
+      onClick={handleClick}
+    >
       <FontAwesomeIcon icon={faTrash} />
       Clear all datasets
     </Button>

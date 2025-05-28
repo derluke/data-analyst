@@ -7,25 +7,31 @@ import loader from "@/assets/loader.svg";
 interface LoadingIndicatorProps {
   isLoading?: boolean;
   hasError?: boolean;
+  successTestId?: string;
 }
 
-export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({ 
+export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
   isLoading = true,
-  hasError = false
+  hasError = false,
+  successTestId = "data-loading-success",
 }) => {
   if (hasError) {
     return (
-      <FontAwesomeIcon 
-        className="mr-2 w-4 h-4 text-destructive" 
-        icon={faExclamationTriangle} 
-        title="Error occurred during processing" 
+      <FontAwesomeIcon
+        className="mr-2 w-4 h-4 text-destructive"
+        icon={faExclamationTriangle}
+        title="Error occurred during processing"
       />
     );
   }
-  
+
   return isLoading ? (
     <img src={loader} alt="processing" className="mr-2 w-4 h-4 animate-spin" />
   ) : (
-    <FontAwesomeIcon className="mr-2 w-4 h-4 text-success" icon={faCheck} />
+    <FontAwesomeIcon
+      className="mr-2 w-4 h-4 text-success"
+      data-testid={successTestId}
+      icon={faCheck}
+    />
   );
 };

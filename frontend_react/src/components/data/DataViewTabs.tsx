@@ -16,17 +16,20 @@ export const DataViewTabs: React.FC<DataViewTabsProps> = ({
   onChange,
 }) => {
   return (
-    <Tabs 
-      defaultValue={defaultValue} 
+    <Tabs
+      defaultValue={defaultValue}
       onValueChange={onChange}
       className="w-fit py-4"
     >
       <TabsList className="grid w-full grid-cols-2">
-        <TabsTrigger value={DATA_TABS.DESCRIPTION}>
+        <TabsTrigger
+          value={DATA_TABS.DESCRIPTION}
+          data-testid="description-tab"
+        >
           <FontAwesomeIcon className="mr-2" icon={faQuoteLeft} />
           Description
         </TabsTrigger>
-        <TabsTrigger value={DATA_TABS.RAW}>
+        <TabsTrigger value={DATA_TABS.RAW} data-testid="raw-tab">
           <FontAwesomeIcon className="mr-2" icon={faTable} />
           Raw rows
         </TabsTrigger>

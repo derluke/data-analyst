@@ -32,7 +32,7 @@ export const Sidebar = () => {
 const DatasetList = () => {
   const { data } = useGeneratedDictionaries();
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
-  
+
   return (
     <div className="relative flex flex-col h-full min-h-[300px]">
       <div className="flex justify-between items-center">
@@ -169,6 +169,7 @@ const SidebarHeader = () => {
       name: "Data",
       icon: <FontAwesomeIcon icon={faTable} />,
       active: activeKey === ROUTES.DATA,
+      testId: "data-menu-option",
       onClick: () => {
         navigate(ROUTES.DATA);
       },
@@ -178,6 +179,7 @@ const SidebarHeader = () => {
       name: "Chats",
       icon: <FontAwesomeIcon icon={faComments} />,
       active: activeKey === ROUTES.CHATS,
+      testId: "chats-menu-option",
       onClick: () => {
         navigate(ROUTES.CHATS);
       },

@@ -7,6 +7,7 @@ export type SidebarMenuOptionType = {
   active?: boolean;
   disabled?: boolean;
   onClick: () => void;
+  testId?: string;
 };
 
 type Props = {
@@ -25,6 +26,7 @@ export const SidebarMenu = ({ options }: Props) => {
           active={option.active}
           disabled={option.disabled}
           onClick={option.onClick}
+          testId={option.testId}
         />
       ))}
     </div>
@@ -37,9 +39,18 @@ const SidebarMenuOption = ({
   active,
   disabled,
   onClick,
+  testId,
 }: SidebarMenuOptionType) => {
   return (
     <div
+      data-testid={testId}
+      role="link"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || (e.key === " " && !disabled)) {
+          onClick();
+        }
+      }}
       className={cn(
         "flex gap-2 px-3 py-2 rounded border-l-2 border-transparent overflow-hidden transition-colors cursor-pointer hover:bg-card",
         {

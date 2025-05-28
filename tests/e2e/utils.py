@@ -129,6 +129,25 @@ def wait_for_element_to_be_visible(
     )
 
 
+def wait_for_element_to_disappear(
+    browser: webdriver.Chrome, by: str, value: str, timeout: int = LOOKUP_TIMEOUT
+) -> bool:
+    """
+    Wait until an element is no longer visible or present in the DOM.
+
+    :param browser: WebDriver instance
+    :param by: Locator type (e.g., By.ID, By.XPATH)
+    :param value: Locator value
+    :param timeout: Maximum time to wait for the element to disappear
+    :return: True if the element disappears, raises TimeoutException otherwise
+    """
+    return bool(
+        WebDriverWait(browser, timeout).until(
+            EC.invisibility_of_element_located((by, value))
+        )
+    )
+
+
 def str_to_bool(s: str) -> bool:
     if s.lower() in ["true", "yes", "1"]:
         return True

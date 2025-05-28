@@ -74,7 +74,7 @@ export const AddDataModal = () => {
       open={isOpen}
     >
       <DialogTrigger asChild>
-        <Button variant="outline">
+        <Button variant="outline" testId="add-data-button">
           <FontAwesomeIcon icon={faPlus} /> Add Data
         </Button>
       </DialogTrigger>
@@ -144,6 +144,7 @@ export const AddDataModal = () => {
               defaultValue={selectedTables}
               placeholder="Select one or more items."
               variant="inverted"
+              testId="database-table-select"
               modalPopover
               animation={2}
               maxCount={3}
@@ -159,6 +160,7 @@ export const AddDataModal = () => {
             type="submit"
             variant="secondary"
             disabled={isPending}
+            testId="add-data-modal-save-button"
             onClick={() => {
               setError(null);
               setIsPending(true);

@@ -3,7 +3,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LoadingIndicator } from "./LoadingIndicator";
 import { RESPONSE_TABS } from "./constants";
 
-
 export interface TabState {
   isLoading?: boolean;
   hasError: boolean;
@@ -27,16 +26,16 @@ export const ResponseTabs: React.FC<ResponseTabsProps> = ({
   const states = tabStates || {
     summary: {
       isLoading: false,
-      hasError: false
+      hasError: false,
     },
     insights: {
       isLoading: false,
-      hasError: false
+      hasError: false,
     },
     code: {
       isLoading: false,
-      hasError: false
-    }
+      hasError: false,
+    },
   };
 
   return (
@@ -48,23 +47,26 @@ export const ResponseTabs: React.FC<ResponseTabsProps> = ({
     >
       <TabsList className="grid w-full grid-cols-3">
         <TabsTrigger value={RESPONSE_TABS.SUMMARY}>
-          <LoadingIndicator 
-            isLoading={states.summary.isLoading} 
-            hasError={states.summary.hasError} 
+          <LoadingIndicator
+            isLoading={states.summary.isLoading}
+            hasError={states.summary.hasError}
+            successTestId="summary-loading-success"
           />
           Summary
         </TabsTrigger>
         <TabsTrigger value={RESPONSE_TABS.INSIGHTS}>
-          <LoadingIndicator 
-            isLoading={states.insights.isLoading} 
-            hasError={states.insights.hasError} 
+          <LoadingIndicator
+            isLoading={states.insights.isLoading}
+            hasError={states.insights.hasError}
+            successTestId="insights-loading-success"
           />
           More insights
         </TabsTrigger>
         <TabsTrigger value={RESPONSE_TABS.CODE}>
-          <LoadingIndicator 
-            isLoading={states.code.isLoading} 
-            hasError={states.code.hasError} 
+          <LoadingIndicator
+            isLoading={states.code.isLoading}
+            hasError={states.code.hasError}
+            successTestId="code-loading-success"
           />
           Behind the scenes
         </TabsTrigger>

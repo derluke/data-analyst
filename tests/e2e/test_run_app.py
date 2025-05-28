@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import time
 
 import pytest
@@ -25,6 +26,11 @@ from tests.e2e.utils import (
     find_element,
     wait_for_element_to_be_clickable,
     wait_for_element_to_be_visible,
+)
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("FRONTEND_TYPE") == "react",
+    reason="Skipping because FRONTEND_TYPE is 'react'",
 )
 
 

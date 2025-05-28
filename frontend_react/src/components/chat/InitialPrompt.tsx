@@ -72,10 +72,12 @@ export const InitialPrompt = ({
             iconProps={{
               icon: isDisabled ? null : faPaperPlane,
               behavior: "append",
+              "data-testid": "send-message-button",
               onClick: sendMessage,
             }}
             disabled={isDisabled}
             aria-disabled={isDisabled}
+            data-testid="initial-prompt-input"
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
