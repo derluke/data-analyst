@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [0.1.14] - 2025-05-30
+
 ### Fixed
 
 - Data cleansing now automatically removes leading and trailing whitespace from string columns
@@ -15,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- React-based Frontend as the default for the Application
 - Improved error handling when prompting (react)
 - Change react frontend `deploy` app to use AF fastapi template
 - Change react frontend to use AF react template, removes `frontend_react` in favor of `app_frontend`

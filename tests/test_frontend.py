@@ -19,6 +19,11 @@ from typing import Any, cast
 import pytest
 from streamlit.testing.v1 import AppTest
 
+pytestmark = pytest.mark.skipif(
+    os.environ.get("FRONTEND_TYPE") == "react",
+    reason="Skipping because FRONTEND_TYPE is 'react'",
+)
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 

@@ -34,7 +34,7 @@ FRONTEND_PATHS = {
 
 
 def get_frontend_path() -> Path:
-    frontend_type = os.environ.get("FRONTEND_TYPE", "streamlit")
+    frontend_type = os.environ.get("FRONTEND_TYPE", "react")
     return FRONTEND_PATHS[frontend_type]
 
 
