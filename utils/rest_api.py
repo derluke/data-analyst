@@ -300,11 +300,14 @@ async def _initialize_session(
 ]:
     """Initialize the session state and return the session ID and user ID."""
     # Create a new session state with default values
+    is_local_dev = os.environ.get("DEV_MODE", False)
     session_state = SessionState()
     empty_session_state: dict[str, Any] = {
         "datarobot_account_info": None,
         "datarobot_endpoint": os.environ.get("DATAROBOT_ENDPOINT"),
-        "datarobot_api_token": None,
+        "datarobot_api_token": os.environ.get("DATAROBOT_API_TOKEN")
+        if is_local_dev
+        else None,
         "datarobot_api_skoped_token": None,
         "analyst_db": None,
     }

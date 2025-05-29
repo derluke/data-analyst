@@ -26,7 +26,7 @@ lint: ## Lint the code
 check-all: check-licenses lint ## Run all checks
 
 run-local-dev-backend:
-	PYTHONPATH=app_backend IS_PROD=False python -m uvicorn app.main:app --port 8080 --proxy-headers --reload --log-level debug
+	PYTHONPATH=app_backend SERVE_STATIC_FRONTEND=False DEV_MODE=True ./app_backend/start-app.sh
 
 run-local-static-backend:
-	PYTHONPATH=app_backend python -m uvicorn app.main:app --port 8080 --proxy-headers --reload --log-level debug
+	PYTHONPATH=app_backend DEV_MODE=True ./app_backend/start-app.sh

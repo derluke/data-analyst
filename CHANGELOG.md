@@ -12,11 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Data cleansing now automatically removes leading and trailing whitespace from string columns
 - Fixed chat endpoint when DATAROBOT_ENDPOINT has a trailing slash
 - Fixed the raw data preview for SAP (react)
-- Change react frontend `deploy` app to use AF fastapi template
 
 ### Changed
 
 - Improved error handling when prompting (react)
+- Change react frontend `deploy` app to use AF fastapi template
+- Change react frontend to use AF react template, removes `frontend_react` in favor of `app_frontend`
 
 ## [0.1.13] - 2025-05-06
 
