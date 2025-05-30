@@ -1,0 +1,16 @@
+---
+pipeline:
+  name: trivyScan
+  identifier: trivyScan
+  projectIdentifier: dataanalyst
+  orgIdentifier: No_Code_Apps
+  tags: {}
+  template:
+    templateRef: org.trivySecurityScan
+    versionLabel: v0.1.0
+    templateInputs:
+      properties:
+        ci:
+          codebase:
+            repoName: <+input>
+            build: <+input>

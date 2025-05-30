@@ -42,7 +42,7 @@ from utils.api import (
     AnalysisGenerationError,
     run_complete_analysis,
 )
-from utils.database_helpers import app_infra
+from utils.database_helpers import load_app_infra
 from utils.logging_helper import get_logger
 from utils.schema import (
     AnalysisError,
@@ -57,6 +57,7 @@ from utils.schema import (
 
 warnings.filterwarnings("ignore")
 logger = get_logger("DataAnalystFrontend")
+app_infra = load_app_infra()
 
 # Custom CSS
 apply_custom_css()
@@ -69,6 +70,33 @@ def clear_chat() -> None:
         f"New Chat {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
     )
     st.session_state.current_chat_id = None
+
+
+async def delete_message_pair(user_message_id: str) -> None:
+    analyst_db = st.session_state.analyst_db
+    if not st.session_state.current_chat_id:
+        return
+
+    user_message_index = None
+    for i, message in enumerate(st.session_state.chat_messages):
+        if message.id == user_message_id:
+            user_message_index = i
+            break
+    if user_message_index is None:
+        return
+
+    await analyst_db.delete_chat_message(user_message_id)
+
+    if (
+        user_message_index + 1 < len(st.session_state.chat_messages)
+        and st.session_state.chat_messages[user_message_index + 1].role == "assistant"
+    ):
+        assistant_message = st.session_state.chat_messages[user_message_index + 1]
+        await analyst_db.delete_chat_message(assistant_message.id)
+
+    st.session_state.chat_messages = await analyst_db.get_chat_messages(
+        chat_id=st.session_state.current_chat_id
+    )
 
 
 @dataclass
@@ -100,7 +128,7 @@ class UnifiedRenderer:
             raise ValueError("Containers not initialized")
         return self._containers
 
-    def render_message(
+    async def render_message(
         self,
         message: AnalystChatMessage,
         within_chat_context: bool = False,
@@ -115,16 +143,28 @@ class UnifiedRenderer:
                 message.role,
                 avatar="bot.jpg" if message.role == "assistant" else "you.jpg",
             ):
-                self._render_message_content(message)
+                await self._render_message_content(message)
         else:
-            self._render_message_content(message)
+            await self._render_message_content(message)
 
-    def _render_message_content(self, message: AnalystChatMessage) -> None:
+    async def _render_message_content(self, message: AnalystChatMessage) -> None:
         """Internal method to render message content and components"""
         # Render main content
         if message.role == "user":
-            # For user messages, just render the content
-            st.markdown(message.content)
+            message_col, delete_btn_col = st.columns(
+                [0.95, 0.05], vertical_alignment="center"
+            )
+            with message_col:
+                st.markdown(message.content)
+
+            with delete_btn_col:
+                if st.button(
+                    "🗑️", key=f"delete_msg_{message.id}", use_container_width=True
+                ):
+                    await delete_message_pair(
+                        user_message_id=message.id,
+                    )
+                    st.rerun()
         else:
             # For assistant messages, only render the main content if there's no EnhancedQuestionGeneration
             has_enhanced = any(
@@ -252,13 +292,6 @@ class UnifiedRenderer:
                 st.code(last_exception.code)
 
 
-# Usage for historical messages
-def render_conversation_history(messages: list[AnalystChatMessage]) -> None:
-    renderer = UnifiedRenderer(is_live=False)
-    for message in messages:
-        renderer.render_message(message)
-
-
 async def run_complete_analysis_st(
     chat_request: ChatRequest, error_context: dict[str, Any]
 ) -> None:
@@ -290,6 +323,7 @@ async def run_complete_analysis_st(
                 datasets_names=selected_datasets,
                 analyst_db=st.session_state.analyst_db,
                 chat_id=st.session_state.current_chat_id,
+                message_id=st.session_state.chat_messages[-1].id,
                 enable_chart_generation=st.session_state.enable_chart_generation,
                 enable_business_insights=st.session_state.enable_business_insights,
             )
@@ -303,7 +337,7 @@ async def run_complete_analysis_st(
                     EnhancedQuestionGeneration(enhanced_user_message=enhanced_message)
                 ],
             )
-            renderer.render_message(assistant_message, within_chat_context=True)
+            await renderer.render_message(assistant_message, within_chat_context=True)
 
             with st.spinner("Generating insights..."):
                 async for message in run_analysis_iterator:
@@ -312,7 +346,9 @@ async def run_complete_analysis_st(
                         break
                     else:
                         assistant_message.components.append(message)
-                    renderer.render_message(assistant_message, within_chat_context=True)
+                    await renderer.render_message(
+                        assistant_message, within_chat_context=True
+                    )
 
             st.session_state.chat_messages.append(assistant_message)
         except Exception as e:
@@ -331,12 +367,20 @@ if "current_chat_id" not in st.session_state:
 if "chat_messages" not in st.session_state:
     st.session_state.chat_messages = []
 
+if "retries" not in st.session_state:
+    st.session_state.retries = 0
+
 
 async def main() -> None:
     await state_init()
     # Main page content (Chat Interface)
     display_page_logo()
     if "analyst_db" not in st.session_state:
+        st.session_state.retries += 1
+        if st.session_state.retries >= 5:
+            st.warning("Could not identify user, please provide your API token")
+            return
+        st.error("Failed to initialize the database connection.")
         time.sleep(1)
         st.rerun()
 
@@ -352,7 +396,7 @@ async def main() -> None:
     else:
         all_datasets = await analyst_db.list_analyst_datasets(
             data_source=DataSourceType.FILE
-        ) + await analyst_db.list_analyst_datasets(data_source=DataSourceType.CATALOG)
+        ) + await analyst_db.list_analyst_datasets(data_source=DataSourceType.REGISTRY)
 
     st.session_state.datasets_names = all_datasets
     if (
@@ -501,6 +545,9 @@ async def main() -> None:
                         ):
                             with status_container:
                                 await analyst_db.delete_chat(chat_id=chat_id)
+                                if chat_id == st.session_state.current_chat_id:
+                                    st.session_state.current_chat_id = None
+                                    st.session_state.chat_messages = []
                                 st.rerun()
 
         # Current chat info at the bottom
@@ -533,7 +580,7 @@ async def main() -> None:
                     followup=st.container(),
                 )
                 renderer.set_containers(containers)
-                renderer.render_message(message, within_chat_context=True)
+                await renderer.render_message(message, within_chat_context=True)
         # Handle new chat input
         if question := st.chat_input(
             "Ask a question about your data",
@@ -547,10 +594,8 @@ async def main() -> None:
                     chat_name=st.session_state.current_chat_name
                 )
 
-            await analyst_db.update_chat(
-                chat_id=st.session_state.current_chat_id,
-                chat_message=user_message,
-                mode="append",
+            await analyst_db.add_chat_message(
+                chat_id=st.session_state.current_chat_id, message=user_message
             )
             st.session_state.chat_messages.append(user_message)
 
@@ -579,8 +624,9 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    datarobot_connect = DataRobotTokenManager()
-    st.session_state.datarobot_connect = datarobot_connect
+    if "datarobot_connect" not in st.session_state:
+        datarobot_connect = DataRobotTokenManager()
+        st.session_state.datarobot_connect = datarobot_connect
 
     asyncio.run(main())
 else:

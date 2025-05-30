@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 from __future__ import annotations
 
 import ast
@@ -24,10 +23,11 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
-from types import ModuleType
+from types import ModuleType, TracebackType
 from typing import (
     Any,
     AsyncGenerator,
+    Type,
     TypeVar,
     cast,
 )
@@ -42,6 +42,7 @@ import psutil
 import scipy
 import sklearn
 import statsmodels as sm
+from datarobot.client import RESTClientObject
 from joblib import Memory
 from openai import AsyncOpenAI
 from openai.types.chat.chat_completion_message_param import ChatCompletionMessageParam
@@ -67,11 +68,10 @@ from utils.data_cleansing_helpers import (
     add_summary_statistics,
     process_column,
 )
-from utils.database_helpers import Database
+from utils.database_helpers import get_external_database
 from utils.logging_helper import get_logger, log_api_call
 from utils.resources import LLMDeployment
 from utils.schema import (
-    AiCatalogDataset,
     AnalysisError,
     AnalystChatMessage,
     AnalystDataset,
@@ -84,7 +84,9 @@ from utils.schema import (
     DatabaseAnalysisCodeGeneration,
     DataDictionary,
     DataDictionaryColumn,
+    DataRegistryDataset,
     DictionaryGeneration,
+    DownloadedRegistryDataset,
     EnhancedQuestionGeneration,
     GetBusinessAnalysisMetadata,
     GetBusinessAnalysisRequest,
@@ -106,6 +108,8 @@ logger = get_logger()
 logging.getLogger("openai").setLevel(logging.WARNING)
 logging.getLogger("openai.http_client").setLevel(logging.WARNING)
 
+VALUE_ERROR_MESSAGE = "Input data cannot be empty (no dataset provided)"
+
 
 def log_memory() -> None:
     process = psutil.Process()
@@ -113,46 +117,50 @@ def log_memory() -> None:
     logger.info(f"Memory usage: {memory:.2f} MB")
 
 
-try:
-    dr_client = dr.Client()
-    chat_agent_deployment_id = LLMDeployment().id
-    deployment_chat_base_url = (
-        dr_client.endpoint + f"/deployments/{chat_agent_deployment_id}/"
-    )
+def initialize_deployment() -> tuple[RESTClientObject, str]:
+    try:
+        dr_client = dr.Client()
+        chat_agent_deployment_id = LLMDeployment().id
+        deployment_chat_base_url = (
+            f"{dr_client.endpoint.rstrip('/')}/deployments/{chat_agent_deployment_id}/"
+        )
+        return dr_client, deployment_chat_base_url
+    except ValidationError as e:
+        raise ValueError(
+            "Unable to load Deployment ID."
+            "If running locally, verify you have selected the correct "
+            "stack and that it is active using `pulumi stack output`. "
+            "If running in DataRobot, verify your runtime parameters have been set correctly."
+        ) from e
 
-    class AsyncLLMClient:
-        async def __aenter__(self) -> instructor.AsyncInstructor:
-            dr_client = dr.Client()
-            chat_agent_deployment_id = LLMDeployment().id
-            deployment_chat_base_url = (
-                dr_client.endpoint + f"/deployments/{chat_agent_deployment_id}/"
-            )
-            self.openai_client = AsyncOpenAI(
-                api_key=dr_client.token,
-                base_url=deployment_chat_base_url,
-                timeout=90,
-                max_retries=2,
-            )
-            self.client = instructor.from_openai(
-                self.openai_client, mode=instructor.Mode.MD_JSON
-            )
-            return self.client
 
-        async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:  # type:ignore
-            await self.openai_client.close()  # Properly close the client
+class AsyncLLMClient:
+    async def __aenter__(self) -> instructor.AsyncInstructor:
+        dr_client, deployment_chat_base_url = initialize_deployment()
+        self.openai_client = AsyncOpenAI(
+            api_key=dr_client.token,
+            base_url=deployment_chat_base_url,
+            timeout=90,
+            max_retries=2,
+        )
+        self.client = instructor.from_openai(
+            self.openai_client, mode=instructor.Mode.MD_JSON
+        )
+        return self.client
 
-except ValidationError as e:
-    raise ValueError(
-        "Unable to load Deployment ID."
-        "If running locally, verify you have selected the correct "
-        "stack and that it is active using `pulumi stack output`. "
-        "If running in DataRobot, verify your runtime parameters have been set correctly."
-    ) from e
+    async def __aexit__(
+        self,
+        exc_type: Type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        await self.openai_client.close()  # Properly close the client
+
 
 ALTERNATIVE_LLM_BIG = "datarobot-deployed-llm"
 ALTERNATIVE_LLM_SMALL = "datarobot-deployed-llm"
 DICTIONARY_BATCH_SIZE = 10
-MAX_AI_CATALOG_DATASET_SIZE = 400e6  # aligns to 400MB set in streamlit config.toml
+MAX_REGISTRY_DATASET_SIZE = 400e6  # aligns to 400MB set in streamlit config.toml
 DISK_CACHE_LIMIT_BYTES = 512e6
 
 _memory = Memory(tempfile.gettempdir(), verbose=0)
@@ -188,7 +196,7 @@ def cache(f: T) -> T:
                 _memory.reduce_size(DISK_CACHE_LIMIT_BYTES)
             else:
                 logger.info(
-                    f"Using previously cached result for function `{f.__name__}`"  # type: ignore
+                    f"Using previously cached result for function `{f.__name__}`"  # type: ignore[attr-defined]
                 )
             return result
 
@@ -196,9 +204,9 @@ def cache(f: T) -> T:
 
 
 # This can be large as we are not storing the actual datasets in memory, just metadata
-def list_catalog_datasets(limit: int = 100) -> list[AiCatalogDataset]:
+def list_registry_datasets(limit: int = 100) -> list[DataRegistryDataset]:
     """
-    Fetch datasets from AI Catalog with specified limit
+    Fetch datasets from Data Registry with specified limit
 
     Args:
         limit: int
@@ -211,7 +219,7 @@ def list_catalog_datasets(limit: int = 100) -> list[AiCatalogDataset]:
     datasets = dr.client.get_client().get(url).json()["data"]
 
     return [
-        AiCatalogDataset(
+        DataRegistryDataset(
             id=ds["datasetId"],
             name=ds["name"],
             created=(
@@ -227,9 +235,9 @@ def list_catalog_datasets(limit: int = 100) -> list[AiCatalogDataset]:
     ]
 
 
-async def download_catalog_datasets(
+async def download_registry_datasets(
     dataset_ids: list[str], analyst_db: AnalystDB
-) -> list[str]:
+) -> list[DownloadedRegistryDataset]:
     """Load selected datasets as pandas DataFrames
 
     Args:
@@ -238,13 +246,14 @@ async def download_catalog_datasets(
     Returns:
         list[AnalystDataset]: Dictionary of dataset names and data
     """
+    downloaded_datasets = []
     datasets = [dr.Dataset.get(id_) for id_ in dataset_ids]
     if (
         sum([ds.size for ds in datasets if ds.size is not None])
-        > MAX_AI_CATALOG_DATASET_SIZE
+        > MAX_REGISTRY_DATASET_SIZE
     ):
         raise ValueError(
-            f"The requested AI Catalog datasets must total <= {int(MAX_AI_CATALOG_DATASET_SIZE)} bytes"
+            f"The requested Data Registry datasets must total <= {int(MAX_REGISTRY_DATASET_SIZE)} bytes"
         )
 
     result_datasets: list[AnalystDataset] = []
@@ -258,14 +267,16 @@ async def download_catalog_datasets(
             logger.info(f"Successfully downloaded {dataset.name}")
         except Exception as e:
             logger.error(f"Failed to read dataset {dataset.name}: {str(e)}")
+            downloaded_datasets.append(
+                DownloadedRegistryDataset(name=dataset.name, error=str(e))
+            )
             continue
-    names = []
     for result_dataset in result_datasets:
         await analyst_db.register_dataset(
-            result_dataset, DataSourceType.CATALOG, dataset.size or 0
+            result_dataset, DataSourceType.REGISTRY, dataset.size or 0
         )
-        names.append(result_dataset.name)
-    return names
+        downloaded_datasets.append(DownloadedRegistryDataset(name=result_dataset.name))
+    return downloaded_datasets
 
 
 async def _get_dictionary_batch(
@@ -880,14 +891,14 @@ async def _run_charts(
     start_time = datetime.now()
 
     if not request.dataset:
-        raise ValueError("Input data cannot be empty")
+        raise ValueError(VALUE_ERROR_MESSAGE)
 
     df = request.dataset.to_df().to_pandas()
     if exception_history is None:
         exception_history = []
 
     code = await _generate_run_charts_python_code(
-        request, next(iter(exception_history), None)
+        request, next(iter(exception_history[::-1]), None)
     )
     try:
         result = execute_python(
@@ -1037,7 +1048,7 @@ async def _run_analysis(
     start_time = datetime.now()
 
     if not request.dataset_names:
-        raise ValueError("Input data cannot be empty")
+        raise ValueError(VALUE_ERROR_MESSAGE)
 
     if exception_history is None:
         exception_history = []
@@ -1045,7 +1056,7 @@ async def _run_analysis(
     code = await _generate_run_analysis_python_code(
         request,
         analyst_db,
-        next(iter(exception_history), None),
+        next(iter(exception_history[::-1]), None),
         attempt=len(exception_history),
     )
     logger.info("Code generated, preparing execution")
@@ -1135,6 +1146,15 @@ async def run_analysis(
                 exception=AnalysisError.from_max_reflection_exception(e),
             ),
         )
+    except ValueError as e:
+        return RunAnalysisResult(
+            status="error",
+            metadata=RunAnalysisResultMetadata(
+                duration=0,
+                attempts=1,
+                exception=AnalysisError.from_value_error(e),
+            ),
+        )
 
 
 async def _generate_database_analysis_code(
@@ -1169,7 +1189,7 @@ async def _generate_database_analysis_code(
 
     # Create messages for OpenAI
     messages: list[ChatCompletionMessageParam] = [
-        Database.get_system_prompt(),
+        get_external_database().get_system_prompt(),
         ChatCompletionUserMessageParam(
             content=f"Business Question: {request.question}",
             role="user",
@@ -1220,16 +1240,16 @@ async def _run_database_analysis(
 ) -> RunDatabaseAnalysisResult:
     start_time = datetime.now()
     if not request.dataset_names:
-        raise ValueError("Input data cannot be empty")
+        raise ValueError(VALUE_ERROR_MESSAGE)
 
     if exception_history is None:
         exception_history = []
 
     sql_code = await _generate_database_analysis_code(
-        request, analyst_db, next(iter(exception_history), None)
+        request, analyst_db, next(iter(exception_history[::-1]), None)
     )
     try:
-        results = Database.execute_query(query=sql_code)
+        results = get_external_database().execute_query(query=sql_code)
         results = cast(list[dict[str, Any]], results)
         duration = datetime.now() - start_time
 
@@ -1266,6 +1286,15 @@ async def run_database_analysis(
                 duration=e.duration,
                 attempts=len(e.exception_history) if e.exception_history else 0,
                 exception=AnalysisError.from_max_reflection_exception(e),
+            ),
+        )
+    except ValueError as e:
+        return RunDatabaseAnalysisResult(
+            status="error",
+            metadata=RunDatabaseAnalysisResultMetadata(
+                duration=0,
+                attempts=1,
+                exception=AnalysisError.from_value_error(e),
             ),
         )
 
@@ -1322,37 +1351,46 @@ async def run_complete_analysis(
     datasets_names: list[str],
     analyst_db: AnalystDB,
     chat_id: str,
+    message_id: str,
     enable_chart_generation: bool = True,
     enable_business_insights: bool = True,
 ) -> AsyncGenerator[Component | AnalysisGenerationError, None]:
+    user_message = await analyst_db.get_chat_message(message_id=message_id)
+    if user_message is None or user_message.role != "user":
+        yield AnalysisGenerationError("Message not found")
+
+        return
     # Get enhanced message
     try:
         logger.info("Getting rephrased question...")
         enhanced_message = await rephrase_message(chat_request)
         logger.info("Getting rephrased question done")
+
         yield enhanced_message
+
     except ValidationError:
-        yield AnalysisGenerationError("LLM Error, please retry")
+        user_message.error = "LLM Error, please retry"
+        user_message.in_progress = False
+        await analyst_db.update_chat_message(
+            message_id=message_id,
+            message=user_message,
+        )
+        yield AnalysisGenerationError(user_message.error)
+
         return
+
     assistant_message = AnalystChatMessage(
         role="assistant",
         content=enhanced_message,
         components=[EnhancedQuestionGeneration(enhanced_user_message=enhanced_message)],
     )
-    messages = await analyst_db.get_chat_messages(chat_id=chat_id)
-    if messages:
-        user_message = messages[-1]
-        user_message.in_progress = False
-    await analyst_db.update_chat(
-        chat_message=user_message,
-        chat_id=chat_id,
-        mode="overwrite",
+
+    user_message.in_progress = False
+    await analyst_db.update_chat_message(
+        message_id=message_id,
+        message=user_message,
     )
-    await analyst_db.update_chat(
-        chat_message=assistant_message,
-        chat_id=chat_id,
-        mode="append",
-    )
+    await analyst_db.add_chat_message(chat_id=chat_id, message=assistant_message)
     # Run main analysis
     logger.info("Start main analysis")
     try:
@@ -1384,34 +1422,33 @@ async def run_complete_analysis(
 
         if isinstance(analysis_result, BaseException):
             error_message = f"Error running initial analysis. Try rephrasing: {str(analysis_result)}"
+            assistant_message.in_progress = False
+            assistant_message.error = error_message
+            await analyst_db.update_chat_message(
+                message_id=assistant_message.id, message=assistant_message
+            )
 
             yield AnalysisGenerationError(error_message)
 
-            await analyst_db.update_chat(
-                chat_message=assistant_message,
-                chat_id=chat_id,
-                mode="overwrite",
-            )
             return
 
         yield analysis_result
+
         assistant_message.components.append(analysis_result)
-        await analyst_db.update_chat(
-            chat_message=assistant_message,
-            chat_id=chat_id,
-            mode="overwrite",
+        await analyst_db.update_chat_message(
+            message_id=assistant_message.id, message=assistant_message
         )
 
     except Exception as e:
         error_message = f"Error running initial analysis. Try rephrasing: {str(e)}"
+        assistant_message.in_progress = False
+        assistant_message.error = error_message
+        await analyst_db.update_chat_message(
+            message_id=assistant_message.id, message=assistant_message
+        )
 
         yield AnalysisGenerationError(error_message)
 
-        await analyst_db.update_chat(
-            chat_message=assistant_message,
-            chat_id=chat_id,
-            mode="overwrite",
-        )
         return
 
     # Only proceed with additional analysis if we have valid initial results
@@ -1420,6 +1457,10 @@ async def run_complete_analysis(
         and analysis_result.dataset
         and (enable_chart_generation or enable_business_insights)
     ):
+        assistant_message.in_progress = False
+        await analyst_db.update_chat_message(
+            message_id=assistant_message.id, message=assistant_message
+        )
         return
 
     # Run concurrent analyses
@@ -1434,57 +1475,50 @@ async def run_complete_analysis(
         # Handle chart results
         if isinstance(charts_result, BaseException):
             error_message = "Error generating charts"
+            assistant_message.error = error_message
+            await analyst_db.update_chat_message(
+                message_id=assistant_message.id, message=assistant_message
+            )
 
             yield AnalysisGenerationError(error_message)
 
-            await analyst_db.update_chat(
-                chat_message=assistant_message,
-                chat_id=chat_id,
-                mode="overwrite",
+        elif charts_result is not None:
+            assistant_message.components.append(charts_result)
+            await analyst_db.update_chat_message(
+                message_id=assistant_message.id, message=assistant_message
             )
 
-        elif charts_result is not None:
             yield charts_result
-            assistant_message.components.append(charts_result)
-            await analyst_db.update_chat(
-                chat_message=assistant_message,
-                chat_id=chat_id,
-                mode="overwrite",
-            )
 
         # Handle business analysis results
         if isinstance(business_result, BaseException):
             error_message = "Error generating business insights"
-
-            yield AnalysisGenerationError("Error generating business insights")
-
-            await analyst_db.update_chat(
-                chat_message=assistant_message,
-                chat_id=chat_id,
-                mode="overwrite",
+            assistant_message.error = error_message
+            await analyst_db.update_chat_message(
+                message_id=assistant_message.id, message=assistant_message
             )
+
+            yield AnalysisGenerationError(error_message)
+
         elif business_result is not None:
-            yield business_result
             assistant_message.components.append(business_result)
             assistant_message.in_progress = False
 
-            await analyst_db.update_chat(
-                chat_message=assistant_message,
-                chat_id=chat_id,
-                mode="overwrite",
+            await analyst_db.update_chat_message(
+                message_id=assistant_message.id, message=assistant_message
             )
+
+            yield business_result
 
     except Exception as e:
         error_message = f"Error setting up additional analysis: {str(e)}"
+        assistant_message.in_progress = False
+        assistant_message.error = error_message
+        await analyst_db.update_chat_message(
+            message_id=assistant_message.id, message=assistant_message
+        )
 
         yield AnalysisGenerationError(error_message)
-
-        assistant_message.in_progress = False
-        await analyst_db.update_chat(
-            chat_message=assistant_message,
-            chat_id=chat_id,
-            mode="overwrite",
-        )
 
 
 async def process_data_and_update_state(

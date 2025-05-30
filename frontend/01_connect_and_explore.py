@@ -15,7 +15,6 @@ import asyncio
 import os
 import sys
 import warnings
-from collections import defaultdict
 from typing import cast
 
 import polars as pl
@@ -34,23 +33,24 @@ from helpers import state_empty, state_init
 
 from utils.analyst_db import AnalystDB, DataSourceType
 from utils.api import (
-    download_catalog_datasets,
-    list_catalog_datasets,
+    download_registry_datasets,
+    list_registry_datasets,
     log_memory,
     process_data_and_update_state,
 )
-from utils.database_helpers import Database, app_infra
+from utils.database_helpers import get_external_database, load_app_infra
 from utils.logging_helper import get_logger
 from utils.schema import (
-    AiCatalogDataset,
     AnalystDataset,
-    CleansedColumnReport,
     DataDictionary,
+    DataRegistryDataset,
 )
 
 warnings.filterwarnings("ignore")
 
 logger = get_logger("DataAnalystFrontend")
+app_infra = load_app_infra()
+Database = get_external_database()
 
 
 async def process_uploaded_file(file: UploadedFile) -> list[str]:
@@ -114,27 +114,29 @@ def clear_data_callback() -> None:
     st.session_state.file_uploader_key += 1  # Used to clear file_uploader
 
 
-# Add callback for AI Catalog dataset selection
-async def catalog_download_callback() -> None:
-    """Callback function for AI Catalog dataset download"""
+# Add callback for Data Registry dataset selection
+async def registry_download_callback() -> None:
+    """Callback function for Data Registry dataset download"""
     if (
-        "selected_catalog_datasets" in st.session_state
-        and st.session_state.selected_catalog_datasets
+        "selected_registry_datasets" in st.session_state
+        and st.session_state.selected_registry_datasets
     ):
-        st.session_state.data_source = DataSourceType.CATALOG
+        st.session_state.data_source = DataSourceType.REGISTRY
 
         with st.sidebar:  # Use sidebar context
             with st.spinner("Loading selected datasets..."):
                 selected_ids = [
-                    ds["id"] for ds in st.session_state.selected_catalog_datasets
+                    ds["id"] for ds in st.session_state.selected_registry_datasets
                 ]
                 with st.session_state.datarobot_connect.use_user_token():
-                    dataframes = await download_catalog_datasets(
+                    dataframes = await download_registry_datasets(
                         selected_ids, st.session_state.analyst_db
                     )
-
+                dataset_names = [
+                    dataset.name for dataset in dataframes if not dataset.error
+                ]
                 async for message in process_data_and_update_state(
-                    dataframes,
+                    dataset_names,
                     st.session_state.analyst_db,
                     st.session_state.data_source,
                 ):
@@ -194,8 +196,13 @@ async def uploaded_file_callback(uploaded_files: list[UploadedFile]) -> None:
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def st_list_catalog_datasets() -> list[AiCatalogDataset]:
-    return list_catalog_datasets()
+def st_list_registry_datasets() -> list[DataRegistryDataset]:
+    return list_registry_datasets()
+
+
+@st.cache_data(ttl="60s", show_spinner=False)
+def st_list_database_tables() -> list[str]:
+    return Database.get_tables()
 
 
 # Custom CSS
@@ -211,7 +218,7 @@ async def main() -> None:
     with st.sidebar:
         st.title("Connect")
 
-        # Load Files expander containing file upload and AI Catalog
+        # Load Files expander containing file upload and the Data Registry
         with st.expander("Load Files", expanded=True):
             # File upload section
             col1, col2, col3 = st.columns([1, 4, 2])
@@ -228,33 +235,38 @@ async def main() -> None:
             if uploaded_files:
                 await uploaded_file_callback(uploaded_files)
 
-            # AI Catalog section
-            st.subheader("☁️   DataRobot AI Catalog")
+            # Data Registry section
+            st.subheader("☁️   DataRobot Data Registry")
 
-            # Get datasets from catalog
+            # Get datasets from registry
 
-            with st.spinner("Loading datasets from AI Catalog..."):
+            with st.spinner("Loading datasets from the Data Registry..."):
                 with st.session_state.datarobot_connect.use_user_token():
-                    datasets = [i.model_dump() for i in st_list_catalog_datasets()]
+                    datasets = [i.model_dump() for i in st_list_registry_datasets()]
 
             # Create form for dataset selection
-            with st.form("catalog_selection_form", border=False):
-                selected_catalog_datasets = st.multiselect(
-                    "Select datasets from AI Catalog",
+            with st.form("registry_selection_form", border=False):
+                selected_registry_datasets = st.multiselect(
+                    "Select datasets from the Data Registry",
                     options=datasets,
                     format_func=lambda x: f"{x['name']} ({x['size']})",
                     help="You can select multiple datasets",
-                    key="selected_catalog_datasets",
+                    key="selected_registry_datasets",
+                    disabled=(
+                        "analyst_db" not in st.session_state
+                        or "datarobot_uid" not in st.session_state
+                    ),
                 )
 
                 # Form submit button
                 submit_button = st.form_submit_button(
                     "Load Datasets",
+                    disabled="analyst_db" not in st.session_state,
                 )
 
                 # Process form submission
-                if submit_button and len(selected_catalog_datasets) > 0:
-                    await catalog_download_callback()
+                if submit_button and len(selected_registry_datasets) > 0:
+                    await registry_download_callback()
                 elif submit_button:
                     st.warning("Please select at least one dataset")
 
@@ -262,7 +274,7 @@ async def main() -> None:
         with st.expander("Database", expanded=False):
             get_database_logo(app_infra)
 
-            schema_tables = Database.get_tables()
+            schema_tables = st_list_database_tables()
 
             # Create form for Database table selection
             with st.form("table_selection_form", border=False):
@@ -271,12 +283,14 @@ async def main() -> None:
                     options=schema_tables,
                     help="You can select multiple tables",
                     key="selected_schema_tables",
+                    disabled="analyst_db" not in st.session_state,
                 )
 
                 # Form submit button
                 submit_button = st.form_submit_button(
                     "Load Selected Tables",
                     use_container_width=False,
+                    disabled="analyst_db" not in st.session_state,
                 )
 
                 if submit_button:
@@ -298,6 +312,10 @@ async def main() -> None:
     # Main content area
     display_page_logo()
     st.title("Explore")
+    if "analyst_db" not in st.session_state:
+        st.warning("Could not identify user, please provide your API token")
+        return
+
     analyst_db = cast(AnalystDB, st.session_state.analyst_db)
     dataset_names = await analyst_db.list_analyst_datasets()
     # Main content area - conditional rendering based on cleansed data
@@ -309,30 +327,22 @@ async def main() -> None:
             with tab1:
                 ds_display = await analyst_db.get_dataset(ds_display_name)
                 st.subheader(f"{ds_display.name}")
-                cleaning_report: list[CleansedColumnReport] | None = None
+
                 try:
                     ds_display_cleansed = await analyst_db.get_cleansed_dataset(
                         ds_display_name
                     )
-                    cleaning_report = ds_display_cleansed.cleaning_report
+                    cleaning_report = ds_display_cleansed.generate_cleaning_report()
 
                     # Display cleaning report in expander
                     with st.expander("View Cleaning Report"):
-                        # Group reports by conversion type
-                        conversions: defaultdict[str, list[CleansedColumnReport]] = (
-                            defaultdict(list)
-                        )
-
-                        for col_report in cleaning_report:
-                            if col_report.conversion_type:
-                                conversions[col_report.conversion_type].append(
-                                    col_report
-                                )
-
                         # Display summary of changes
-                        if conversions:
+                        if cleaning_report.conversions:
                             st.write("### Summary of Changes")
-                            for conv_type, reports in conversions.items():
+                            for (
+                                conv_type,
+                                reports,
+                            ) in cleaning_report.conversions.items():
                                 columns_count = len(reports)
                                 st.write(
                                     f"**{conv_type}** ({columns_count} {'column' if columns_count == 1 else 'columns'})"
@@ -364,13 +374,13 @@ async def main() -> None:
                             st.info("No columns were modified during cleaning")
 
                         # Show unchanged columns
-                        unchanged = [
-                            r for r in cleaning_report if not r.conversion_type
-                        ]
-                        if unchanged:
+                        if cleaning_report.unchanged_columns:
                             st.write("### Unchanged Columns")
                             st.write(
-                                ", ".join(f"`{r.new_column_name}`" for r in unchanged)
+                                ", ".join(
+                                    f"`{col}`"
+                                    for col in cleaning_report.unchanged_columns
+                                )
                             )
 
                 except ValueError:
@@ -498,9 +508,9 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    datarobot_connect = DataRobotTokenManager()
-    st.session_state.datarobot_connect = datarobot_connect
-
+    if "datarobot_connect" not in st.session_state:
+        datarobot_connect = DataRobotTokenManager()
+        st.session_state.datarobot_connect = datarobot_connect
     asyncio.run(main())
 else:
     loop = asyncio.new_event_loop()

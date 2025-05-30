@@ -1,0 +1,20 @@
+---
+trigger:
+  name: daily
+  identifier: daily
+  enabled: true
+  stagesToExecute: []
+  tags: {}
+  orgIdentifier: No_Code_Apps
+  projectIdentifier: dataanalyst
+  pipelineIdentifier: trivyScan
+  source:
+    type: Scheduled
+    spec:
+      type: Cron
+      spec:
+        expression: 0 8 * * *
+        type: UNIX
+  pipelineBranchName: main
+  inputSetRefs:
+    - daily

@@ -1,0 +1,19 @@
+---
+# Name of the `datarobot-community` version of the `datarobot` org repository.
+community-repo: talk-to-my-data-agent
+
+# File system entries to exclude from copying to the `datarobot-community` version of the repository.
+exclude:
+  - .ci/
+  - .cicd/
+  - .datarobot/
+  - .github/.licenserc.yaml
+  - .github/CODEOWNERS
+  - .github/workflows/license-check.yml
+  - .harness/
+  - CODEOWNERS
+  - DRCODEOWNERS
+  - Jenkinsfile
+  - RELEASE.yaml
+  - pipelineController.yaml
+  - tests/

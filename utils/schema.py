@@ -11,13 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 from __future__ import annotations
 
 import json
+import uuid
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable, Generator, Literal, Optional, TypedDict, Union
+from typing import Any, Callable, Generator, Literal, Optional, Union
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -42,6 +43,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from typing_extensions import TypedDict
 
 from .code_execution import MaxReflectionAttempts
 
@@ -51,7 +53,7 @@ class LLMDeploymentSettings(BaseModel):
     prompt_feature_name: str = "promptText"
 
 
-class AiCatalogDataset(BaseModel):
+class DataRegistryDataset(BaseModel):
     id: str
     name: str
     created: str
@@ -181,11 +183,52 @@ class CleansedDataset(BaseModel):
     def to_df(self) -> pl.DataFrame:
         return self.dataset.to_df()
 
+    def generate_cleaning_report(self) -> CleaningReport:
+        """
+        Generate a detailed cleaning report for the dataset.
+
+        Returns:
+            CleaningReport: A dictionary containing:
+                - `conversions`: A mapping of conversion types to lists of column reports.
+                - `unchanged_columns`: A list of column names that were not modified.
+        """
+        if not self.cleaning_report:
+            return CleaningReport(
+                conversions={},
+                unchanged_columns=[],
+            )
+
+        # Group reports by conversion type
+        conversions: dict[str, list[CleansedColumnReport]] = defaultdict(list)
+        unchanged_columns: list[str] = []
+
+        for col_report in self.cleaning_report:
+            if col_report.conversion_type:
+                conversions[col_report.conversion_type].append(col_report)
+            else:
+                unchanged_columns.append(col_report.new_column_name)
+
+        return CleaningReport(
+            conversions=conversions,
+            unchanged_columns=unchanged_columns,
+        )
+
 
 class DataDictionaryColumn(BaseModel):
     data_type: str
     column: str
     description: str
+
+
+class CleaningReport(BaseModel):
+    conversions: dict[str, list[CleansedColumnReport]]
+    unchanged_columns: list[str]
+
+
+class DatasetCleansedResponse(BaseModel):
+    dataset_name: str
+    cleaning_report: Optional[CleaningReport]
+    dataset: Optional[AnalystDataset]
 
 
 class DataDictionary(BaseModel):
@@ -238,6 +281,10 @@ class DataDictionary(BaseModel):
                 "data_type": [c.data_type for c in self.column_descriptions],
             }
         )
+
+
+class DataDictionaryResponse(DataDictionary):
+    in_progress: bool = False
 
 
 class DictionaryGeneration(BaseModel):
@@ -349,6 +396,23 @@ class AnalysisError(BaseModel):
                 if exception.exception_history is not None
                 else None
             ),
+        )
+
+    @classmethod
+    def from_value_error(
+        cls,
+        exception: ValueError,
+    ) -> "AnalysisError":
+        return AnalysisError(
+            exception_history=[
+                CodeExecutionError(
+                    exception_str=str(exception),
+                    traceback_str=None,
+                    code=None,
+                    stdout=str(exception),
+                    stderr=str(exception),
+                )
+            ],
         )
 
 
@@ -515,6 +579,9 @@ class AnalystChatMessage(BaseModel):
     components: list[Component]
     in_progress: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    chat_id: str | None = None
+    error: str | None = None
 
     def to_openai_message_param(self) -> ChatCompletionMessageParam:
         if self.role == "user":
@@ -558,7 +625,6 @@ class ChatJSONEncoder(json.JSONEncoder):
 class ChatHistory(BaseModel):
     user_id: str
     chat_name: str
-    chat_messages: list[AnalystChatMessage]
     data_source: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -571,7 +637,7 @@ class ChatHistory(BaseModel):
 
 
 class FileUploadResponse(TypedDict, total=False):
-    filename: str
+    filename: Optional[str]
     content_type: Optional[str]
     size: Optional[int]
     dataset_name: Optional[str]
@@ -608,3 +674,8 @@ class ChatMessagePayload(BaseModel):
     enable_chart_generation: bool = True
     enable_business_insights: bool = True
     data_source: str = "file"
+
+
+class DownloadedRegistryDataset(BaseModel):
+    name: str = ""
+    error: Optional[str] = None

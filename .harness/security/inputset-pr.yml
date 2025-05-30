@@ -1,0 +1,18 @@
+---
+inputSet:
+  name: github
+  identifier: github
+  projectIdentifier: dataanalyst
+  orgIdentifier: No_Code_Apps
+  pipeline:
+    identifier: trivyScan
+    template:
+      templateInputs:
+        properties:
+          ci:
+            codebase:
+              repoName: data-analyst
+              build:
+                type: branch
+                spec:
+                  branch: <+trigger.sourceBranch>

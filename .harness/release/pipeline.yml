@@ -1,0 +1,10 @@
+---
+pipeline:
+  name: communityRelease
+  identifier: communityRelease
+  tags: {}
+  template:
+    templateRef: org.releaseDataRobotCommunity
+    versionLabel: v0.1.0
+  projectIdentifier: dataanalyst
+  orgIdentifier: No_Code_Apps

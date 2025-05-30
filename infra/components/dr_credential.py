@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 from __future__ import annotations
 
 import json
@@ -22,9 +21,9 @@ from typing import Any
 import pulumi
 import pulumi_datarobot as datarobot
 import pydantic
+from datarobot_pulumi_utils.pulumi.stack import PROJECT_NAME
+from datarobot_pulumi_utils.schema.llms import LLMConfig, LLMs
 
-from infra.common.globals import GlobalLLM, LLMConfig
-from infra.common.stack import PROJECT_ROOT, project_name
 from utils.credentials import (
     AWSBedrockCredentials,
     AzureOpenAICredentials,
@@ -39,6 +38,8 @@ from utils.schema import (
     DatabaseConnectionType,
     RuntimeCredentialType,
 )
+
+from ..settings_main import PROJECT_ROOT
 
 logger = logging.getLogger("DataAnalystFrontend")
 
@@ -140,46 +141,60 @@ def get_credential_runtime_parameter_values(
     elif isinstance(credentials, NoDatabaseCredentials):
         credential_rtp_dicts = []  # No credentials to add for NoDatabaseCredentials
     elif isinstance(credentials, SnowflakeCredentials):
-        rtps = [
-            {
-                "key": "db_credential",
-                "type": "basic_credential",
-                "value": {
-                    "user": credentials.user,
-                    "password": credentials.password,
+        rtps = (
+            [
+                {
+                    "key": "db_credential",
+                    "type": "basic_credential",
+                    "value": {
+                        "user": credentials.user,
+                        "password": credentials.password,
+                    },
+                }
+            ]
+            if credentials.user and credentials.password
+            else [
+                {
+                    "key": "SNOWFLAKE_USER",
+                    "type": "string",
+                    "value": credentials.user,
+                }
+            ]
+        )
+        rtps.extend(
+            [
+                {
+                    "key": "SNOWFLAKE_ACCOUNT",
+                    "type": "string",
+                    "value": credentials.account,
                 },
-            },
-            {
-                "key": "SNOWFLAKE_ACCOUNT",
-                "type": "string",
-                "value": credentials.account,
-            },
-            {
-                "key": "SNOWFLAKE_WAREHOUSE",
-                "type": "string",
-                "value": credentials.warehouse,
-            },
-            {
-                "key": "SNOWFLAKE_DATABASE",
-                "type": "string",
-                "value": credentials.database,
-            },
-            {
-                "key": "SNOWFLAKE_SCHEMA",
-                "type": "string",
-                "value": credentials.db_schema,
-            },
-            {
-                "key": "SNOWFLAKE_ROLE",
-                "type": "string",
-                "value": credentials.role,
-            },
-            {
-                "key": "SNOWFLAKE_KEY_PATH",
-                "type": "string",
-                "value": credentials.snowflake_key_path,
-            },
-        ]
+                {
+                    "key": "SNOWFLAKE_WAREHOUSE",
+                    "type": "string",
+                    "value": credentials.warehouse,
+                },
+                {
+                    "key": "SNOWFLAKE_DATABASE",
+                    "type": "string",
+                    "value": credentials.database,
+                },
+                {
+                    "key": "SNOWFLAKE_SCHEMA",
+                    "type": "string",
+                    "value": credentials.db_schema,
+                },
+                {
+                    "key": "SNOWFLAKE_ROLE",
+                    "type": "string",
+                    "value": credentials.role,
+                },
+                {
+                    "key": "SNOWFLAKE_KEY_PATH",
+                    "type": "string",
+                    "value": credentials.snowflake_key_path,
+                },
+            ]
+        )
         credential_rtp_dicts = [rtp for rtp in rtps if rtp["value"] is not None]
     elif isinstance(credentials, SAPDatasphereCredentials):
         rtps = [
@@ -223,24 +238,24 @@ def get_credential_runtime_parameter_values(
         if "credential" in rtp_dict["type"]:
             if rtp_dict["type"] == "credential":
                 dr_credential = datarobot.ApiTokenCredential(
-                    resource_name=f"Generative Analyst {rtp_dict['key']} Credential [{project_name}]",
+                    resource_name=f"Generative Analyst {rtp_dict['key']} Credential [{PROJECT_NAME}]",
                     api_token=rtp_dict["value"],
                 )
             elif rtp_dict["type"] == "google_credential":
                 dr_credential = datarobot.GoogleCloudCredential(
-                    resource_name=f"Generative Analyst {rtp_dict['key']} {credential_type} Credential [{project_name}]",
+                    resource_name=f"Generative Analyst {rtp_dict['key']} {credential_type} Credential [{PROJECT_NAME}]",
                     gcp_key=rtp_dict["value"].get("gcpKey"),
                 )
             elif rtp_dict["type"] == "aws_credential":
                 dr_credential = datarobot.AwsCredential(
-                    resource_name=f"Generative Analyst {rtp_dict['key']} Credential [{project_name}]",
+                    resource_name=f"Generative Analyst {rtp_dict['key']} Credential [{PROJECT_NAME}]",
                     aws_access_key_id=rtp_dict["value"]["awsAccessKeyId"],
                     aws_secret_access_key=rtp_dict["value"]["awsSecretAccessKey"],
                     aws_session_token=rtp_dict["value"].get("awsSessionToken"),
                 )
             elif rtp_dict["type"] == "basic_credential":
                 dr_credential = datarobot.BasicCredential(
-                    resource_name=f"Generative Analyst {rtp_dict['key']} Credential [{project_name}]",
+                    resource_name=f"Generative Analyst {rtp_dict['key']} Credential [{PROJECT_NAME}]",
                     user=rtp_dict["value"]["user"],
                     password=rtp_dict["value"]["password"],
                 )
@@ -269,7 +284,7 @@ def get_llm_credentials(
 ) -> DRCredentials | None:
     try:
         credentials: DRCredentials
-        if llm == GlobalLLM.DEPLOYED_LLM:
+        if llm == LLMs.DEPLOYED_LLM:
             return None
         if llm.credential_type == "azure":
             credentials = AzureOpenAICredentials()
@@ -278,13 +293,13 @@ def get_llm_credentials(
                     import openai
 
                     lookup = {
-                        GlobalLLM.AZURE_OPENAI_GPT_3_5_TURBO.name: "gpt-35-turbo",
-                        GlobalLLM.AZURE_OPENAI_GPT_3_5_TURBO_16K.name: "gpt-35-turbo-16k",
-                        GlobalLLM.AZURE_OPENAI_GPT_4.name: "gpt-4",
-                        GlobalLLM.AZURE_OPENAI_GPT_4_32K.name: "gpt-4-32k",
-                        GlobalLLM.AZURE_OPENAI_GPT_4_O.name: "gpt-4o",
-                        GlobalLLM.AZURE_OPENAI_GPT_4_TURBO.name: "gpt-4-turbo",
-                        GlobalLLM.AZURE_OPENAI_GPT_4_O_MINI.name: "gpt-4o-mini",
+                        LLMs.AZURE_OPENAI_GPT_3_5_TURBO.name: "gpt-35-turbo",
+                        LLMs.AZURE_OPENAI_GPT_3_5_TURBO_16K.name: "gpt-35-turbo-16k",
+                        LLMs.AZURE_OPENAI_GPT_4.name: "gpt-4",
+                        LLMs.AZURE_OPENAI_GPT_4_32K.name: "gpt-4-32k",
+                        LLMs.AZURE_OPENAI_GPT_4_O.name: "gpt-4o",
+                        LLMs.AZURE_OPENAI_GPT_4_TURBO.name: "gpt-4-turbo",
+                        LLMs.AZURE_OPENAI_GPT_4_O_MINI.name: "gpt-4o-mini",
                     }
                     if (
                         credentials.azure_deployment is not None
@@ -329,11 +344,11 @@ def get_llm_credentials(
             credentials = AWSBedrockCredentials()
             if test_credentials:
                 lookup = {
-                    GlobalLLM.ANTHROPIC_CLAUDE_3_HAIKU.name: "anthropic.claude-3-haiku-20240307-v1:0",
-                    GlobalLLM.ANTHROPIC_CLAUDE_3_SONNET.name: "anthropic.claude-3-sonnet-20240229-v1:0",
-                    GlobalLLM.ANTHROPIC_CLAUDE_3_OPUS.name: "anthropic.claude-3-opus-20240229-v1:0",
-                    GlobalLLM.AMAZON_TITAN.name: "amazon.titan-text-express-v1",
-                    GlobalLLM.ANTHROPIC_CLAUDE_2.name: "anthropic.claude-v2:1",
+                    LLMs.ANTHROPIC_CLAUDE_3_HAIKU.name: "anthropic.claude-3-haiku-20240307-v1:0",
+                    LLMs.ANTHROPIC_CLAUDE_3_SONNET.name: "anthropic.claude-3-sonnet-20240229-v1:0",
+                    LLMs.ANTHROPIC_CLAUDE_3_OPUS.name: "anthropic.claude-3-opus-20240229-v1:0",
+                    LLMs.AMAZON_TITAN.name: "amazon.titan-text-express-v1",
+                    LLMs.ANTHROPIC_CLAUDE_2.name: "anthropic.claude-v2:1",
                 }
                 if credentials.region_name is None:
                     pulumi.warn("AWS region not set. Using default 'us-west-1'.")
@@ -380,9 +395,9 @@ def get_llm_credentials(
             credentials = GoogleCredentials()
             if test_credentials:
                 lookup = {
-                    GlobalLLM.GOOGLE_1_5_PRO.name: "gemini-1.5-pro-001",
-                    GlobalLLM.GOOGLE_BISON.name: "chat-bison@002",
-                    GlobalLLM.GOOGLE_GEMINI_1_5_FLASH.name: "gemini-1.5-flash-001",
+                    LLMs.GOOGLE_1_5_PRO.name: "gemini-1.5-pro-001",
+                    LLMs.GOOGLE_BISON.name: "chat-bison@002",
+                    LLMs.GOOGLE_GEMINI_1_5_FLASH.name: "gemini-1.5-flash-001",
                 }
                 try:
                     import openai
@@ -390,13 +405,13 @@ def get_llm_credentials(
                     from google.oauth2 import service_account
 
                     google_credentials = (
-                        service_account.Credentials.from_service_account_info(  # type: ignore
+                        service_account.Credentials.from_service_account_info(  # type: ignore[no-untyped-call]
                             credentials.service_account_key,
                             scopes=["https://www.googleapis.com/auth/cloud-platform"],
                         )
                     )
 
-                    auth_request = Request()  # type: ignore
+                    auth_request = Request()  # type: ignore[no-untyped-call]
                     google_credentials.refresh(auth_request)
 
                     # OpenAI Client
@@ -455,8 +470,16 @@ def get_database_credentials(
         if database == "snowflake":
             credentials = SnowflakeCredentials()
             if not credentials.is_configured():
-                logger.warning("Snowflake credentials not fully configured")
-                return NoDatabaseCredentials()
+                logger.error("Snowflake credentials not fully configured")
+                raise ValueError(
+                    textwrap.dedent(
+                        f"""
+                        Your Snowflake credentials and environment variables were not configured properly.
+                        
+                        Please validate your environment variables or check {__file__} for details.
+                        """
+                    )
+                )
 
             if test_credentials:
                 import snowflake.connector
@@ -477,17 +500,33 @@ def get_database_credentials(
                 elif credentials.password:
                     connect_params["password"] = credentials.password
                 else:
-                    logger.warning(
+                    logger.error(
                         "No valid authentication method configured for Snowflake"
                     )
-                    return NoDatabaseCredentials()
+                    raise ValueError(
+                        textwrap.dedent(
+                            f"""
+                            No authentication method was configured for Snowflake.
+
+                            Please validate your credentials or check {__file__} for details.
+                            """
+                        )
+                    )
 
                 try:
                     sf_con = snowflake.connector.connect(**connect_params)
                     sf_con.close()
                 except Exception as e:
-                    logger.warning(f"Failed to test Snowflake connection: {str(e)}")
-                    return NoDatabaseCredentials()
+                    logger.exception("Failed to test Snowflake connection")
+                    raise ValueError(
+                        textwrap.dedent(
+                            f"""
+                            Unable to run a successful test of snowflake with the given credentials.
+
+                            Please validate your credentials or check {__file__} for details.
+                            """
+                        )
+                    ) from e
 
             return credentials
 
@@ -498,13 +537,13 @@ def get_database_credentials(
                 from google.oauth2 import service_account
 
                 google_credentials = (
-                    service_account.Credentials.from_service_account_info(  # type: ignore
+                    service_account.Credentials.from_service_account_info(  # type: ignore[no-untyped-call]
                         credentials.service_account_key,
                         scopes=["https://www.googleapis.com/auth/cloud-platform"],
                     )
                 )
                 bq_con = google.cloud.bigquery.Client(credentials=google_credentials)
-                bq_con.close()  # type: ignore
+                bq_con.close()  # type: ignore[no-untyped-call]
             return credentials
         elif database == "sap":
             credentials = SAPDatasphereCredentials()
@@ -528,7 +567,21 @@ def get_database_credentials(
 
     except pydantic.ValidationError as exc:
         msg = "Validation errors in database credentials. Using no database configuration.\n"
-        logger.warning(msg + str(exc))
-        return NoDatabaseCredentials()
+        logger.exception(msg)
+        raise ValueError(
+            textwrap.dedent(
+                f"""
+                There was an error validating the database credentials.
 
-    return NoDatabaseCredentials()
+                Please validate your credentials or check {__file__} for details.
+                """
+            )
+        ) from exc
+
+    raise ValueError(
+        textwrap.dedent(
+            f"""
+            The supplied database of {database} did not correspond to a supported database.
+            """
+        )
+    )

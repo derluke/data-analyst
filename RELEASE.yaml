@@ -1,9 +1,12 @@
+---
 description: |-
   Federalized release for Talk to My Data
 
   Reference
   https://datarobot.atlassian.net/wiki/spaces/Ignite/pages/5618761738/Distributed+Release+Metadata+-+RELEASE.yaml
   https://dev-docs.drdev.io/release/branches/RELEASE.yaml.html
+
+  This file is removed when an application template is released via the app template release automation
 
 production: true
 

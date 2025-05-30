@@ -1,6 +1,6 @@
 # Talk to My Data  
 
-**Talk to My Data** delivers a seamless **talk-to-your-data** experience, transforming files, spreadsheets, and cloud data into actionable insights. Simply upload data, connect to Snowflake or BigQuery, or access datasets from DataRobot's AI Catalog. Then, ask a question, and the agent recommends business analyses, generating **charts, tables, and even code** to help you interpret the results.  
+**Talk to My Data** delivers a seamless **talk-to-your-data** experience, transforming files, spreadsheets, and cloud data into actionable insights. Simply upload data, connect to Snowflake or BigQuery, or access datasets from DataRobot's Data Registry. Then, ask a question, and the agent recommends business analyses, generating **charts, tables, and even code** to help you interpret the results.  
 
 This intuitive experience is designed for **scalability and flexibility**, ensuring that whether you're working with a few thousand rows or billions, your data analysis remains **fast, efficient, and insightful**.  
 
@@ -18,6 +18,7 @@ This intuitive experience is designed for **scalability and flexibility**, ensur
 3. [Why build AI Apps with DataRobot app templates?](#why-build-ai-apps-with-datarobot-app-templates)
 4. [Data privacy](#data-privacy)
 5. [Make changes](#make-changes)
+   - [Change the frontend](#change-the-frontend)
    - [Change the LLM](#change-the-llm)
    - [Change the database](#change-the-database)
       * [Snowflake](#snowflake)
@@ -56,6 +57,7 @@ Codespace users can **skip steps 1 and 2**. For local development, follow all of
    OPENAI_API_BASE=...  # e.g. https://your_org.openai.azure.com/
    OPENAI_API_DEPLOYMENT_ID=...  # e.g. gpt-4o
    PULUMI_CONFIG_PASSPHRASE=...  # Required. Choose your own alphanumeric passphrase to be used for encrypting pulumi config
+   FRONTEND_TYPE=...  # Optional. Default is "streamlit". Set to "react" to use React frontend
    ```
    Use the following resources to locate the required credentials:
    - **DataRobot API Token**: Refer to the *Create a DataRobot API Key* section of the [DataRobot API Quickstart docs](https://docs.datarobot.com/en/docs/api/api-quickstart/index.html#create-a-datarobot-api-key).
@@ -66,7 +68,7 @@ Codespace users can **skip steps 1 and 2**. For local development, follow all of
    ```bash
    python quickstart.py YOUR_PROJECT_NAME  # Windows users may have to use `py` instead of `python`
    ```
-   Python 3.9+ is required.
+   Python 3.10 - 12 are supported
 
 
 Advanced users desiring control over virtual environment creation, dependency installation, environment variable setup
@@ -74,7 +76,7 @@ and `pulumi` invocation see [here](#setup-for-advanced-users).
 
 ## Architecture overview
 
-![image](https://github.com/user-attachments/assets/2ca66231-9321-48fe-abdb-f2d35687dff6)
+![image](https://s3.us-east-1.amazonaws.com/datarobot_public/drx/ttmd2-schematic.jpg)
 
 
 App templates contain three families of complementary logic:
@@ -86,6 +88,7 @@ App templates contain three families of complementary logic:
 - **App Logic**: Necessary for user consumption; whether via a hosted front-end or integrating into an external consumption layer.
   ```
   frontend/  # Streamlit frontend
+  app_frontend/  # React frontend alternative with the api located in app_backend
   utils/  # App business logic & runtime helpers
   ```
 - **Operational Logic**: Necessary to activate DataRobot assets.
@@ -109,12 +112,37 @@ Your data privacy is important to us. Data handling is governed by the DataRobot
 
 ## Make changes
 
+### Change the frontend
+
+The Talk to My Data agent supports two frontend options:
+
+1. Streamlit frontend (default): A Python-based frontend with a simple interface
+2. React frontend: A modern JavaScript-based frontend with enhanced UI features
+
+To change the frontend:
+
+1. In `.env`: Set `FRONTEND_TYPE="react"` to use the React frontend instead of the default Streamlit frontend
+2. Run `pulumi up` to update your stack (Or rerun your quickstart)
+   ```bash
+   source set_env.sh  # On windows use `set_env.bat`
+   pulumi up
+   ```
+
+> **⚠️ Important note:**  
+> If you make changes to the React frontend code, you need to rebuild it before deploying:
+> ```bash
+> cd app_frontend
+> npm install
+> npm run build
+> ```
+> The built files will be placed in `app_frontend/static/` which will be used by the deployment. See `app_frontend/README.md` for more details on developing and building the React frontend.
+
 ### Change the LLM
 
-1. Modify the `LLM` setting in `infra/settings_generative.py` by changing `LLM=GlobalLLM.AZURE_OPENAI_GPT_4_O` to any other LLM from the `GlobalLLM` object. 
-     - Trial users: Please set `LLM=GlobalLLM.AZURE_OPENAI_GPT_4_O_MINI` since GPT-4o is not supported in the trial. Use the `OPENAI_API_DEPLOYMENT_ID` in `.env` to override which model is used in your azure organisation. You'll still see GPT 4o-mini in the playground, but the deployed app will use the provided azure deployment.  
+1. Modify the `LLM` setting in `infra/settings_generative.py` by changing `LLM=LLMs.AZURE_OPENAI_GPT_4_O` to any other LLM from the `LLMs` object. 
+     - Trial users: Please set `LLM=LLMs.AZURE_OPENAI_GPT_4_O_MINI` since GPT-4o is not supported in the trial. Use the `OPENAI_API_DEPLOYMENT_ID` in `.env` to override which model is used in your azure organisation. You'll still see GPT 4o-mini in the playground, but the deployed app will use the provided azure deployment.  
 2. To use an existing TextGen model or deployment:
-      - In `infra/settings_generative.py`: Set `LLM=GlobalLLM.DEPLOYED_LLM`.
+      - In `infra/settings_generative.py`: Set `LLM=LLMs.DEPLOYED_LLM`.
       - In `.env`: Set either the `TEXTGEN_REGISTERED_MODEL_ID` or the `TEXTGEN_DEPLOYMENT_ID`
       - In `.env`: Set `CHAT_MODEL_NAME` to the model name expected by the deployment (e.g. "claude-3-7-sonnet-20250219" for an anthropic deployment, "datarobot-deployed-llm" for NIM models ) 
       - (Optional) In `utils/api.py`: `ALTERNATIVE_LLM_BIG` and `ALTERNATIVE_LLM_SMALL` can be used for fine-grained control over which LLM is used for different tasks.
@@ -124,8 +152,9 @@ Your data privacy is important to us. Data handling is governed by the DataRobot
       source set_env.sh  # On windows use `set_env.bat`
       pulumi up
       ```
-> **⚠️ Caveat:**  
-> If you run into an error using a NIM model that requires the feature flag **Enable Custom Model GPU Inference**, contact your account team or administrator to check if this feature is enabled for your deployment.
+
+> **⚠️ Availability information:**  
+> Using a NIM model requires custom model GPU inference, a premium feature. You will experience errors by using this type of model without the feature enabled. Contact your DataRobot representative or administrator for information on enabling this feature.
 
 ### Change the database
 

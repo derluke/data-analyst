@@ -22,7 +22,9 @@ from openai import OpenAI
 def chat_client(
     pulumi_up: Any, llm_deployment_id: str, dr_client: RESTClientObject
 ) -> OpenAI:
-    deployment_chat_base_url = dr_client.endpoint + f"/deployments/{llm_deployment_id}/"
+    deployment_chat_base_url = (
+        f"{dr_client.endpoint.rstrip('/')}/deployments/{llm_deployment_id}/"
+    )
 
     client = OpenAI(api_key=dr_client.token, base_url=deployment_chat_base_url)
     return client

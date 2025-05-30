@@ -12,11 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import time
+
 import pytest
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 
 from tests.e2e.utils import (
+    PROCESSING_TIMEOUT,
     click_element,
     download_file,
     find_element,
@@ -24,7 +28,10 @@ from tests.e2e.utils import (
     wait_for_element_to_be_visible,
 )
 
-PROCESSING_TIMEOUT = 240
+pytestmark = pytest.mark.skipif(
+    os.environ.get("FRONTEND_TYPE") == "react",
+    reason="Skipping because FRONTEND_TYPE is 'react'",
+)
 
 
 def assert_data_processed(browser: webdriver.Chrome) -> None:
@@ -40,7 +47,7 @@ def load_from_database(browser: webdriver.Chrome, dataset: str) -> None:
     wait_for_element_to_be_visible(
         browser,
         By.XPATH,
-        "//p[contains(text(), 'Select datasets from AI Catalog')]",
+        "//p[contains(text(), 'Select datasets from the Data Registry')]",
     )
 
     click_element(
@@ -69,7 +76,7 @@ def load_from_database(browser: webdriver.Chrome, dataset: str) -> None:
     click_element(
         browser,
         By.XPATH,
-        "//p[contains(text(), 'Select datasets from AI Catalog')]",
+        "//p[contains(text(), 'Select datasets from the Data Registry')]",
     )
 
     click_element(
@@ -90,16 +97,16 @@ def load_from_file(browser: webdriver.Chrome, file_url: str) -> None:
 
 
 def clear_data(browser: webdriver.Chrome) -> None:
-    clear_data_elector = "//p[contains(text(), 'Clear Data')]"
+    clear_data_selector = "//p[contains(text(), 'Clear Data')]"
     wait_for_element_to_be_clickable(
         browser,
         By.XPATH,
-        clear_data_elector,
+        clear_data_selector,
     )
     click_element(
         browser,
         By.XPATH,
-        clear_data_elector,
+        clear_data_selector,
     )
 
     assert wait_for_element_to_be_visible(
@@ -173,6 +180,7 @@ def test_chat_page_loaded(browser: webdriver.Chrome, get_app_url: str) -> None:
         By.XPATH,
         "//span[contains(text(), 'AI Data Analyst')]",
     )
+    time.sleep(10)
 
     wait_for_element_to_be_visible(
         browser, By.XPATH, "//p[contains(text(), 'Database Mode')]"
@@ -185,7 +193,9 @@ def test_chat_page_loaded(browser: webdriver.Chrome, get_app_url: str) -> None:
     )
 
     chat_input = wait_for_element_to_be_visible(
-        browser, By.CSS_SELECTOR, 'textarea[data-testid="stChatInputTextArea"]'
+        browser,
+        By.CSS_SELECTOR,
+        'textarea[data-testid="stChatInputTextArea"]',
     )
 
     if chat_input:
@@ -200,11 +210,17 @@ def test_chat_page_loaded(browser: webdriver.Chrome, get_app_url: str) -> None:
     )
 
     assert wait_for_element_to_be_visible(
-        browser, By.XPATH, "//p[contains(text(), 'Bottom Line')]", PROCESSING_TIMEOUT
+        browser,
+        By.XPATH,
+        "//p[contains(text(), 'Bottom Line')]",
+        PROCESSING_TIMEOUT,
     )
 
     assert wait_for_element_to_be_visible(
-        browser, By.XPATH, "//p[contains(text(), 'Analysis Code')]", PROCESSING_TIMEOUT
+        browser,
+        By.XPATH,
+        "//p[contains(text(), 'Analysis Code')]",
+        PROCESSING_TIMEOUT,
     )
 
     assert wait_for_element_to_be_visible(
