@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed chat endpoint when DATAROBOT_ENDPOINT has a trailing slash
 - Fixed the raw data preview for SAP (react)
 
+### Added
+
+- Ability to download a specific chat history (including charts) in the React version.
+
 ### Changed
 
 - React-based Frontend as the default for the Application
