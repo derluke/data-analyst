@@ -3,13 +3,15 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from "@tailwindcss/vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 import path from "path";
-import { VITE_DEFAULT_PORT } from "./src/constants/dev";
+import { VITE_DEFAULT_PORT, VITE_STATIC_DEFAULT_PORT } from "./src/constants/dev";
 
 let base: string = '';
-// if NOTEBOOK_ID is set, use /notebook-sessions/${NOTEBOOK_ID}/ports/5173/ as the base
-if (process.env.NOTEBOOK_ID) {
+// 1. if NOTEBOOK_ID is set, use /notebook-sessions/${NOTEBOOK_ID}/ports/5173/ for dev server
+// 2. if NOTEBOOK_ID and NODE_ENV === 'development' are set, use /notebook-sessions/${NOTEBOOK_ID}/ports/8080/ for static codespace server
+if (process.env.NOTEBOOK_ID && process.env.NODE_ENV === 'development') {
   const notebookId = process.env.NOTEBOOK_ID;
-  base = `/notebook-sessions/${notebookId}/ports/${VITE_DEFAULT_PORT}/`;
+  const defaultPort = process.env.STATIC_CODESPACE ? VITE_STATIC_DEFAULT_PORT : VITE_DEFAULT_PORT;
+  base = `/notebook-sessions/${notebookId}/ports/${defaultPort}/`;
 }
 const proxyBase: string = base === '' ? '/' : base;
 

@@ -71,6 +71,13 @@ To run the app with prebuilt frontend in a codespace, first open a terminal and 
 ```bash
 cd ~/storage/app_frontend
 npm install
+npm run build:codespace
+```
+
+#### _Note:_ When you're ready to publish a new version of the application using Pulumi, make sure to build the static/assets by running this command:
+
+```bash
+cd ~/storage/app_frontend
 npm run build
 ```
 

@@ -151,3 +151,30 @@ export const renameChat = async ({
 }: Pick<IUpdateChatParams, 'chatId' | 'name' | 'signal'>): Promise<void> => {
     return updateChat({ chatId, name, signal });
 };
+
+export const handleDownload = async (chatId: string) => {
+  try {
+    const response = await apiClient.get(
+        `/v1/chats/${chatId}/messages/download/`,
+        {responseType: 'blob'}
+    )
+
+    const contentDisposition = response.headers['content-disposition'];
+    const filename = contentDisposition
+      .split('filename=')[1]
+      .replace(/["']/g, '')
+      .trim();
+
+    const url = window.URL.createObjectURL(response.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('Download error:', error);
+    alert('There was a problem downloading the file.');
+  }
+}

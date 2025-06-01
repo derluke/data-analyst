@@ -5,6 +5,7 @@ import { Separator } from "@radix-ui/react-separator";
 import { Button } from "@/components/ui/button";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTrash } from "@fortawesome/free-solid-svg-icons/faTrash";
+import { faFileArrowDown } from "@fortawesome/free-solid-svg-icons/faFileArrowDown";
 import {
   useFetchAllMessages,
   useDeleteChat,
@@ -19,6 +20,7 @@ import { IChatMessage } from "@/api/chat-messages/types";
 import { useGeneratedDictionaries } from "@/api/dictionaries/hooks";
 import { useMultipleDatasetMetadata } from "@/api/cleansed-datasets/hooks";
 import { DATA_SOURCES } from "@/constants/dataSources";
+import {handleDownload} from "@/api/chat-messages/api-requests.ts";
 
 // Lazy load ResponseMessage for better performance
 const ResponseMessage = lazy(() =>
@@ -210,6 +212,10 @@ export const Chats: React.FC = () => {
             <DataSourceToggle multipleMetadata={multipleMetadata} />
           )}
         </div>
+        <Button variant="ghost" onClick={() => handleDownload(activeChat.id)}>
+          <FontAwesomeIcon icon={faFileArrowDown} />
+          <span className="ml-2">Save chat</span>
+        </Button>
         <Button
           variant="ghost"
           onClick={handleDeleteChat}

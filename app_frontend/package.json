@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b tsconfig.app.json && cross-env NODE_OPTIONS='--max-old-space-size=4096' vite build",
+    "build:codespace": "tsc -b tsconfig.app.json && cross-env NODE_OPTIONS='--max-old-space-size=4096' NODE_ENV=development STATIC_CODESPACE=true vite build",
     "lint": "npm run prettier && eslint .",
     "lint:fix": "npm run prettier:fix && eslint . --fix",
     "preview": "vite preview",
