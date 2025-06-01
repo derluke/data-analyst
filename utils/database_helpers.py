@@ -404,7 +404,7 @@ class BigQueryOperator(DatabaseOperator[BigQueryCredentialArgs]):
     def create_connection(self) -> Generator[bigquery.Client]:
         from google.oauth2 import service_account
 
-        google_credentials = service_account.Credentials.from_service_account_info(  # type: ignore
+        google_credentials = service_account.Credentials.from_service_account_info(  # type: ignore[no-untyped-call]
             GoogleCredentialsBQ().service_account_key,
             scopes=["https://www.googleapis.com/auth/cloud-platform"],
         )

@@ -395,9 +395,9 @@ def get_llm_credentials(
             credentials = GoogleCredentials()
             if test_credentials:
                 lookup = {
-                    LLMs.GOOGLE_1_5_PRO.name: "gemini-1.5-pro-001",
+                    LLMs.GOOGLE_1_5_PRO.name: "gemini-1.5-pro-002",
                     LLMs.GOOGLE_BISON.name: "chat-bison@002",
-                    LLMs.GOOGLE_GEMINI_1_5_FLASH.name: "gemini-1.5-flash-001",
+                    LLMs.GOOGLE_GEMINI_1_5_FLASH.name: "gemini-1.5-flash-002",
                 }
                 try:
                     import openai

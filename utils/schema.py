@@ -144,7 +144,7 @@ class AnalystDataset(BaseModel):
         if "data" not in values and "data_records" in values:
             try:
                 records = values["data_records"]
-                df = pl.DataFrame(records)
+                df = pl.DataFrame(records, infer_schema_length=len(records))
                 # Wrap the DataFrame before storing it.
                 values["data"] = DataFrameWrapper(df)
             except Exception as e:
